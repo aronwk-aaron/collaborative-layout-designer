@@ -114,6 +114,10 @@ ModulesPanel::ModulesPanel(QWidget* parent)
         }
 
         menu.addSeparator();
+        auto* cloneAct = menu.addAction(tr("Clone Module"));
+        connect(cloneAct, &QAction::triggered, [this, id]{ emit cloneRequested(id); });
+
+        menu.addSeparator();
         auto* saveLib = menu.addAction(tr("Save to Module Library"));
         connect(saveLib, &QAction::triggered, [this, id]{ emit saveToLibraryRequested(id); });
 

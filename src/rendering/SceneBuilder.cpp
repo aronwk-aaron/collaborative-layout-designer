@@ -88,16 +88,12 @@ SceneBuilder::LiveSnapHook gLiveSnapHook;
 // Palette matching BlueBrick's ConnectionType.Color-ish defaults: rail (cyan),
 // road (orange), monorail (purple), and a fallback green. Type 0 means "no
 // type" and never rendered.
-QColor colorForConnectionType(const QString& type) {
-    // BlueBrick connection types are strings ("rail", "road", "coaster",
-    // "monorail", …). Pick sensible colors for the common ones; everything
-    // else gets the fallback green so you can see where a connection lives.
-    if (type == QStringLiteral("rail"))      return QColor(0, 180, 220);
-    if (type == QStringLiteral("road"))      return QColor(220, 140, 0);
-    if (type == QStringLiteral("monorail"))  return QColor(160, 0, 200);
-    if (type == QStringLiteral("coaster"))   return QColor(200, 100, 30);
-    if (type == QStringLiteral("duplo"))     return QColor(220, 50, 50);
-    return QColor(30, 200, 60);
+QColor colorForConnectionType(const QString& /*type*/) {
+    // User prefers all connection markers in a single bright red so they
+    // stand out consistently against every brick colour (green baseplates,
+    // grey road, blue sky, etc.). Per-type colour palettes can come back
+    // later if users ask for them.
+    return QColor(230, 40, 40);
 }
 
 // Toggles visibility of every connection-point marker child so they only
@@ -243,7 +239,10 @@ void addBrickLayer(const core::LayerBrick& L, LayerSink& sink, parts::PartsLibra
         // clearly on any brick colour — user asked for larger/more obvious
         // markers.
         if (meta && !meta->connections.isEmpty()) {
-            constexpr double kDotRadiusPx = 6.0;
+            // Radius 10px with a 2.5px white ring + red fill so the
+            // markers are unmistakable at any zoom. User asked for
+            // "bigger and more obvious" — this is big.
+            constexpr double kDotRadiusPx = 10.0;
             for (const auto& c : meta->connections) {
                 if (c.type.isEmpty()) continue;
                 const QPointF localPx(c.position.x() * kPx, c.position.y() * kPx);
@@ -252,7 +251,7 @@ void addBrickLayer(const core::LayerBrick& L, LayerSink& sink, parts::PartsLibra
                     kDotRadiusPx * 2, kDotRadiusPx * 2, item);
                 QColor col = colorForConnectionType(c.type);
                 QPen pen(QColor(255, 255, 255));
-                pen.setWidthF(2.0);
+                pen.setWidthF(2.5);
                 pen.setCosmetic(true);
                 dot->setPen(pen);
                 dot->setBrush(QBrush(col));

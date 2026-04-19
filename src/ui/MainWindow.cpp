@@ -272,6 +272,34 @@ MainWindow::MainWindow(parts::PartsLibrary& parts, QWidget* parent)
         modulesPanel_->setMap(mapView_->currentMap());
     });
 
+    // Clone: duplicate a module in-place so the user can have multiple
+    // independent instances. Offset the clone by a small stud delta (or by
+    // the module's extent) so the clone doesn't sit on top of the source.
+    connect(modulesPanel_, &ModulesPanel::cloneRequested, this, [this](const QString& id){
+        auto* map = mapView_->currentMap();
+        if (!map) return;
+        const core::Module* mod = nullptr;
+        for (const auto& m : map->sidecar.modules) if (m.id == id) { mod = &m; break; }
+        if (!mod) return;
+        // Offset = the module's bounding-box width (so clone lands next to
+        // the source instead of overlapping it). If the module has no
+        // members, use a trivial 4-stud offset.
+        QPointF offset(4, 4);
+        QRectF bb;
+        for (const auto& L : map->layers()) {
+            if (!L || L->kind() != core::LayerKind::Brick) continue;
+            for (const auto& b : static_cast<const core::LayerBrick&>(*L).bricks) {
+                if (mod->memberIds.contains(b.guid)) bb = bb.united(b.displayArea);
+            }
+        }
+        if (!bb.isEmpty()) offset = QPointF(bb.width() + 2.0, 0.0);
+        mapView_->undoStack()->push(new edit::CloneModuleCommand(
+            *map, id, offset, QString()));
+        mapView_->rebuildScene();
+        modulesPanel_->setMap(map);
+        statusBar()->showMessage(tr("Module cloned"), 3000);
+    });
+
     // Save module to the configured module library folder as its own .bbm.
     // Matches "Save Selection as Module" but auto-targets the library folder
     // and doesn't require re-picking members.

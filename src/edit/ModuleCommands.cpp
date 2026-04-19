@@ -195,6 +195,102 @@ void RotateModuleCommand::undo() {
     }
 }
 
+// ----- CloneModuleCommand -----
+
+CloneModuleCommand::CloneModuleCommand(core::Map& map, QString sourceModuleId,
+                                       QPointF offsetStuds, QString newName,
+                                       QUndoCommand* parent)
+    : QUndoCommand(parent), map_(map),
+      sourceModuleId_(std::move(sourceModuleId)),
+      offsetStuds_(offsetStuds),
+      newName_(std::move(newName)),
+      newModuleId_(core::newBbmId()) {
+    setText(QObject::tr("Clone module"));
+}
+
+void CloneModuleCommand::redo() {
+    const int srcIdx = findModuleIndex(map_, sourceModuleId_);
+    if (srcIdx < 0) return;
+    const core::Module srcMod = map_.sidecar.modules[srcIdx];  // copy
+
+    // First redo: walk every brick layer, duplicate members of the source
+    // module onto THEIR ORIGINAL layer with fresh guids and the configured
+    // offset applied. Remember each (layer, guid) for undo.
+    if (!captured_) {
+        appliedBricks_.clear();
+        for (int li = 0; li < static_cast<int>(map_.layers().size()); ++li) {
+            auto* L = brickLayer(map_, li);
+            if (!L) continue;
+            // Snapshot the existing brick list so we don't iterate bricks
+            // we're about to append in the same loop.
+            const auto srcBricks = L->bricks;
+            for (const auto& b : srcBricks) {
+                if (!srcMod.memberIds.contains(b.guid)) continue;
+                core::Brick copy = b;
+                copy.guid = core::newBbmId();
+                copy.myGroupId.clear();
+                copy.displayArea.translate(offsetStuds_);
+                // Clones shouldn't inherit the source's connection links —
+                // new bricks are un-linked and snap fresh.
+                for (auto& c : copy.connections) {
+                    c.guid = core::newBbmId();
+                    c.linkedToId.clear();
+                }
+                appliedBricks_.push_back({ li, copy.guid });
+                L->bricks.push_back(std::move(copy));
+            }
+        }
+        captured_ = true;
+    } else {
+        // Re-apply from captured guids — the specific bricks we stamped
+        // the first time are already gone (undo removed them), so stamp
+        // them again by iterating the source module's member bricks.
+        for (int li = 0; li < static_cast<int>(map_.layers().size()); ++li) {
+            auto* L = brickLayer(map_, li);
+            if (!L) continue;
+            const auto srcBricks = L->bricks;
+            int nextApplied = 0;
+            for (const auto& b : srcBricks) {
+                if (!srcMod.memberIds.contains(b.guid)) continue;
+                core::Brick copy = b;
+                while (nextApplied < static_cast<int>(appliedBricks_.size()) &&
+                       appliedBricks_[nextApplied].layerIndex != li) ++nextApplied;
+                if (nextApplied >= static_cast<int>(appliedBricks_.size())) break;
+                copy.guid = appliedBricks_[nextApplied].guid;
+                ++nextApplied;
+                copy.myGroupId.clear();
+                copy.displayArea.translate(offsetStuds_);
+                for (auto& c : copy.connections) {
+                    c.guid = core::newBbmId();
+                    c.linkedToId.clear();
+                }
+                L->bricks.push_back(std::move(copy));
+            }
+        }
+    }
+
+    core::Module m;
+    m.id = newModuleId_;
+    m.name = newName_.isEmpty() ? (srcMod.name + QObject::tr(" (copy)")) : newName_;
+    for (const auto& a : appliedBricks_) m.memberIds.insert(a.guid);
+    map_.sidecar.modules.push_back(std::move(m));
+}
+
+void CloneModuleCommand::undo() {
+    // Remove cloned bricks.
+    for (const auto& a : appliedBricks_) {
+        if (auto* L = brickLayer(map_, a.layerIndex)) {
+            L->bricks.erase(
+                std::remove_if(L->bricks.begin(), L->bricks.end(),
+                               [&](const core::Brick& b) { return b.guid == a.guid; }),
+                L->bricks.end());
+        }
+    }
+    // Remove cloned module entry.
+    const int i = findModuleIndex(map_, newModuleId_);
+    if (i >= 0) map_.sidecar.modules.erase(map_.sidecar.modules.begin() + i);
+}
+
 // ----- FlattenModuleCommand -----
 
 FlattenModuleCommand::FlattenModuleCommand(core::Map& map, QString moduleId, QUndoCommand* parent)

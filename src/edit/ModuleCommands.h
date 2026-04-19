@@ -77,6 +77,33 @@ private:
     bool        captured_ = false;
 };
 
+// Clone an existing module in-project: duplicates every member brick
+// (fresh guids, same part numbers / orientation / altitude / layer) at an
+// offset from the source, and registers a new Module entry over the
+// clones. Cloning a module N times gives you N independent instances you
+// can move/rotate separately.
+class CloneModuleCommand : public QUndoCommand {
+public:
+    CloneModuleCommand(core::Map& map, QString sourceModuleId,
+                       QPointF offsetStuds, QString newName,
+                       QUndoCommand* parent = nullptr);
+    void undo() override;
+    void redo() override;
+    const QString& newModuleId() const { return newModuleId_; }
+
+private:
+    core::Map& map_;
+    QString    sourceModuleId_;
+    QPointF    offsetStuds_;
+    QString    newName_;
+    QString    newModuleId_;
+
+    // Populated on first redo so undo can reverse exactly.
+    struct AppliedBrick { int layerIndex = -1; QString guid; };
+    std::vector<AppliedBrick> appliedBricks_;
+    bool captured_ = false;
+};
+
 // Dissolve a module: remove the sidecar entry so its members become
 // ordinary independent bricks/texts/rulers on their own layers. Undo
 // recreates the module entry with the original memberIds.
