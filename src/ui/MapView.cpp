@@ -21,6 +21,7 @@
 #include "EditDialogs.h"
 #include "ModuleLibraryPanel.h"   // kModuleDragMimeType
 #include "PartsBrowser.h"         // kPartMimeType
+#include "VenueDialog.h"
 #include "../edit/ModuleCommands.h"
 #include "../saveload/BbmReader.h"
 
@@ -34,6 +35,7 @@
 #include <QKeyEvent>
 #include <QLineEdit>
 #include <QMenu>
+#include <QMessageBox>
 #include <QMimeData>
 #include <QMouseEvent>
 #include <QFileInfo>
@@ -75,6 +77,10 @@ bool isRulerItem(const QGraphicsItem* it) {
 
 bool isLabelItem(const QGraphicsItem* it) {
     return it && it->data(kBrickDataKind).toString() == QStringLiteral("label");
+}
+
+bool isVenueItem(const QGraphicsItem* it) {
+    return it && it->data(kBrickDataKind).toString() == QStringLiteral("venue");
 }
 
 double studToPx() { return rendering::SceneBuilder::kPixelsPerStud; }
@@ -198,6 +204,34 @@ MapView::MapView(parts::PartsLibrary& parts, QWidget* parent)
     scene->addItem(selectionOverlay_);
 
     connect(scene, &QGraphicsScene::selectionChanged, this, [this]{
+        // When the user clicks any single piece of a ruler (one line
+        // segment or the midtext label), extend the scene selection to
+        // every other piece sharing the same ruler guid. With unique
+        // guids (restored by migrateNonNumericIds in 3.78) this scopes
+        // to exactly one ruler. Needed so Qt's built-in multi-item drag
+        // translates all pieces of the ruler rigidly when the user
+        // drags any of them.
+        static bool reentrant = false;
+        if (!reentrant) {
+            reentrant = true;
+            QSet<QString> rulerGuids;
+            for (QGraphicsItem* it : this->scene()->selectedItems()) {
+                if (it && isRulerItem(it)) {
+                    const QString g = it->data(kBrickDataGuid).toString();
+                    if (!g.isEmpty()) rulerGuids.insert(g);
+                }
+            }
+            if (!rulerGuids.isEmpty()) {
+                for (QGraphicsItem* any : this->scene()->items()) {
+                    if (!isRulerItem(any)) continue;
+                    if (any->isSelected()) continue;
+                    const QString g = any->data(kBrickDataGuid).toString();
+                    if (g.isEmpty()) continue;
+                    if (rulerGuids.contains(g)) any->setSelected(true);
+                }
+            }
+            reentrant = false;
+        }
         refreshSelectionOverlay();
         emit selectionChanged();
     });
@@ -477,7 +511,36 @@ std::vector<MapView::BrickOriginSnapshot> MapView::selectedBrickSnapshots() cons
     return out;
 }
 
-void MapView::captureDragStart() { dragStart_ = selectedBrickSnapshots(); }
+void MapView::captureDragStart() {
+    dragStart_       = selectedBrickSnapshots();
+    rulerDragStart_.clear();
+    labelDragStart_.clear();
+    if (!map_) return;
+    QSet<QString> rulerSeen;
+    QSet<QString> labelSeen;
+    for (QGraphicsItem* it : scene()->selectedItems()) {
+        if (isRulerItem(it)) {
+            const QString guid = it->data(kBrickDataGuid).toString();
+            if (guid.isEmpty() || rulerSeen.contains(guid)) continue;
+            rulerSeen.insert(guid);
+            RulerDragSnapshot r;
+            r.anyPiece = it;
+            r.layerIndex = it->data(kBrickDataLayerIndex).toInt();
+            r.guid = guid;
+            r.scenePosAtPress = it->scenePos();
+            rulerDragStart_.push_back(r);
+        } else if (isLabelItem(it)) {
+            const QString lid = it->data(kBrickDataGuid).toString();
+            if (lid.isEmpty() || labelSeen.contains(lid)) continue;
+            labelSeen.insert(lid);
+            LabelDragSnapshot l;
+            l.item = it;
+            l.labelId = lid;
+            l.scenePosAtPress = it->scenePos();
+            labelDragStart_.push_back(l);
+        }
+    }
+}
 
 namespace {
 
@@ -569,7 +632,45 @@ ConnectionSnapResult computeConnectionSnap(
 }
 
 void MapView::commitDragIfMoved() {
-    if (dragStart_.empty() || !map_) return;
+    if (!map_) return;
+
+    // Rulers and labels: compute drag delta from any one piece of each
+    // logical item and push a Move* command. Done BEFORE the brick path
+    // so an empty brick snapshot doesn't short-circuit the ruler/label
+    // commits. Wrapped in a single macro so a mixed drag undoes as one.
+    if (!rulerDragStart_.empty() || !labelDragStart_.empty()) {
+        const double pxToStud = 1.0 / studToPx();
+        std::vector<std::tuple<int, QString, QPointF>> rulerCmds;
+        std::vector<std::pair<QString, QPointF>>       labelCmds;
+        for (const auto& r : rulerDragStart_) {
+            if (!r.anyPiece) continue;
+            const QPointF d = r.anyPiece->scenePos() - r.scenePosAtPress;
+            if (std::abs(d.x()) < 0.5 && std::abs(d.y()) < 0.5) continue;
+            rulerCmds.emplace_back(r.layerIndex, r.guid,
+                                    QPointF(d.x() * pxToStud, d.y() * pxToStud));
+        }
+        for (const auto& l : labelDragStart_) {
+            if (!l.item) continue;
+            const QPointF d = l.item->scenePos() - l.scenePosAtPress;
+            if (std::abs(d.x()) < 0.5 && std::abs(d.y()) < 0.5) continue;
+            labelCmds.emplace_back(l.labelId,
+                                    QPointF(d.x() * pxToStud, d.y() * pxToStud));
+        }
+        if (!rulerCmds.empty() || !labelCmds.empty()) {
+            undoStack_->beginMacro(tr("Drag"));
+            for (const auto& [li, g, d] : rulerCmds) {
+                undoStack_->push(new edit::MoveRulerItemCommand(*map_, li, g, d));
+            }
+            for (const auto& [id, d] : labelCmds) {
+                undoStack_->push(new edit::MoveAnchoredLabelCommand(*map_, id, d));
+            }
+            undoStack_->endMacro();
+        }
+        rulerDragStart_.clear();
+        labelDragStart_.clear();
+    }
+
+    if (dragStart_.empty()) return;
 
     const double px = studToPx();
 
@@ -1593,10 +1694,7 @@ void MapView::mouseDoubleClickEvent(QMouseEvent* e) {
         } else if (isTextItem(under)) {
             handled = editTextDialog(this, *map_, li, guid, *undoStack_);
         } else if (isLabelItem(under)) {
-            // Anchored labels: quick text edit via input dialog — the
-            // full font/colour editor is the "Edit Label..." context menu
-            // action (future work). Undoable via
-            // EditAnchoredLabelTextCommand.
+            // Anchored labels: quick text edit via input dialog.
             QString current;
             for (const auto& lbl : map_->sidecar.anchoredLabels) {
                 if (lbl.id == guid) { current = lbl.text; break; }
@@ -1610,9 +1708,18 @@ void MapView::mouseDoubleClickEvent(QMouseEvent* e) {
                     *map_, guid, next));
                 handled = true;
             }
+        } else if (isVenueItem(under)) {
+            // Open the venue-properties dialog; commit any changes
+            // through SetVenueCommand.
+            VenueDialog dlg(map_->sidecar.venue, this);
+            if (dlg.exec() == QDialog::Accepted) {
+                undoStack_->push(new edit::SetVenueCommand(*map_,
+                    dlg.cleared() ? std::nullopt : dlg.result()));
+                handled = true;
+            }
         }
         if (handled || isBrickItem(under) || isRulerItem(under)
-            || isTextItem(under) || isLabelItem(under)) {
+            || isTextItem(under) || isLabelItem(under) || isVenueItem(under)) {
             e->accept();
             return;
         }
@@ -1743,6 +1850,7 @@ void MapView::deleteSelected() {
     std::vector<TextHit>  textHits;
     std::vector<RulerHit> rulerHits;
     QStringList labelIds;
+    bool venueSelected = false;
 
     for (QGraphicsItem* it : scene()->selectedItems()) {
         if (isBrickItem(it)) {
@@ -1770,10 +1878,12 @@ void MapView::deleteSelected() {
                                     it->data(kBrickDataGuid).toString() });
         } else if (isLabelItem(it)) {
             labelIds.append(it->data(kBrickDataGuid).toString());
+        } else if (isVenueItem(it)) {
+            venueSelected = true;
         }
     }
     if (brickEntries.empty() && textHits.empty() &&
-        rulerHits.empty() && labelIds.isEmpty()) return;
+        rulerHits.empty() && labelIds.isEmpty() && !venueSelected) return;
 
     undoStack_->beginMacro(tr("Delete selection"));
     if (!brickEntries.empty()) {
@@ -1787,6 +1897,14 @@ void MapView::deleteSelected() {
     }
     for (const QString& id : labelIds) {
         undoStack_->push(new edit::DeleteAnchoredLabelCommand(*map_, id));
+    }
+    if (venueSelected) {
+        const auto btn = QMessageBox::question(this, tr("Delete venue"),
+            tr("Remove the entire venue (outline + obstacles)?"),
+            QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+        if (btn == QMessageBox::Yes) {
+            undoStack_->push(new edit::SetVenueCommand(*map_, std::nullopt));
+        }
     }
     undoStack_->endMacro();
     // The undo-stack indexChanged handler rebuilds + preserves selection.

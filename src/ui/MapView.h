@@ -124,6 +124,21 @@ private:
         QPointF studTopLeftAtPress;   // brick.displayArea.topLeft() at mousePress
     };
 
+    // Ruler / label drag snapshots. One per logical item (rulers may
+    // render as multiple scene items; we store the first piece's
+    // scenePosAtPress to compute the drag delta).
+    struct RulerDragSnapshot {
+        QGraphicsItem* anyPiece = nullptr;
+        int     layerIndex = -1;
+        QString guid;
+        QPointF scenePosAtPress;
+    };
+    struct LabelDragSnapshot {
+        QGraphicsItem* item = nullptr;
+        QString labelId;
+        QPointF scenePosAtPress;
+    };
+
     void captureDragStart();
     void commitDragIfMoved();
     std::vector<BrickOriginSnapshot> selectedBrickSnapshots() const;
@@ -134,6 +149,8 @@ private:
     std::unique_ptr<QUndoStack> undoStack_;
 
     std::vector<BrickOriginSnapshot> dragStart_;
+    std::vector<RulerDragSnapshot>   rulerDragStart_;
+    std::vector<LabelDragSnapshot>   labelDragStart_;
 
     // Middle-mouse pan state.
     bool    panning_ = false;

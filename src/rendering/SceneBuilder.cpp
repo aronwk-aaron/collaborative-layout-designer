@@ -519,6 +519,7 @@ void addRulerLayer(const core::LayerRuler& L, LayerSink& sink, int layerIndex) {
                 // so refreshSelectionOverlay can union all pieces into one
                 // highlight rather than outlining each segment separately.
                 seg2->setFlag(QGraphicsItem::ItemIsSelectable, true);
+                seg2->setFlag(QGraphicsItem::ItemIsMovable,    true);
                 seg2->setData(kBrickDataLayerIndex, layerIndex);
                 seg2->setData(kBrickDataGuid,       r.guid);
                 seg2->setData(kBrickDataKind,       QStringLiteral("ruler"));
@@ -536,6 +537,7 @@ void addRulerLayer(const core::LayerRuler& L, LayerSink& sink, int layerIndex) {
                 tr.translate(-bb.width() / 2.0, -bb.height() / 2.0);
                 t->setTransform(tr);
                 t->setFlag(QGraphicsItem::ItemIsSelectable, true);
+                t->setFlag(QGraphicsItem::ItemIsMovable,    true);
                 t->setData(kBrickDataLayerIndex, layerIndex);
                 t->setData(kBrickDataGuid,       r.guid);
                 t->setData(kBrickDataKind,       QStringLiteral("ruler"));
@@ -553,6 +555,7 @@ void addRulerLayer(const core::LayerRuler& L, LayerSink& sink, int layerIndex) {
             // proxy so right-click / double-click → Properties works.
             if (selectableLine) {
                 selectableLine->setFlag(QGraphicsItem::ItemIsSelectable, true);
+                selectableLine->setFlag(QGraphicsItem::ItemIsMovable,    true);
                 selectableLine->setData(kBrickDataLayerIndex, layerIndex);
                 selectableLine->setData(kBrickDataGuid,       r.guid);
                 selectableLine->setData(kBrickDataKind,       QStringLiteral("ruler"));
@@ -613,6 +616,7 @@ void addRulerLayer(const core::LayerRuler& L, LayerSink& sink, int layerIndex) {
             el->setPen(pen);
             el->setBrush(Qt::NoBrush);
             el->setFlag(QGraphicsItem::ItemIsSelectable, true);
+            el->setFlag(QGraphicsItem::ItemIsMovable,    true);
             el->setData(kBrickDataLayerIndex, layerIndex);
             el->setData(kBrickDataGuid,       r.guid);
             el->setData(kBrickDataKind,       QStringLiteral("ruler"));
@@ -770,6 +774,12 @@ void SceneBuilder::addVenue(const core::Map& map) {
                 break;
         }
         item->setPen(pen);
+        // Tag the edge as a venue item so MapView can surface edit /
+        // delete actions when the user clicks it.
+        item->setFlag(QGraphicsItem::ItemIsSelectable, true);
+        item->setData(kBrickDataLayerIndex, -1);
+        item->setData(kBrickDataGuid,       QStringLiteral("venue"));
+        item->setData(kBrickDataKind,       QStringLiteral("venue"));
         sink.add(item);
     }
     for (const auto& ob : v.obstacles) {
@@ -781,6 +791,10 @@ void SceneBuilder::addVenue(const core::Map& map) {
         pen.setWidthF(1.0);
         item->setPen(pen);
         item->setBrush(QBrush(QColor(120, 120, 120, 100), Qt::BDiagPattern));
+        item->setFlag(QGraphicsItem::ItemIsSelectable, true);
+        item->setData(kBrickDataLayerIndex, -1);
+        item->setData(kBrickDataGuid,       QStringLiteral("venue"));
+        item->setData(kBrickDataKind,       QStringLiteral("venue"));
         sink.add(item);
     }
 }
@@ -805,6 +819,7 @@ void SceneBuilder::addAnchoredLabels(const core::Map& map) {
         // index is always -1 for anchored labels (they live in the
         // sidecar, not in a Layer).
         t->setFlag(QGraphicsItem::ItemIsSelectable, true);
+        t->setFlag(QGraphicsItem::ItemIsMovable,    true);
         t->setData(kBrickDataLayerIndex, -1);
         t->setData(kBrickDataGuid,       lbl.id);
         t->setData(kBrickDataKind,       QStringLiteral("label"));
