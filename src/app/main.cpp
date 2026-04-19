@@ -34,10 +34,11 @@ int main(int argc, char** argv) {
 
     QApplication app(argc, argv);
 
+    // MainWindow scans the library during construction using paths from
+    // QSettings (plus the vendored submodule if present); main only owns
+    // the empty PartsLibrary.
+    (void)defaultPartsRoot;  // kept for backward compat — unused now
     cld::parts::PartsLibrary lib;
-    lib.addSearchPath(defaultPartsRoot());
-    lib.scan();
-
     cld::ui::MainWindow window(lib);
     window.show();
 

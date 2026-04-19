@@ -1,6 +1,7 @@
 #include "MainWindow.h"
 
 #include "LayerPanel.h"
+#include "LibraryPathsDialog.h"
 #include "MapView.h"
 #include "ModulesPanel.h"
 #include "PartsBrowser.h"
@@ -14,11 +15,14 @@
 #include <QAction>
 #include <QApplication>
 #include <QCloseEvent>
+#include <QCoreApplication>
+#include <QDir>
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QSettings>
 #include <QStatusBar>
 #include <QUndoStack>
 
@@ -27,6 +31,16 @@ namespace cld::ui {
 MainWindow::MainWindow(parts::PartsLibrary& parts, QWidget* parent)
     : QMainWindow(parent), parts_(parts) {
     resize(1400, 900);
+
+    // Scan every configured library path on startup so the PartsBrowser below
+    // reflects the user's full set, not just the vendored submodule.
+    QStringList allPaths;
+    const QString vendored = defaultVendoredPartsRoot();
+    if (!vendored.isEmpty() && QDir(vendored).exists()) allPaths << vendored;
+    for (const QString& p : loadUserLibraryPaths()) {
+        if (!allPaths.contains(p) && QDir(p).exists()) allPaths << p;
+    }
+    rescanLibrary(allPaths);
 
     mapView_ = new MapView(parts_, this);
     setCentralWidget(mapView_);
@@ -105,6 +119,10 @@ void MainWindow::setupMenus() {
     auto* fit = view->addAction(tr("&Fit to View"));
     fit->setShortcut(QKeySequence(Qt::Key_F));
     connect(fit, &QAction::triggered, this, &MainWindow::onFitToView);
+
+    auto* tools = menuBar()->addMenu(tr("&Tools"));
+    auto* libAct = tools->addAction(tr("Manage Parts &Libraries..."));
+    connect(libAct, &QAction::triggered, this, &MainWindow::onManageLibraries);
 
     menuBar()->addMenu(tr("&Layers"));
     menuBar()->addMenu(tr("&Modules"));
@@ -231,6 +249,61 @@ bool MainWindow::maybeSave() {
 void MainWindow::closeEvent(QCloseEvent* e) {
     if (maybeSave()) e->accept();
     else             e->ignore();
+}
+
+void MainWindow::onManageLibraries() {
+    QStringList current;
+    const QString vendored = defaultVendoredPartsRoot();
+    if (!vendored.isEmpty() && QDir(vendored).exists()) current << vendored;
+    current += loadUserLibraryPaths();
+
+    LibraryPathsDialog dlg(current, this);
+    if (dlg.exec() != QDialog::Accepted) return;
+
+    QStringList newPaths = dlg.paths();
+    // Persist the user additions — filter out the vendored path so it isn't
+    // duplicated on next launch.
+    QStringList userOnly;
+    for (const QString& p : newPaths) {
+        if (p != vendored) userOnly << p;
+    }
+    saveUserLibraryPaths(userOnly);
+    rescanLibrary(newPaths);
+    partsBrowser_->rebuild();
+    statusBar()->showMessage(
+        tr("Reloaded library: %1 parts across %2 path(s)")
+            .arg(parts_.partCount()).arg(newPaths.size()), 4000);
+}
+
+void MainWindow::rescanLibrary(const QStringList& paths) {
+    parts_.clear();
+    for (const QString& p : paths) parts_.addSearchPath(p);
+    parts_.scan();
+}
+
+QStringList MainWindow::loadUserLibraryPaths() const {
+    QSettings s;
+    s.beginGroup(LibraryPathsDialog::kSettingsGroup);
+    const QStringList v = s.value(LibraryPathsDialog::kSettingsKey).toStringList();
+    s.endGroup();
+    return v;
+}
+
+void MainWindow::saveUserLibraryPaths(const QStringList& paths) {
+    QSettings s;
+    s.beginGroup(LibraryPathsDialog::kSettingsGroup);
+    s.setValue(LibraryPathsDialog::kSettingsKey, paths);
+    s.endGroup();
+}
+
+QString MainWindow::defaultVendoredPartsRoot() const {
+    const QString exeDir = QCoreApplication::applicationDirPath();
+    for (const QString& rel : { QStringLiteral("/../../../parts/BlueBrickParts/parts"),
+                                 QStringLiteral("/parts/BlueBrickParts/parts"),
+                                 QStringLiteral("/BlueBrickParts/parts") }) {
+        if (QDir(exeDir + rel).exists()) return QDir(exeDir + rel).absolutePath();
+    }
+    return {};
 }
 
 void MainWindow::onZoomIn()  { mapView_->scale(1.2, 1.2); }

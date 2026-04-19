@@ -26,6 +26,17 @@ public:
 protected:
     void closeEvent(QCloseEvent* e) override;
 
+    // Rescans the parts library against all configured paths. Called at
+    // startup and after the user edits the paths via onManageLibraries.
+    void rescanLibrary(const QStringList& paths);
+
+    // Load/save the user's custom library paths to QSettings. The vendored
+    // submodule path is always prepended regardless of user state.
+    QStringList loadUserLibraryPaths() const;
+    void saveUserLibraryPaths(const QStringList& paths);
+
+    QString defaultVendoredPartsRoot() const;
+
 private slots:
     void onOpen();
     bool onSave();
@@ -33,6 +44,7 @@ private slots:
     void onZoomIn();
     void onZoomOut();
     void onFitToView();
+    void onManageLibraries();
 
 private:
     void setupMenus();

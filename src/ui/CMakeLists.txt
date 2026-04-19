@@ -9,6 +9,8 @@ add_library(cld_ui STATIC
     PartsBrowser.h
     ModulesPanel.cpp
     ModulesPanel.h
+    LibraryPathsDialog.cpp
+    LibraryPathsDialog.h
 )
 
 target_link_libraries(cld_ui
