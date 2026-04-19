@@ -1,10 +1,12 @@
 #include "EditCommands.h"
 
 #include "../core/Brick.h"
+#include "../core/Ids.h"
 #include "../core/Layer.h"
 #include "../core/LayerBrick.h"
 #include "../core/Map.h"
 
+#include <QHash>
 #include <QSet>
 
 namespace cld::edit {
@@ -222,6 +224,148 @@ void EditBrickCommand::redo() {
 }
 void EditBrickCommand::undo() {
     if (auto* b = findBrick(map_, ref_)) applyBrickState(*b, before_);
+}
+
+// ----- GroupBricksCommand -----
+
+GroupBricksCommand::GroupBricksCommand(core::Map& map, std::vector<BrickRef> targets,
+                                       QUndoCommand* parent)
+    : QUndoCommand(parent), map_(map), targets_(std::move(targets)) {
+    setText(QObject::tr("Group %1 brick(s)").arg(targets_.size()));
+}
+
+void GroupBricksCommand::redo() {
+    // Partition targets by layer to create one Group per layer.
+    QHash<int, std::vector<QString>> perLayer;
+    for (const auto& r : targets_) perLayer[r.layerIndex].push_back(r.guid);
+
+    if (!prepared_) {
+        groupsAdded_.clear();
+        before_.clear();
+        for (auto it = perLayer.constBegin(); it != perLayer.constEnd(); ++it) {
+            auto* L = brickLayer(map_, it.key());
+            if (!L) continue;
+            core::Group g;
+            g.guid = core::newBbmId();
+            L->groups.push_back(g);
+            groupsAdded_.push_back({ it.key(), g.guid });
+            for (const QString& guid : it.value()) {
+                for (auto& b : L->bricks) {
+                    if (b.guid == guid) {
+                        before_.push_back({ BrickRef{ it.key(), guid }, b.myGroupId });
+                        b.myGroupId = g.guid;
+                        break;
+                    }
+                }
+            }
+        }
+        prepared_ = true;
+    } else {
+        // Re-apply: recreate the same groups and re-assign myGroupId.
+        for (const auto& gm : groupsAdded_) {
+            if (auto* L = brickLayer(map_, gm.layerIndex)) {
+                core::Group g; g.guid = gm.newGroupGuid;
+                L->groups.push_back(g);
+            }
+        }
+        for (const auto& m : before_) {
+            if (auto* b = findBrick(map_, m.ref)) {
+                for (const auto& gm : groupsAdded_) {
+                    if (gm.layerIndex == m.ref.layerIndex) { b->myGroupId = gm.newGroupGuid; break; }
+                }
+            }
+        }
+    }
+}
+
+void GroupBricksCommand::undo() {
+    // Restore each brick's previous group id.
+    for (const auto& m : before_) {
+        if (auto* b = findBrick(map_, m.ref)) b->myGroupId = m.previousGroupId;
+    }
+    // Remove the synthesized groups.
+    for (const auto& gm : groupsAdded_) {
+        if (auto* L = brickLayer(map_, gm.layerIndex)) {
+            for (auto it = L->groups.begin(); it != L->groups.end(); ++it) {
+                if (it->guid == gm.newGroupGuid) { L->groups.erase(it); break; }
+            }
+        }
+    }
+}
+
+// ----- UngroupBricksCommand -----
+
+UngroupBricksCommand::UngroupBricksCommand(core::Map& map, std::vector<BrickRef> targets,
+                                           QUndoCommand* parent)
+    : QUndoCommand(parent), map_(map), targets_(std::move(targets)) {
+    setText(QObject::tr("Ungroup %1 brick(s)").arg(targets_.size()));
+}
+
+void UngroupBricksCommand::redo() {
+    if (!prepared_) {
+        before_.clear();
+        removedGroups_.clear();
+        // Use "layerIndex|groupGuid" as a hashable key so QSet works.
+        QSet<QString> affectedGroups;
+        auto keyOf = [](int li, const QString& g) {
+            return QString::number(li) + QStringLiteral("|") + g;
+        };
+        // Clear myGroupId on every target, remembering prior value.
+        for (const auto& ref : targets_) {
+            if (auto* b = findBrick(map_, ref)) {
+                before_.push_back({ ref, b->myGroupId });
+                if (!b->myGroupId.isEmpty())
+                    affectedGroups.insert(keyOf(ref.layerIndex, b->myGroupId));
+                b->myGroupId.clear();
+            }
+        }
+        // Remove now-empty groups.
+        for (const QString& key : affectedGroups) {
+            const int sep = key.indexOf('|');
+            if (sep < 0) continue;
+            const int layerIdx = key.left(sep).toInt();
+            const QString groupGuid = key.mid(sep + 1);
+            auto* L = brickLayer(map_, layerIdx);
+            if (!L) continue;
+            bool stillMember = false;
+            for (const auto& b : L->bricks) if (b.myGroupId == groupGuid) { stillMember = true; break; }
+            if (stillMember) continue;
+            for (int i = 0; i < static_cast<int>(L->groups.size()); ++i) {
+                if (L->groups[i].guid == groupGuid) {
+                    removedGroups_.push_back({ layerIdx, i, L->groups[i] });
+                    L->groups.erase(L->groups.begin() + i);
+                    break;
+                }
+            }
+        }
+        prepared_ = true;
+    } else {
+        // Re-apply: clear myGroupIds again and remove the same groups.
+        for (const auto& m : before_) {
+            if (auto* b = findBrick(map_, m.ref)) b->myGroupId.clear();
+        }
+        for (const auto& rm : removedGroups_) {
+            if (auto* L = brickLayer(map_, rm.layerIndex)) {
+                for (auto it = L->groups.begin(); it != L->groups.end(); ++it) {
+                    if (it->guid == rm.group.guid) { L->groups.erase(it); break; }
+                }
+            }
+        }
+    }
+}
+
+void UngroupBricksCommand::undo() {
+    // Reinstate removed groups at their original indices.
+    for (auto it = removedGroups_.rbegin(); it != removedGroups_.rend(); ++it) {
+        if (auto* L = brickLayer(map_, it->layerIndex)) {
+            const int idx = std::min<int>(it->index, static_cast<int>(L->groups.size()));
+            L->groups.insert(L->groups.begin() + idx, it->group);
+        }
+    }
+    // Restore each brick's prior groupId.
+    for (const auto& m : before_) {
+        if (auto* b = findBrick(map_, m.ref)) b->myGroupId = m.previousGroupId;
+    }
 }
 
 // ----- AddBricksCommand -----

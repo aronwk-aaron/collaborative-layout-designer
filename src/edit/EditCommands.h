@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../core/Brick.h"
+#include "../core/Group.h"
 
 #include <QHash>
 #include <QPointF>
@@ -146,6 +147,60 @@ private:
     BrickRef   ref_;
     State      before_;
     State      after_;
+};
+
+// Create a same-layer vanilla Group per affected layer covering every target
+// brick's layer. Sets each target's myGroupId to the new group's guid so the
+// serialized <Groups> list re-creates on save. Undo restores each brick's
+// previous group assignment and removes the synthetic groups.
+class GroupBricksCommand : public QUndoCommand {
+public:
+    GroupBricksCommand(core::Map& map, std::vector<BrickRef> targets,
+                       QUndoCommand* parent = nullptr);
+    void undo() override;
+    void redo() override;
+
+private:
+    struct GroupMemo {
+        int     layerIndex = -1;
+        QString newGroupGuid;
+    };
+    struct MemberMemo {
+        BrickRef ref;
+        QString  previousGroupId;
+    };
+    core::Map& map_;
+    std::vector<BrickRef>  targets_;
+    std::vector<GroupMemo>  groupsAdded_;
+    std::vector<MemberMemo> before_;
+    bool prepared_ = false;
+};
+
+// Clear the myGroupId of every target brick. If a group is left with no
+// remaining members in its layer, the group is also removed. Undo restores
+// each brick's prior groupId and reinstates any removed Group.
+class UngroupBricksCommand : public QUndoCommand {
+public:
+    UngroupBricksCommand(core::Map& map, std::vector<BrickRef> targets,
+                         QUndoCommand* parent = nullptr);
+    void undo() override;
+    void redo() override;
+
+private:
+    struct MemberMemo {
+        BrickRef ref;
+        QString  previousGroupId;
+    };
+    struct GroupMemo {
+        int layerIndex = -1;
+        int index      = -1;
+        core::Group group;
+    };
+    core::Map& map_;
+    std::vector<BrickRef> targets_;
+    std::vector<MemberMemo> before_;
+    std::vector<GroupMemo> removedGroups_;
+    bool prepared_ = false;
 };
 
 // Append a batch of bricks to the given layer as a single undoable step. Used

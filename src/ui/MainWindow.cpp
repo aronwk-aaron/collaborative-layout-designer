@@ -396,6 +396,19 @@ void MainWindow::setupMenus() {
     selNoneAct->setShortcut(QKeySequence(tr("Ctrl+Shift+A")));
     connect(selNoneAct, &QAction::triggered, [this]{ mapView_->deselectAll(); });
 
+    auto* selPathAct = edit->addAction(tr("Select &Path"));
+    selPathAct->setShortcut(QKeySequence(tr("Ctrl+P")));
+    selPathAct->setToolTip(tr("Extend selection to every brick connected to current selection"));
+    connect(selPathAct, &QAction::triggered, [this]{ mapView_->selectPath(); });
+
+    edit->addSeparator();
+    auto* groupAct = edit->addAction(tr("&Group"));
+    groupAct->setShortcut(QKeySequence(tr("Ctrl+G")));
+    connect(groupAct, &QAction::triggered, [this]{ mapView_->groupSelection(); });
+    auto* ungroupAct = edit->addAction(tr("&Ungroup"));
+    ungroupAct->setShortcut(QKeySequence(tr("Ctrl+Shift+G")));
+    connect(ungroupAct, &QAction::triggered, [this]{ mapView_->ungroupSelection(); });
+
     edit->addSeparator();
     auto* addTextAct = edit->addAction(tr("Add &Text..."));
     addTextAct->setShortcut(QKeySequence(tr("Ctrl+T")));

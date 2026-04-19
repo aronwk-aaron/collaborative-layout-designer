@@ -705,6 +705,16 @@ void MapView::contextMenuEvent(QContextMenuEvent* e) {
             connect(sendBack, &QAction::triggered, [this]{ sendSelectionToBack(); });
             menu.addSeparator();
 
+            if (sel.size() >= 2) {
+                auto* grp = menu.addAction(tr("Group"));
+                connect(grp, &QAction::triggered, [this]{ groupSelection(); });
+            }
+            auto* ungrp = menu.addAction(tr("Ungroup"));
+            connect(ungrp, &QAction::triggered, [this]{ ungroupSelection(); });
+            auto* selPath = menu.addAction(tr("Select Path"));
+            connect(selPath, &QAction::triggered, [this]{ selectPath(); });
+            menu.addSeparator();
+
             auto* cut = menu.addAction(tr("Cut"));
             connect(cut, &QAction::triggered, [this]{ cutSelection(); });
             auto* copy = menu.addAction(tr("Copy"));
@@ -846,6 +856,84 @@ void MapView::sendSelectionToBack() {
     undoStack_->push(new edit::ReorderBricksCommand(
         *map_, std::move(targets), edit::ReorderBricksCommand::ToBack));
     rebuildScene();
+}
+
+void MapView::groupSelection() {
+    if (!map_) return;
+    std::vector<edit::BrickRef> targets;
+    for (QGraphicsItem* it : scene()->selectedItems()) {
+        if (!isBrickItem(it)) continue;
+        targets.push_back({ it->data(kBrickDataLayerIndex).toInt(),
+                            it->data(kBrickDataGuid).toString() });
+    }
+    if (targets.size() < 2) return;   // nothing to group
+    undoStack_->push(new edit::GroupBricksCommand(*map_, std::move(targets)));
+}
+
+void MapView::ungroupSelection() {
+    if (!map_) return;
+    std::vector<edit::BrickRef> targets;
+    for (QGraphicsItem* it : scene()->selectedItems()) {
+        if (!isBrickItem(it)) continue;
+        targets.push_back({ it->data(kBrickDataLayerIndex).toInt(),
+                            it->data(kBrickDataGuid).toString() });
+    }
+    if (targets.empty()) return;
+    undoStack_->push(new edit::UngroupBricksCommand(*map_, std::move(targets)));
+}
+
+void MapView::selectPath() {
+    if (!map_) return;
+    // Build a guid -> (layerIndex, QGraphicsItem*, Brick*) index, plus the
+    // starting frontier from the current selection.
+    QHash<QString, QGraphicsItem*> itemByGuid;
+    QHash<QString, core::Brick*>   brickByGuid;
+    QSet<QString> toVisit;
+    for (int li = 0; li < static_cast<int>(map_->layers().size()); ++li) {
+        auto* L = map_->layers()[li].get();
+        if (!L || L->kind() != core::LayerKind::Brick) continue;
+        for (auto& b : static_cast<core::LayerBrick&>(*L).bricks) {
+            brickByGuid.insert(b.guid, &b);
+        }
+    }
+    for (QGraphicsItem* it : scene()->items()) {
+        if (!isBrickItem(it)) continue;
+        const QString guid = it->data(kBrickDataGuid).toString();
+        itemByGuid.insert(guid, it);
+    }
+    for (QGraphicsItem* it : scene()->selectedItems()) {
+        if (!isBrickItem(it)) continue;
+        toVisit.insert(it->data(kBrickDataGuid).toString());
+    }
+    if (toVisit.isEmpty()) return;
+
+    // Transitive BFS over each brick's Connexion.linkedToId. LinkedToId points
+    // at the partner's *connection point* guid — not the brick guid — so we
+    // build a reverse index: connPointGuid -> brickGuid.
+    QHash<QString, QString> brickGuidForConnGuid;
+    for (auto it = brickByGuid.constBegin(); it != brickByGuid.constEnd(); ++it) {
+        for (const auto& c : it.value()->connections) {
+            brickGuidForConnGuid.insert(c.guid, it.key());
+        }
+    }
+
+    QSet<QString> visited = toVisit;
+    while (!toVisit.isEmpty()) {
+        const QString cur = *toVisit.constBegin();
+        toVisit.remove(cur);
+        auto bit = brickByGuid.constFind(cur);
+        if (bit == brickByGuid.constEnd()) continue;
+        for (const auto& c : bit.value()->connections) {
+            if (c.linkedToId.isEmpty()) continue;
+            const QString neighbourBrick = brickGuidForConnGuid.value(c.linkedToId);
+            if (neighbourBrick.isEmpty() || visited.contains(neighbourBrick)) continue;
+            visited.insert(neighbourBrick);
+            toVisit.insert(neighbourBrick);
+        }
+    }
+    for (const QString& guid : visited) {
+        if (auto* it = itemByGuid.value(guid)) it->setSelected(true);
+    }
 }
 
 void MapView::editSelectedTextContent() {

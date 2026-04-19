@@ -63,6 +63,13 @@ public:
     void bringSelectionToFront();
     void sendSelectionToBack();
 
+    // Grouping (same-layer vanilla groups — modules span layers).
+    void groupSelection();
+    void ungroupSelection();
+    // Extend selection to every brick reachable via connection links from the
+    // current selection (transitive closure over Connexion.linkedToId).
+    void selectPath();
+
     // Text ops.
     void addTextAtViewCenter(const QString& text);
     void addTextAtScenePos(const QString& text, QPointF scenePosPx);
