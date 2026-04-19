@@ -221,14 +221,18 @@ MapView::MapView(parts::PartsLibrary& parts, QWidget* parent)
             auto* L = map_->layers()[li].get();
             if (!L || L->kind() != core::LayerKind::Brick) { liveSnapActive_ = false; return std::nullopt; }
 
-            // Multi-select drag: don't run per-item connection snap. If we
-            // did, each selected brick would independently snap to some
-            // connection and their relative positions would break, which is
-            // exactly the "connections stay snapped together when moving
-            // multiple parts" requirement. Instead let Qt translate the
-            // whole group rigidly and rely on commitDragIfMoved to do any
-            // drop-time snap for the group as a whole.
-            if (this->scene()->selectedItems().size() > 1) return std::nullopt;
+            // Multi-select drag: only the "anchor" item (the one under the
+            // mouse grab, which we approximate as the first item in the
+            // dragStart snapshot) runs the connection search. The other
+            // selected siblings translate by Qt's built-in multi-drag
+            // delta, so the group moves rigidly AND can still snap to a
+            // connection via the anchor. This matches BlueBrick's
+            // mCurrentBrickUnderMouse-anchored getMovedSnapPoint flow.
+            if (this->scene()->selectedItems().size() > 1) {
+                if (dragStart_.empty() || dragStart_.front().item != item) {
+                    return std::nullopt;
+                }
+            }
 
             const core::LayerBrick& BL = static_cast<const core::LayerBrick&>(*L);
             const core::Brick* b = nullptr;
@@ -511,54 +515,70 @@ ConnectionSnapResult computeConnectionSnap(
 void MapView::commitDragIfMoved() {
     if (dragStart_.empty() || !map_) return;
 
-    std::vector<edit::MoveBricksCommand::Entry> entries;
     const double px = studToPx();
 
+    // Group-level delta: Qt's multi-drag translates every selected movable
+    // item by the same vector, so the group moves rigidly. We derive the
+    // drag delta from whichever entry the user grabbed (treating the first
+    // as the anchor) and apply the same delta to every entry — no per-
+    // brick divergence. This matches BlueBrick's behaviour: dragging a
+    // selection moves it as a whole, and any snap (connection or grid)
+    // applies to the anchor's position with the same translation
+    // replicated across the group.
+    std::vector<edit::MoveBricksCommand::Entry> entries;
+    QPointF groupDelta(0, 0);
+    bool haveDelta = false;
     for (const auto& s : dragStart_) {
         if (!s.item) continue;
-        const QPointF newScenePos = s.item->scenePos();
-        const QPointF delta = newScenePos - s.scenePosAtPress;
-        if (std::abs(delta.x()) < 0.5 && std::abs(delta.y()) < 0.5) continue;
-
+        if (!haveDelta) {
+            const QPointF d = s.item->scenePos() - s.scenePosAtPress;
+            if (std::abs(d.x()) < 0.5 && std::abs(d.y()) < 0.5) { dragStart_.clear(); return; }
+            groupDelta = QPointF(d.x() / px, d.y() / px);
+            haveDelta = true;
+        }
         edit::MoveBricksCommand::Entry e;
         e.ref.layerIndex = s.layerIndex;
         e.ref.guid = s.guid;
         e.beforeTopLeft = s.studTopLeftAtPress;
-        e.afterTopLeft  = s.studTopLeftAtPress + QPointF(delta.x() / px, delta.y() / px);
+        e.afterTopLeft  = s.studTopLeftAtPress + groupDelta;
         entries.push_back(e);
     }
+    if (entries.empty()) { dragStart_.clear(); return; }
 
-    // Connection snap runs FIRST and overrides grid snap — the user asked
-    // for this explicitly. We search using the raw (un-grid-snapped) drop
-    // position so nearby connections are discoverable even if the grid
-    // would have pulled the brick away. Only single-brick drags are
-    // supported (multi-select has no natural "primary" brick).
+    // Connection snap (group-aware). Using the first entry as the anchor,
+    // we look for a nearby compatible connection. If one fires, compute
+    // the extra translation needed to align the anchor's connection and
+    // apply that same extra to EVERY entry so the group keeps its shape.
     bool connectionSnapped = false;
     std::optional<edit::RotateBricksCommand::Entry> connectionRotate;
-    if (entries.size() == 1) {
-        const auto& e = entries.front();
-        if (auto* L = map_->layers()[e.ref.layerIndex].get();
+    {
+        const auto& anchor = entries.front();
+        if (auto* L = map_->layers()[anchor.ref.layerIndex].get();
             L && L->kind() == core::LayerKind::Brick) {
             const auto& BL = static_cast<const core::LayerBrick&>(*L);
             for (const auto& b : BL.bricks) {
-                if (b.guid != e.ref.guid) continue;
-                const QPointF proposedCentre = e.afterTopLeft
+                if (b.guid != anchor.ref.guid) continue;
+                const QPointF proposedCentre = anchor.afterTopLeft
                     + QPointF(b.displayArea.width() / 2.0, b.displayArea.height() / 2.0);
-                QSet<QString> moving; moving.insert(e.ref.guid);
-                // Threshold: at least 4 studs, or wider than the current
-                // grid snap step so grid snap can't pull the brick out of
-                // connection range. When live grid snap is off, stay
-                // conservative at 4 studs.
+                QSet<QString> moving;
+                for (const auto& e : entries) moving.insert(e.ref.guid);
                 const double threshold = std::max(4.0, snapStepStuds_);
                 auto snap = computeConnectionSnap(*map_, parts_, moving,
                                                    b.partNumber, b.orientation,
                                                    proposedCentre, threshold);
                 if (snap.applied) {
-                    entries.front().afterTopLeft = snap.newCenter
+                    const QPointF anchorNewTopLeft = snap.newCenter
                         - QPointF(b.displayArea.width() / 2.0, b.displayArea.height() / 2.0);
-                    if (std::abs(snap.newOrientation - b.orientation) > 0.01f) {
+                    const QPointF extra = anchorNewTopLeft - anchor.afterTopLeft;
+                    for (auto& e : entries) e.afterTopLeft += extra;
+                    // Rotation is only applied for single-brick drags.
+                    // Group rotation would need to pivot around the
+                    // anchor brick's connection point and rotate every
+                    // sibling; skipped for now in the interest of
+                    // predictable group translation.
+                    if (entries.size() == 1 && std::abs(snap.newOrientation - b.orientation) > 0.01f) {
                         edit::RotateBricksCommand::Entry re;
-                        re.ref = e.ref;
+                        re.ref = anchor.ref;
                         re.beforeOrientation = b.orientation;
                         re.afterOrientation  = snap.newOrientation;
                         connectionRotate = re;
@@ -570,14 +590,17 @@ void MapView::commitDragIfMoved() {
         }
     }
 
-    // Grid snap only applies to entries the connection snap didn't claim.
-    // When connectionSnapped is true on a single-brick drag, we leave that
-    // exact connection-aligned position alone. Multi-brick drags still
-    // grid-snap because connection search is skipped above.
+    // Grid snap (group-aware): snap the anchor's top-left to the grid and
+    // translate every entry by the same extra delta. Preserves the
+    // group's relative positions. Only applies when connection snap
+    // didn't fire.
     if (snapStepStuds_ > 0.0 && !connectionSnapped) {
-        for (auto& e : entries) {
-            e.afterTopLeft.setX(std::round(e.afterTopLeft.x() / snapStepStuds_) * snapStepStuds_);
-            e.afterTopLeft.setY(std::round(e.afterTopLeft.y() / snapStepStuds_) * snapStepStuds_);
+        const QPointF tl = entries.front().afterTopLeft;
+        const QPointF snapped(std::round(tl.x() / snapStepStuds_) * snapStepStuds_,
+                              std::round(tl.y() / snapStepStuds_) * snapStepStuds_);
+        const QPointF extra = snapped - tl;
+        if (!extra.isNull()) {
+            for (auto& e : entries) e.afterTopLeft += extra;
         }
     }
 
