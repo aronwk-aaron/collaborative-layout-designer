@@ -19,8 +19,13 @@ public:
 
 signals:
     void moduleDeleteRequested(const QString& moduleId);
-    void createModuleRequested();     // toolbar "Create from selection"
-    void importBbmRequested();        // toolbar "Import .bbm..."
+    void createModuleRequested();
+    void importBbmRequested();
+    void selectMembersRequested(const QString& moduleId);
+    void flattenRequested(const QString& moduleId);
+    void rescanRequested(const QString& moduleId);
+    void moveRequested(const QString& moduleId, double dxStuds, double dyStuds);
+    void rotateRequested(const QString& moduleId, double degrees);
 
 private:
     QListWidget* list_ = nullptr;

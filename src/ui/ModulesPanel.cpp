@@ -5,7 +5,11 @@
 #include "../core/Sidecar.h"
 
 #include <QContextMenuEvent>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QDoubleSpinBox>
 #include <QFileInfo>
+#include <QFormLayout>
 #include <QHBoxLayout>
 #include <QListWidget>
 #include <QListWidgetItem>
@@ -63,6 +67,43 @@ ModulesPanel::ModulesPanel(QWidget* parent)
         const QString id = item->toolTip();  // we stash the module id in the tooltip
         if (id.isEmpty()) return;
         QMenu menu(this);
+
+        auto* selAct = menu.addAction(tr("Select Members"));
+        connect(selAct, &QAction::triggered, [this, id]{ emit selectMembersRequested(id); });
+
+        menu.addSeparator();
+        auto* moveAct = menu.addAction(tr("Move..."));
+        connect(moveAct, &QAction::triggered, [this, id]{
+            QDialog dlg(this);
+            dlg.setWindowTitle(tr("Move module"));
+            auto* form = new QFormLayout(&dlg);
+            auto* dx = new QDoubleSpinBox(&dlg);
+            dx->setRange(-10000, 10000); dx->setDecimals(2);
+            auto* dy = new QDoubleSpinBox(&dlg);
+            dy->setRange(-10000, 10000); dy->setDecimals(2);
+            form->addRow(tr("ΔX (studs):"), dx);
+            form->addRow(tr("ΔY (studs):"), dy);
+            auto* bb = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+            form->addRow(bb);
+            connect(bb, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+            connect(bb, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+            if (dlg.exec() == QDialog::Accepted)
+                emit moveRequested(id, dx->value(), dy->value());
+        });
+        auto* rotMenu = menu.addMenu(tr("Rotate"));
+        for (double deg : { -90.0, -45.0, 45.0, 90.0, 180.0 }) {
+            auto* a = rotMenu->addAction(tr("%1°").arg(deg > 0 ? QStringLiteral("+") + QString::number(deg)
+                                                               : QString::number(deg)));
+            connect(a, &QAction::triggered, [this, id, deg]{ emit rotateRequested(id, deg); });
+        }
+
+        menu.addSeparator();
+        auto* flatAct = menu.addAction(tr("Flatten (dissolve module)"));
+        connect(flatAct, &QAction::triggered, [this, id]{ emit flattenRequested(id); });
+        auto* rescan = menu.addAction(tr("Re-scan from source"));
+        connect(rescan, &QAction::triggered, [this, id]{ emit rescanRequested(id); });
+
+        menu.addSeparator();
         auto* del = menu.addAction(tr("Delete module"));
         connect(del, &QAction::triggered, [this, id]{ emit moduleDeleteRequested(id); });
         menu.exec(list_->mapToGlobal(pos));

@@ -231,6 +231,100 @@ MainWindow::MainWindow(parts::PartsLibrary& parts, QWidget* parent)
     connect(modulesPanel_, &ModulesPanel::importBbmRequested,
             this, &MainWindow::onImportBbmAsModule);
 
+    // Select every brick belonging to the module — lets the user use the
+    // normal selection-based actions (arrow-key nudge, rotate, etc.) on the
+    // whole module at once.
+    connect(modulesPanel_, &ModulesPanel::selectMembersRequested, this, [this](const QString& id){
+        auto* map = mapView_->currentMap();
+        if (!map) return;
+        const core::Module* mod = nullptr;
+        for (const auto& m : map->sidecar.modules) if (m.id == id) { mod = &m; break; }
+        if (!mod) return;
+        mapView_->deselectAll();
+        for (QGraphicsItem* it : mapView_->scene()->items()) {
+            if (it->data(2).toString().isEmpty()) continue;
+            if (mod->memberIds.contains(it->data(1).toString())) it->setSelected(true);
+        }
+    });
+
+    // Move module by a user-entered delta (studs). Already undoable.
+    connect(modulesPanel_, &ModulesPanel::moveRequested, this,
+            [this](const QString& id, double dx, double dy){
+        if (!mapView_->currentMap() || (dx == 0 && dy == 0)) return;
+        mapView_->undoStack()->push(new edit::MoveModuleCommand(
+            *mapView_->currentMap(), id, QPointF(dx, dy)));
+        mapView_->rebuildScene();
+    });
+
+    connect(modulesPanel_, &ModulesPanel::rotateRequested, this,
+            [this](const QString& id, double deg){
+        if (!mapView_->currentMap()) return;
+        mapView_->undoStack()->push(new edit::RotateModuleCommand(
+            *mapView_->currentMap(), id, deg));
+        mapView_->rebuildScene();
+    });
+
+    connect(modulesPanel_, &ModulesPanel::flattenRequested, this, [this](const QString& id){
+        if (!mapView_->currentMap()) return;
+        mapView_->undoStack()->push(new edit::FlattenModuleCommand(*mapView_->currentMap(), id));
+        modulesPanel_->setMap(mapView_->currentMap());
+    });
+
+    // Re-scan: reload the module's sourceFile, replace its member bricks
+    // with fresh imports (new guids), pick up any upstream edits.
+    connect(modulesPanel_, &ModulesPanel::rescanRequested, this, [this](const QString& id){
+        auto* map = mapView_->currentMap();
+        if (!map) return;
+        const core::Module* mod = nullptr;
+        for (const auto& m : map->sidecar.modules) if (m.id == id) { mod = &m; break; }
+        if (!mod) return;
+        if (mod->sourceFile.isEmpty()) {
+            QMessageBox::information(this, tr("Re-scan module"),
+                tr("This module has no source .bbm file (it was created from a selection)."));
+            return;
+        }
+        if (!QFile::exists(mod->sourceFile)) {
+            QMessageBox::warning(this, tr("Re-scan module"),
+                tr("Source file not found:\n%1").arg(mod->sourceFile));
+            return;
+        }
+        auto res = saveload::readBbm(mod->sourceFile);
+        if (!res.ok()) {
+            QMessageBox::warning(this, tr("Re-scan module"),
+                tr("Could not read %1: %2").arg(mod->sourceFile, res.error));
+            return;
+        }
+        // Find the target layer (first brick layer currently holding a member).
+        int targetLayer = -1;
+        for (int li = 0; li < static_cast<int>(map->layers().size()); ++li) {
+            auto* L = map->layers()[li].get();
+            if (!L || L->kind() != core::LayerKind::Brick) continue;
+            for (const auto& b : static_cast<const core::LayerBrick&>(*L).bricks) {
+                if (mod->memberIds.contains(b.guid)) { targetLayer = li; break; }
+            }
+            if (targetLayer >= 0) break;
+        }
+        if (targetLayer < 0) targetLayer = 0;
+        std::vector<core::Brick> fresh;
+        for (const auto& L : res.map->layers()) {
+            if (!L || L->kind() != core::LayerKind::Brick) continue;
+            for (const auto& b : static_cast<const core::LayerBrick&>(*L).bricks) {
+                core::Brick copy = b;
+                copy.guid.clear();
+                fresh.push_back(std::move(copy));
+            }
+        }
+        if (fresh.empty()) {
+            QMessageBox::information(this, tr("Re-scan module"),
+                tr("Source file has no brick layers to import."));
+            return;
+        }
+        mapView_->undoStack()->push(new edit::RescanModuleCommand(
+            *map, targetLayer, id, std::move(fresh)));
+        mapView_->rebuildScene();
+        modulesPanel_->setMap(map);
+    });
+
     setupMenus();
 
     // ----- Toolbar: snap + rotation step presets -----

@@ -59,6 +59,60 @@ private:
     QPointF    delta_;
 };
 
+// Rotate every brick belonging to a module around the module's centroid by
+// the given angle (degrees; positive = clockwise to match Qt convention).
+// Cross-layer. Captures pre-state on first redo so undo is exact.
+class RotateModuleCommand : public QUndoCommand {
+public:
+    RotateModuleCommand(core::Map& map, QString moduleId, double degrees,
+                        QUndoCommand* parent = nullptr);
+    void undo() override;
+    void redo() override;
+private:
+    struct Snap { int layerIndex = -1; QString guid; QPointF topLeft; float orientation = 0.0f; };
+    core::Map& map_;
+    QString    moduleId_;
+    double     degrees_;
+    std::vector<Snap> before_;
+    bool        captured_ = false;
+};
+
+// Dissolve a module: remove the sidecar entry so its members become
+// ordinary independent bricks/texts/rulers on their own layers. Undo
+// recreates the module entry with the original memberIds.
+class FlattenModuleCommand : public QUndoCommand {
+public:
+    FlattenModuleCommand(core::Map& map, QString moduleId, QUndoCommand* parent = nullptr);
+    void undo() override;
+    void redo() override;
+private:
+    core::Map& map_;
+    QString    moduleId_;
+    std::optional<core::Module> removed_;
+    int insertIndex_ = -1;
+};
+
+// Re-scan a module from its source .bbm: delete current member bricks and
+// re-import from the file with fresh guids. Useful when the upstream
+// module file was edited and the user wants to pick up the change.
+// Snapshots pre-state so undo fully restores the previous members.
+class RescanModuleCommand : public QUndoCommand {
+public:
+    RescanModuleCommand(core::Map& map, int targetLayerIndex, QString moduleId,
+                        std::vector<core::Brick> freshBricks,
+                        QUndoCommand* parent = nullptr);
+    void undo() override;
+    void redo() override;
+private:
+    core::Map& map_;
+    int         layerIndex_;
+    QString     moduleId_;
+    std::vector<core::Brick> freshBricks_;
+    std::vector<core::Brick> oldBricks_;        // snapshot for undo
+    QSet<QString> oldMemberIds_;
+    bool captured_ = false;
+};
+
 // Load a .bbm, merge its brick layers into the current map (remapping guids
 // to fresh ones to avoid collisions), and register the new bricks as a module.
 // `targetLayerIndex` is the brick-layer in the host map that will receive the

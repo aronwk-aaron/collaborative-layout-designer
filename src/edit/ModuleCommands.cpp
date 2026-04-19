@@ -10,6 +10,8 @@
 #include <QObject>
 #include <QUuid>
 
+#include <cmath>
+
 namespace cld::edit {
 
 namespace {
@@ -110,6 +112,178 @@ void MoveModuleCommand::undo() {
             }
         }
     }
+}
+
+// ----- RotateModuleCommand -----
+
+RotateModuleCommand::RotateModuleCommand(core::Map& map, QString moduleId, double degrees,
+                                         QUndoCommand* parent)
+    : QUndoCommand(parent), map_(map), moduleId_(std::move(moduleId)), degrees_(degrees) {
+    setText(QObject::tr("Rotate module %1°").arg(degrees_, 0, 'f', 1));
+}
+
+void RotateModuleCommand::redo() {
+    const int i = findModuleIndex(map_, moduleId_);
+    if (i < 0) return;
+    const auto& mod = map_.sidecar.modules[i];
+
+    // Snapshot every member brick's pre-state the first time we redo, so
+    // undo restores exact positions even for fractional angles.
+    if (!captured_) {
+        before_.clear();
+        for (int li = 0; li < static_cast<int>(map_.layers().size()); ++li) {
+            auto* L = brickLayer(map_, li);
+            if (!L) continue;
+            for (const auto& b : L->bricks) {
+                if (mod.memberIds.contains(b.guid)) {
+                    before_.push_back({ li, b.guid, b.displayArea.topLeft(), b.orientation });
+                }
+            }
+        }
+        captured_ = true;
+    }
+    if (before_.empty()) return;
+
+    // Module centre: centroid of member displayArea centres (stud coords).
+    QPointF centroid(0, 0);
+    int count = 0;
+    for (int li = 0; li < static_cast<int>(map_.layers().size()); ++li) {
+        auto* L = brickLayer(map_, li);
+        if (!L) continue;
+        for (const auto& b : L->bricks) {
+            if (mod.memberIds.contains(b.guid)) {
+                centroid += b.displayArea.center();
+                ++count;
+            }
+        }
+    }
+    if (count == 0) return;
+    centroid /= count;
+
+    const double rad = degrees_ * M_PI / 180.0;
+    const double c = std::cos(rad), s = std::sin(rad);
+
+    for (int li = 0; li < static_cast<int>(map_.layers().size()); ++li) {
+        auto* L = brickLayer(map_, li);
+        if (!L) continue;
+        for (auto& b : L->bricks) {
+            if (!mod.memberIds.contains(b.guid)) continue;
+            // Rotate the brick's centre around the module centroid.
+            const QPointF centre = b.displayArea.center();
+            const QPointF rel = centre - centroid;
+            const QPointF rotated(rel.x() * c - rel.y() * s, rel.x() * s + rel.y() * c);
+            const QPointF newCentre = centroid + rotated;
+            const QPointF newTopLeft = newCentre - QPointF(b.displayArea.width() / 2.0,
+                                                            b.displayArea.height() / 2.0);
+            b.displayArea.moveTo(newTopLeft);
+            b.orientation = std::fmod(b.orientation + static_cast<float>(degrees_), 360.0f);
+        }
+    }
+}
+
+void RotateModuleCommand::undo() {
+    for (const auto& s : before_) {
+        auto* L = brickLayer(map_, s.layerIndex);
+        if (!L) continue;
+        for (auto& b : L->bricks) {
+            if (b.guid == s.guid) {
+                b.displayArea.moveTo(s.topLeft);
+                b.orientation = s.orientation;
+                break;
+            }
+        }
+    }
+}
+
+// ----- FlattenModuleCommand -----
+
+FlattenModuleCommand::FlattenModuleCommand(core::Map& map, QString moduleId, QUndoCommand* parent)
+    : QUndoCommand(parent), map_(map), moduleId_(std::move(moduleId)) {
+    setText(QObject::tr("Flatten module"));
+}
+
+void FlattenModuleCommand::redo() {
+    const int i = findModuleIndex(map_, moduleId_);
+    if (i < 0) { removed_.reset(); insertIndex_ = -1; return; }
+    removed_ = map_.sidecar.modules[i];
+    insertIndex_ = i;
+    map_.sidecar.modules.erase(map_.sidecar.modules.begin() + i);
+}
+
+void FlattenModuleCommand::undo() {
+    if (!removed_) return;
+    const int idx = std::min<int>(insertIndex_, static_cast<int>(map_.sidecar.modules.size()));
+    map_.sidecar.modules.insert(map_.sidecar.modules.begin() + idx, *removed_);
+}
+
+// ----- RescanModuleCommand -----
+
+RescanModuleCommand::RescanModuleCommand(core::Map& map, int targetLayerIndex, QString moduleId,
+                                         std::vector<core::Brick> freshBricks,
+                                         QUndoCommand* parent)
+    : QUndoCommand(parent), map_(map), layerIndex_(targetLayerIndex),
+      moduleId_(std::move(moduleId)), freshBricks_(std::move(freshBricks)) {
+    setText(QObject::tr("Re-scan module (%1 bricks)").arg(freshBricks_.size()));
+}
+
+void RescanModuleCommand::redo() {
+    const int mi = findModuleIndex(map_, moduleId_);
+    if (mi < 0) return;
+    auto* L = brickLayer(map_, layerIndex_);
+    if (!L) return;
+
+    // Snapshot the pre-state once: remove old members from the layer and
+    // stash them so undo reinstates.
+    if (!captured_) {
+        oldMemberIds_ = map_.sidecar.modules[mi].memberIds;
+        oldBricks_.clear();
+        auto it = L->bricks.begin();
+        while (it != L->bricks.end()) {
+            if (oldMemberIds_.contains(it->guid)) {
+                oldBricks_.push_back(*it);
+                it = L->bricks.erase(it);
+            } else {
+                ++it;
+            }
+        }
+        captured_ = true;
+    } else {
+        // Re-apply on redo after undo: remove the same guids again.
+        auto it = L->bricks.begin();
+        while (it != L->bricks.end()) {
+            if (oldMemberIds_.contains(it->guid)) it = L->bricks.erase(it);
+            else                                   ++it;
+        }
+    }
+
+    // Insert fresh bricks and update memberIds. Fresh guids have already been
+    // minted by the caller (MainWindow reads the .bbm and clears guids).
+    QSet<QString> newIds;
+    for (auto& b : freshBricks_) {
+        if (b.guid.isEmpty()) b.guid = core::newBbmId();
+        newIds.insert(b.guid);
+        L->bricks.push_back(b);
+    }
+    map_.sidecar.modules[mi].memberIds = newIds;
+    map_.sidecar.modules[mi].importedAt = QDateTime::currentDateTimeUtc();
+}
+
+void RescanModuleCommand::undo() {
+    const int mi = findModuleIndex(map_, moduleId_);
+    if (mi < 0) return;
+    auto* L = brickLayer(map_, layerIndex_);
+    if (!L) return;
+    // Remove fresh bricks.
+    QSet<QString> freshIds;
+    for (const auto& b : freshBricks_) freshIds.insert(b.guid);
+    auto it = L->bricks.begin();
+    while (it != L->bricks.end()) {
+        if (freshIds.contains(it->guid)) it = L->bricks.erase(it);
+        else                              ++it;
+    }
+    // Restore old bricks + memberIds.
+    for (const auto& b : oldBricks_) L->bricks.push_back(b);
+    map_.sidecar.modules[mi].memberIds = oldMemberIds_;
 }
 
 // ----- ImportBbmAsModuleCommand -----
