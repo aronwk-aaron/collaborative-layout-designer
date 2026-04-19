@@ -67,14 +67,22 @@ ModulesPanel::ModulesPanel(QWidget* parent)
         if (!id.isEmpty()) emit saveToLibraryRequested(id);
     });
     // Delete + Save-to-library buttons enable only when a valid module row
-    // is selected. Also auto-select the module's members on the map when
-    // the user clicks a row, so the module is ready to move / rotate /
-    // delete.
-    connect(list_, &QListWidget::currentItemChanged, this, [this, deleteBtn, saveLibBtn](QListWidgetItem* cur, QListWidgetItem*){
+    // is selected.
+    connect(list_, &QListWidget::currentItemChanged, this, [deleteBtn, saveLibBtn](QListWidgetItem* cur, QListWidgetItem*){
         const bool valid = cur && !cur->toolTip().isEmpty();
         deleteBtn->setEnabled(valid);
         saveLibBtn->setEnabled(valid);
-        if (valid) emit selectMembersRequested(cur->toolTip());
+    });
+    // itemClicked (not currentItemChanged) fires on EVERY click, including
+    // repeat clicks on the already-current row. MainWindow treats this as
+    // a toggle: first click selects the module's members, second click
+    // deselects. The row still looks "current" in the list — toggling
+    // doesn't change the list's current-item state, only the map's
+    // scene selection.
+    connect(list_, &QListWidget::itemClicked, this, [this](QListWidgetItem* item){
+        if (!item) return;
+        const QString id = item->toolTip();
+        if (!id.isEmpty()) emit selectMembersRequested(id);
     });
 
     connect(list_, &QWidget::customContextMenuRequested, this, [this](const QPoint& pos) {
@@ -114,6 +122,8 @@ ModulesPanel::ModulesPanel(QWidget* parent)
         }
 
         menu.addSeparator();
+        auto* renameAct = menu.addAction(tr("Rename..."));
+        connect(renameAct, &QAction::triggered, [this, id]{ emit renameRequested(id); });
         auto* cloneAct = menu.addAction(tr("Clone Module"));
         connect(cloneAct, &QAction::triggered, [this, id]{ emit cloneRequested(id); });
 

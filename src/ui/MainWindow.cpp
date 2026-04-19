@@ -233,8 +233,11 @@ MainWindow::MainWindow(parts::PartsLibrary& parts, QWidget* parent)
     connect(modulesPanel_, &ModulesPanel::importBbmRequested,
             this, &MainWindow::onImportBbmAsModule);
 
-    // Select every brick belonging to the module — lets the user use the
-    // normal selection-based actions (arrow-key nudge, rotate, etc.) on the
+    // Toggle the module's members on/off in the scene selection. If every
+    // member is already selected (and nothing outside the module is
+    // selected), clicking the row again deselects. Otherwise set the
+    // selection to the module's members — lets the user use the normal
+    // selection-based actions (arrow-key nudge, rotate, etc.) on the
     // whole module at once.
     connect(modulesPanel_, &ModulesPanel::selectMembersRequested, this, [this](const QString& id){
         auto* map = mapView_->currentMap();
@@ -242,7 +245,19 @@ MainWindow::MainWindow(parts::PartsLibrary& parts, QWidget* parent)
         const core::Module* mod = nullptr;
         for (const auto& m : map->sidecar.modules) if (m.id == id) { mod = &m; break; }
         if (!mod) return;
+
+        // Check whether the current scene selection already equals the
+        // module's member set.
+        QSet<QString> currentSel;
+        for (QGraphicsItem* it : mapView_->scene()->selectedItems()) {
+            if (it->data(2).toString().isEmpty()) continue;
+            currentSel.insert(it->data(1).toString());
+        }
+        const bool alreadySelected = !mod->memberIds.isEmpty() && currentSel == mod->memberIds;
+
         mapView_->deselectAll();
+        if (alreadySelected) return;   // toggle off
+
         for (QGraphicsItem* it : mapView_->scene()->items()) {
             if (it->data(2).toString().isEmpty()) continue;
             if (mod->memberIds.contains(it->data(1).toString())) it->setSelected(true);
@@ -270,6 +285,21 @@ MainWindow::MainWindow(parts::PartsLibrary& parts, QWidget* parent)
         if (!mapView_->currentMap()) return;
         mapView_->undoStack()->push(new edit::FlattenModuleCommand(*mapView_->currentMap(), id));
         modulesPanel_->setMap(mapView_->currentMap());
+    });
+
+    // Rename: undoable name edit via a simple input dialog.
+    connect(modulesPanel_, &ModulesPanel::renameRequested, this, [this](const QString& id){
+        auto* map = mapView_->currentMap();
+        if (!map) return;
+        const core::Module* mod = nullptr;
+        for (const auto& m : map->sidecar.modules) if (m.id == id) { mod = &m; break; }
+        if (!mod) return;
+        bool ok = false;
+        const QString newName = QInputDialog::getText(this, tr("Rename module"),
+            tr("Module name:"), QLineEdit::Normal, mod->name, &ok);
+        if (!ok || newName == mod->name) return;
+        mapView_->undoStack()->push(new edit::RenameModuleCommand(*map, id, newName));
+        modulesPanel_->setMap(map);
     });
 
     // Clone: duplicate a module in-place so the user can have multiple

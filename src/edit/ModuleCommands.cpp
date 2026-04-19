@@ -195,6 +195,27 @@ void RotateModuleCommand::undo() {
     }
 }
 
+// ----- RenameModuleCommand -----
+
+RenameModuleCommand::RenameModuleCommand(core::Map& map, QString moduleId, QString newName,
+                                         QUndoCommand* parent)
+    : QUndoCommand(parent), map_(map),
+      moduleId_(std::move(moduleId)), newName_(std::move(newName)) {
+    const int i = findModuleIndex(map_, moduleId_);
+    if (i >= 0) oldName_ = map_.sidecar.modules[i].name;
+    setText(QObject::tr("Rename module"));
+}
+
+void RenameModuleCommand::redo() {
+    const int i = findModuleIndex(map_, moduleId_);
+    if (i >= 0) map_.sidecar.modules[i].name = newName_;
+}
+
+void RenameModuleCommand::undo() {
+    const int i = findModuleIndex(map_, moduleId_);
+    if (i >= 0) map_.sidecar.modules[i].name = oldName_;
+}
+
 // ----- CloneModuleCommand -----
 
 CloneModuleCommand::CloneModuleCommand(core::Map& map, QString sourceModuleId,

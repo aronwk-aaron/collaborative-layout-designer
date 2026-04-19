@@ -77,6 +77,21 @@ private:
     bool        captured_ = false;
 };
 
+// Rename a module in-project. Purely updates sidecar.modules[i].name;
+// no brick data is touched.
+class RenameModuleCommand : public QUndoCommand {
+public:
+    RenameModuleCommand(core::Map& map, QString moduleId, QString newName,
+                        QUndoCommand* parent = nullptr);
+    void undo() override;
+    void redo() override;
+private:
+    core::Map& map_;
+    QString    moduleId_;
+    QString    oldName_;
+    QString    newName_;
+};
+
 // Clone an existing module in-project: duplicates every member brick
 // (fresh guids, same part numbers / orientation / altitude / layer) at an
 // offset from the source, and registers a new Module entry over the
