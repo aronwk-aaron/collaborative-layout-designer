@@ -6,12 +6,23 @@ The schema isn't formally documented upstream — the C# `System.Xml.Serializati
 
 ## Wire-level facts
 
+Verified empirically against real `.bbm` files saved by BlueBrick 1.9.2.0
+(`fixtures/bbm-corpus/tight-corner.bbm` and others in the private user corpus):
+
 - **Transport**: `XmlSerializer.Serialize(StreamWriter, Map)` with `new StreamWriter(filename, false)` (no explicit encoding).
-  - Encoding: UTF-8. Presence/absence of BOM must be verified against captured goldens (`StreamWriter` on .NET Framework 4.8 defaults differ from Core).
-  - Indentation: **none** (`XmlSerializer` uses default `XmlWriter` settings — `Indent = false`, all on one line).
+  - Encoding: UTF-8, **no BOM** (file starts with `3c 3f 78 6d 6c` / `<?xml`).
+  - Indentation: **yes — 2 spaces**. Contrary to the default `XmlWriter` behavior, .NET Framework 4.8's `XmlSerializer.Serialize(TextWriter, ...)` internally uses `XmlTextWriter` with `Formatting = Formatting.Indented` and 2-space indents. Real `.bbm` files are pretty-printed.
+  - Line endings: **CRLF** (saved on Windows; `file(1)` reports "with CRLF line terminators").
   - XML declaration: `<?xml version="1.0" encoding="utf-8"?>`.
-- **Root element**: `<Map>` with `xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"` and `xmlns:xsd="http://www.w3.org/2001/XMLSchema"` attributes (default `XmlSerializer` namespaces).
-- **Line endings inside text content**: `\n` is replaced with `Environment.NewLine` on read and inverted on write — so multi-line `Comment` text contains platform newlines as captured.
+  - No trailing newline — file ends with `</Map>` at column 0.
+- **Root element**: **`<Map>` with NO namespace attributes**. The `XmlSerializer` does not emit `xmlns:xsi`/`xmlns:xsd` when the serialized type implements `IXmlSerializable` and writes its own body via `WriteXml`. Our writer must match (earlier drafts incorrectly emitted these).
+- **Empty elements**: written as `<Tag />` (space before `/>`). Qt's `QXmlStreamWriter` defaults to `<Tag/>` — byte-exact CI will need a post-processor or a patched writer to match.
+- **Line endings inside text content**: upstream's `Comment` read path replaces `\n` with `Environment.NewLine`; write path inverts it. So multi-line text contains platform newlines as captured.
+
+Open items for byte-exact round-trip CI (planned Phase 1.5+):
+- CRLF output from `QXmlStreamWriter` (it emits LF; need to post-process or wrap the device).
+- Empty-element spacing `<Tag />` vs `<Tag/>`.
+- Attribute order within elements (vanilla emits `type`, `id` in that order on `<Layer>`; Qt preserves the order of `writeAttribute` calls — we control this).
 
 ## Schema (version 9 — CURRENT_DATA_VERSION in Map.cs)
 

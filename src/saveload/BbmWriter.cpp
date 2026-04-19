@@ -41,9 +41,10 @@ int sumNbItems(const core::Map& m) {
 }
 
 void writeMapBody(QXmlStreamWriter& w, const core::Map& m) {
-    w.writeAttribute(QStringLiteral("xmlns:xsi"), QStringLiteral("http://www.w3.org/2001/XMLSchema-instance"));
-    w.writeAttribute(QStringLiteral("xmlns:xsd"), QStringLiteral("http://www.w3.org/2001/XMLSchema"));
-
+    // Vanilla BlueBrick's <Map> root has NO xmlns attributes (verified against
+    // real saved files; .NET Framework 4.8's XmlSerializer.Serialize over
+    // IXmlSerializable does not emit xsi/xsd namespaces by default when the
+    // type provides its own WriteXml).
     xml::writeIntElement(w, QStringLiteral("Version"), core::Map::kCurrentDataVersion);
     xml::writeIntElement(w, QStringLiteral("nbItems"), sumNbItems(m));
 
@@ -70,7 +71,11 @@ void writeMapBody(QXmlStreamWriter& w, const core::Map& m) {
 
 WriteResult writeBbm(const core::Map& m, QIODevice& output) {
     QXmlStreamWriter w(&output);
-    w.setAutoFormatting(false); // vanilla XmlSerializer output is non-indented
+    // Vanilla .NET Framework 4.8 XmlSerializer emits indented XML with 2-space
+    // indentation. We match this; byte-exact CRLF handling + empty-element
+    // spacing (<Tag /> vs <Tag/>) come later once golden-file CI is wired up.
+    w.setAutoFormatting(true);
+    w.setAutoFormattingIndent(2);
     w.writeStartDocument(QStringLiteral("1.0"));
     w.writeStartElement(QStringLiteral("Map"));
     writeMapBody(w, m);

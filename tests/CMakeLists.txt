@@ -13,3 +13,4 @@ FetchContent_MakeAvailable(googletest)
 include(GoogleTest)
 
 add_subdirectory(saveload)
+add_subdirectory(parts)
