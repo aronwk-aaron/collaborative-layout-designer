@@ -1,23 +1,16 @@
 #pragma once
 
-#include "Ids.h"
+#include "LayerItem.h"
 
-#include <unordered_set>
-#include <variant>
+#include <QString>
 
 namespace cld::core {
 
-using MemberId = std::variant<BrickId, RulerId, AreaId, LabelId, GroupId>;
-
-struct MemberIdHash {
-    size_t operator()(const MemberId& m) const noexcept {
-        return std::visit([](auto id) { return std::hash<decltype(id)>{}(id); }, m);
-    }
-};
-
-struct Group {
-    GroupId id;
-    std::unordered_set<MemberId, MemberIdHash> members;
+// Vanilla upstream <Group id="GUID"><PartNumber/><MyGroup/></Group>.
+// Groups are written after all items in a layer, as a flat <Groups> list,
+// and linked by GUID via each item's <MyGroup> element.
+struct Group : LayerItem {
+    QString partNumber;  // empty for user-created groups, non-empty for library meta-groups
 };
 
 }

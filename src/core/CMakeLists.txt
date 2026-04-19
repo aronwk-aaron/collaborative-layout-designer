@@ -4,10 +4,17 @@ add_library(cld_core STATIC
     Geometry.h
     Map.h
     Layer.h
+    LayerItem.h
     LayerGrid.h
+    LayerBrick.h
+    LayerText.h
+    LayerArea.h
+    LayerRuler.h
     FontSpec.h
     Brick.h
     Group.h
+    TextCell.h
+    RulerItem.h
 )
 
 target_include_directories(cld_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)

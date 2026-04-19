@@ -2,7 +2,11 @@
 #include "saveload/BbmWriter.h"
 #include "saveload/XmlPrimitives.h"
 
+#include "core/LayerArea.h"
+#include "core/LayerBrick.h"
 #include "core/LayerGrid.h"
+#include "core/LayerRuler.h"
+#include "core/LayerText.h"
 #include "core/Map.h"
 
 #include <gtest/gtest.h>
@@ -159,9 +163,203 @@ TEST(RoundTrip, MapWithLayerGrid) {
     EXPECT_EQ(parsed->cellIndexCorner, src.cellIndexCorner);
 }
 
+TEST(RoundTrip, MapWithLayerBrick) {
+    core::Map original = makeSampleMap();
+
+    auto layer = std::make_unique<core::LayerBrick>();
+    layer->guid = QStringLiteral("layer-brick-1");
+    layer->name = QStringLiteral("Track");
+    layer->visible = true;
+    layer->transparency = 90;
+    layer->hull.color = QColor(50, 80, 120);
+    layer->hull.thickness = 2;
+    layer->displayBrickElevation = true;
+
+    core::Brick b;
+    b.guid = QStringLiteral("brick-1");
+    b.displayArea = QRectF(10.0, 20.0, 32.0, 16.0);
+    b.myGroupId = QStringLiteral("group-1");
+    b.partNumber = QStringLiteral("2875");
+    b.orientation = 90.5f;
+    b.activeConnectionPointIndex = 1;
+    b.altitude = 0.5f;
+    core::ConnectionPoint cp0; cp0.guid = QStringLiteral("cp-0"); cp0.linkedToId = QStringLiteral("cp-other");
+    core::ConnectionPoint cp1; cp1.guid = QStringLiteral("cp-1");
+    b.connections = { cp0, cp1 };
+    layer->bricks.push_back(b);
+
+    core::Group g;
+    g.guid = QStringLiteral("group-1");
+    g.partNumber = QStringLiteral("CrossingGate");
+    layer->groups.push_back(g);
+
+    original.layers().push_back(std::move(layer));
+
+    QByteArray buf;
+    {
+        QBuffer out(&buf);
+        ASSERT_TRUE(out.open(QIODevice::WriteOnly));
+        ASSERT_TRUE(saveload::writeBbm(original, out).ok);
+    }
+
+    QBuffer in(&buf);
+    ASSERT_TRUE(in.open(QIODevice::ReadOnly));
+    auto result = saveload::readBbm(in);
+    ASSERT_TRUE(result.ok()) << result.error.toStdString();
+    ASSERT_EQ(result.map->layers().size(), 1u);
+
+    const auto* parsed = dynamic_cast<const core::LayerBrick*>(result.map->layers()[0].get());
+    ASSERT_NE(parsed, nullptr);
+    EXPECT_EQ(parsed->guid, QStringLiteral("layer-brick-1"));
+    EXPECT_TRUE(parsed->displayBrickElevation);
+    ASSERT_EQ(parsed->bricks.size(), 1u);
+    EXPECT_EQ(parsed->bricks[0].guid, QStringLiteral("brick-1"));
+    EXPECT_EQ(parsed->bricks[0].partNumber, QStringLiteral("2875"));
+    EXPECT_FLOAT_EQ(parsed->bricks[0].orientation, 90.5f);
+    EXPECT_EQ(parsed->bricks[0].activeConnectionPointIndex, 1);
+    EXPECT_FLOAT_EQ(parsed->bricks[0].altitude, 0.5f);
+    EXPECT_EQ(parsed->bricks[0].myGroupId, QStringLiteral("group-1"));
+    EXPECT_EQ(parsed->bricks[0].displayArea, QRectF(10.0, 20.0, 32.0, 16.0));
+    ASSERT_EQ(parsed->bricks[0].connections.size(), 2u);
+    EXPECT_EQ(parsed->bricks[0].connections[0].guid, QStringLiteral("cp-0"));
+    EXPECT_EQ(parsed->bricks[0].connections[0].linkedToId, QStringLiteral("cp-other"));
+    EXPECT_EQ(parsed->bricks[0].connections[1].guid, QStringLiteral("cp-1"));
+    EXPECT_EQ(parsed->bricks[0].connections[1].linkedToId, QString());
+    ASSERT_EQ(parsed->groups.size(), 1u);
+    EXPECT_EQ(parsed->groups[0].guid, QStringLiteral("group-1"));
+    EXPECT_EQ(parsed->groups[0].partNumber, QStringLiteral("CrossingGate"));
+}
+
+TEST(RoundTrip, MapWithLayerText) {
+    core::Map original = makeSampleMap();
+    auto layer = std::make_unique<core::LayerText>();
+    layer->guid = QStringLiteral("text-layer");
+    layer->name = QStringLiteral("Labels");
+
+    core::TextCell c;
+    c.guid = QStringLiteral("cell-1");
+    c.displayArea = QRectF(0, 0, 100, 20);
+    c.text = QStringLiteral("Hello\nworld");
+    c.orientation = 45.0f;
+    c.fontColor = QColor(128, 0, 128);
+    c.font.familyName = QStringLiteral("Arial");
+    c.font.sizePt = 14.0f;
+    c.font.styleString = QStringLiteral("Italic");
+    c.alignment = core::TextAlignment::Far;
+    layer->textCells.push_back(c);
+    original.layers().push_back(std::move(layer));
+
+    QByteArray buf;
+    { QBuffer out(&buf); ASSERT_TRUE(out.open(QIODevice::WriteOnly)); ASSERT_TRUE(saveload::writeBbm(original, out).ok); }
+    QBuffer in(&buf); ASSERT_TRUE(in.open(QIODevice::ReadOnly));
+    auto result = saveload::readBbm(in);
+    ASSERT_TRUE(result.ok()) << result.error.toStdString();
+
+    const auto* parsed = dynamic_cast<const core::LayerText*>(result.map->layers()[0].get());
+    ASSERT_NE(parsed, nullptr);
+    ASSERT_EQ(parsed->textCells.size(), 1u);
+    EXPECT_EQ(parsed->textCells[0].text, QStringLiteral("Hello\nworld"));
+    EXPECT_FLOAT_EQ(parsed->textCells[0].orientation, 45.0f);
+    EXPECT_EQ(parsed->textCells[0].font.familyName, QStringLiteral("Arial"));
+    EXPECT_FLOAT_EQ(parsed->textCells[0].font.sizePt, 14.0f);
+    EXPECT_EQ(parsed->textCells[0].font.styleString, QStringLiteral("Italic"));
+    EXPECT_EQ(parsed->textCells[0].alignment, core::TextAlignment::Far);
+}
+
+TEST(RoundTrip, MapWithLayerArea) {
+    core::Map original = makeSampleMap();
+    auto layer = std::make_unique<core::LayerArea>();
+    layer->guid = QStringLiteral("area-layer");
+    layer->name = QStringLiteral("Grass");
+    layer->areaCellSizeInStud = 16;
+    layer->cells = {
+        core::AreaCell{ 0, 0, QColor(0, 128, 0) },
+        core::AreaCell{ 1, 0, QColor(0, 128, 0, 200) },
+        core::AreaCell{ -5, 3, QColor(128, 128, 0) },
+    };
+    original.layers().push_back(std::move(layer));
+
+    QByteArray buf;
+    { QBuffer out(&buf); ASSERT_TRUE(out.open(QIODevice::WriteOnly)); ASSERT_TRUE(saveload::writeBbm(original, out).ok); }
+    QBuffer in(&buf); ASSERT_TRUE(in.open(QIODevice::ReadOnly));
+    auto result = saveload::readBbm(in);
+    ASSERT_TRUE(result.ok()) << result.error.toStdString();
+
+    const auto* parsed = dynamic_cast<const core::LayerArea*>(result.map->layers()[0].get());
+    ASSERT_NE(parsed, nullptr);
+    EXPECT_EQ(parsed->areaCellSizeInStud, 16);
+    ASSERT_EQ(parsed->cells.size(), 3u);
+    EXPECT_EQ(parsed->cells[0].x, 0);
+    EXPECT_EQ(parsed->cells[0].y, 0);
+    EXPECT_EQ(parsed->cells[0].color.rgba(), QColor(0, 128, 0).rgba());
+    EXPECT_EQ(parsed->cells[1].color.alpha(), 200);
+    EXPECT_EQ(parsed->cells[2].x, -5);
+    EXPECT_EQ(parsed->cells[2].y, 3);
+}
+
+TEST(RoundTrip, MapWithLayerRuler) {
+    core::Map original = makeSampleMap();
+    auto layer = std::make_unique<core::LayerRuler>();
+    layer->guid = QStringLiteral("ruler-layer");
+    layer->name = QStringLiteral("Measurements");
+
+    core::LayerRuler::AnyRuler lin;
+    lin.kind = core::RulerKind::Linear;
+    lin.linear.guid = QStringLiteral("ruler-1");
+    lin.linear.displayArea = QRectF(0, 0, 100, 10);
+    lin.linear.color = QColor(255, 0, 0);
+    lin.linear.lineThickness = 1.5f;
+    lin.linear.displayDistance = true;
+    lin.linear.displayUnit = false;
+    lin.linear.point1 = QPointF(10, 20);
+    lin.linear.point2 = QPointF(110, 20);
+    lin.linear.attachedBrick1Id = QStringLiteral("brick-a");
+    lin.linear.attachedBrick2Id = QString();
+    lin.linear.offsetDistance = 5.0f;
+    lin.linear.allowOffset = true;
+    layer->rulers.push_back(lin);
+
+    core::LayerRuler::AnyRuler cir;
+    cir.kind = core::RulerKind::Circular;
+    cir.circular.guid = QStringLiteral("ruler-2");
+    cir.circular.displayArea = QRectF(-20, -20, 40, 40);
+    cir.circular.color = QColor(0, 255, 0);
+    cir.circular.lineThickness = 2.0f;
+    cir.circular.displayDistance = false;
+    cir.circular.displayUnit = true;
+    cir.circular.center = QPointF(0, 0);
+    cir.circular.radius = 20.0f;
+    cir.circular.attachedBrickId = QStringLiteral("brick-b");
+    layer->rulers.push_back(cir);
+    original.layers().push_back(std::move(layer));
+
+    QByteArray buf;
+    { QBuffer out(&buf); ASSERT_TRUE(out.open(QIODevice::WriteOnly)); ASSERT_TRUE(saveload::writeBbm(original, out).ok); }
+    QBuffer in(&buf); ASSERT_TRUE(in.open(QIODevice::ReadOnly));
+    auto result = saveload::readBbm(in);
+    ASSERT_TRUE(result.ok()) << result.error.toStdString();
+
+    const auto* parsed = dynamic_cast<const core::LayerRuler*>(result.map->layers()[0].get());
+    ASSERT_NE(parsed, nullptr);
+    ASSERT_EQ(parsed->rulers.size(), 2u);
+    ASSERT_EQ(parsed->rulers[0].kind, core::RulerKind::Linear);
+    EXPECT_EQ(parsed->rulers[0].linear.guid, QStringLiteral("ruler-1"));
+    EXPECT_EQ(parsed->rulers[0].linear.point1, QPointF(10, 20));
+    EXPECT_EQ(parsed->rulers[0].linear.point2, QPointF(110, 20));
+    EXPECT_EQ(parsed->rulers[0].linear.attachedBrick1Id, QStringLiteral("brick-a"));
+    EXPECT_FLOAT_EQ(parsed->rulers[0].linear.offsetDistance, 5.0f);
+    EXPECT_TRUE(parsed->rulers[0].linear.allowOffset);
+    EXPECT_TRUE(parsed->rulers[0].linear.displayDistance);
+    EXPECT_FALSE(parsed->rulers[0].linear.displayUnit);
+    ASSERT_EQ(parsed->rulers[1].kind, core::RulerKind::Circular);
+    EXPECT_EQ(parsed->rulers[1].circular.guid, QStringLiteral("ruler-2"));
+    EXPECT_EQ(parsed->rulers[1].circular.center, QPointF(0, 0));
+    EXPECT_FLOAT_EQ(parsed->rulers[1].circular.radius, 20.0f);
+    EXPECT_EQ(parsed->rulers[1].circular.attachedBrickId, QStringLiteral("brick-b"));
+}
+
 TEST(RoundTrip, UnknownLayerTypeWarnsNotFails) {
-    // Vanilla .bbm with a <Layer type="brick"> (not yet implemented) should load
-    // as a valid map with 0 layers and a non-empty warning.
+    // A future/unknown layer type must surface as a warning without blocking the load.
     QByteArray bbm;
     {
         QBuffer out(&bbm);
@@ -194,7 +392,7 @@ TEST(RoundTrip, UnknownLayerTypeWarnsNotFails) {
         saveload::xml::writeIntElement(w, QStringLiteral("SelectedLayerIndex"), -1);
         w.writeStartElement(QStringLiteral("Layers"));
         w.writeStartElement(QStringLiteral("Layer"));
-        w.writeAttribute(QStringLiteral("type"), QStringLiteral("brick"));
+        w.writeAttribute(QStringLiteral("type"), QStringLiteral("futuretype"));
         w.writeAttribute(QStringLiteral("id"), QStringLiteral("dummy"));
         w.writeEndElement();
         w.writeEndElement(); // Layers
