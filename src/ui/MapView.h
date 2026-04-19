@@ -42,6 +42,7 @@ protected:
     void wheelEvent(QWheelEvent* e) override;
     void drawBackground(QPainter* painter, const QRectF& rect) override;
     void mousePressEvent(QMouseEvent* e) override;
+    void mouseMoveEvent(QMouseEvent* e) override;
     void mouseReleaseEvent(QMouseEvent* e) override;
     void keyPressEvent(QKeyEvent* e) override;
     void contextMenuEvent(QContextMenuEvent* e) override;
@@ -65,6 +66,10 @@ private:
     std::unique_ptr<QUndoStack> undoStack_;
 
     std::vector<BrickOriginSnapshot> dragStart_;
+
+    // Middle-mouse pan state.
+    bool    panning_ = false;
+    QPoint  panAnchor_;
 };
 
 }

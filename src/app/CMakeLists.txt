@@ -19,3 +19,8 @@ add_executable(cld_render cld_render.cpp)
 target_link_libraries(cld_render
     PRIVATE cld_rendering cld_saveload cld_parts cld_core
             Qt6::Core Qt6::Gui Qt6::Widgets)
+
+# LDraw .ldr/.dat/.mpd -> .bbm importer.
+add_executable(cld_ldraw_import cld_ldraw_import.cpp)
+target_link_libraries(cld_ldraw_import
+    PRIVATE cld_import cld_saveload cld_core Qt6::Core)

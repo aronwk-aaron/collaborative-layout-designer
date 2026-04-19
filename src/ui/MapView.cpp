@@ -15,6 +15,7 @@
 #include <QKeyEvent>
 #include <QMenu>
 #include <QMouseEvent>
+#include <QScrollBar>
 #include <QPainter>
 #include <QPen>
 #include <QPixmap>
@@ -45,8 +46,9 @@ double studToPx() { return rendering::SceneBuilder::kPixelsPerStud; }
 MapView::MapView(parts::PartsLibrary& parts, QWidget* parent)
     : QGraphicsView(parent), parts_(parts) {
     setRenderHints(QPainter::Antialiasing | QPainter::SmoothPixmapTransform);
-    // Rubber-band selection while keeping middle-drag pan feel; individual
-    // brick drag is handled by ItemIsMovable on each item.
+    // Left-button drag: rubber-band select (item drag is still available via
+    // ItemIsMovable on individual brick items). Middle-button drag: pan the
+    // view (handled manually in mousePress/Move/Release).
     setDragMode(QGraphicsView::RubberBandDrag);
     setTransformationAnchor(QGraphicsView::AnchorUnderMouse);
     setResizeAnchor(QGraphicsView::AnchorUnderMouse);
@@ -195,11 +197,38 @@ void MapView::commitDragIfMoved() {
 }
 
 void MapView::mousePressEvent(QMouseEvent* e) {
+    if (e->button() == Qt::MiddleButton) {
+        panning_ = true;
+        panAnchor_ = e->pos();
+        setCursor(Qt::ClosedHandCursor);
+        e->accept();
+        return;
+    }
     QGraphicsView::mousePressEvent(e);
     if (e->button() == Qt::LeftButton) captureDragStart();
 }
 
+void MapView::mouseMoveEvent(QMouseEvent* e) {
+    if (panning_ && (e->buttons() & Qt::MiddleButton)) {
+        const QPoint delta = e->pos() - panAnchor_;
+        panAnchor_ = e->pos();
+        // Scroll by the delta — negated because scrolling right *shows* the
+        // left side, i.e. moves scene content the opposite way of the cursor.
+        horizontalScrollBar()->setValue(horizontalScrollBar()->value() - delta.x());
+        verticalScrollBar()->setValue(verticalScrollBar()->value() - delta.y());
+        e->accept();
+        return;
+    }
+    QGraphicsView::mouseMoveEvent(e);
+}
+
 void MapView::mouseReleaseEvent(QMouseEvent* e) {
+    if (e->button() == Qt::MiddleButton && panning_) {
+        panning_ = false;
+        unsetCursor();
+        e->accept();
+        return;
+    }
     QGraphicsView::mouseReleaseEvent(e);
     if (e->button() == Qt::LeftButton) commitDragIfMoved();
 }
