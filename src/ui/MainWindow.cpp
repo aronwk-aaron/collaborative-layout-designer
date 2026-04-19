@@ -598,6 +598,42 @@ void MainWindow::setupMenus() {
     addDockToggle(modulesPanel_,       tr("&Modules Panel"));
     addDockToggle(moduleLibraryPanel_, tr("Module Li&brary Panel"));
 
+    view->addSeparator();
+    auto* statusToggle = view->addAction(tr("&Status Bar"));
+    statusToggle->setCheckable(true);
+    statusToggle->setChecked(true);
+    connect(statusToggle, &QAction::toggled, statusBar(), &QStatusBar::setVisible);
+
+    auto* scrollToggle = view->addAction(tr("Map &Scroll Bars"));
+    scrollToggle->setCheckable(true);
+    scrollToggle->setChecked(true);
+    connect(scrollToggle, &QAction::toggled, this, [this](bool on){
+        const Qt::ScrollBarPolicy p = on ? Qt::ScrollBarAsNeeded : Qt::ScrollBarAlwaysOff;
+        mapView_->setHorizontalScrollBarPolicy(p);
+        mapView_->setVerticalScrollBarPolicy(p);
+    });
+
+    view->addSeparator();
+    // Scene-level render toggles — each writes through QSettings so the
+    // choice sticks across launches. SceneBuilder reads these on rebuild
+    // to honour the current preference.
+    auto addRenderToggle = [this, view](const QString& label, const QString& settingsKey, bool defaultOn){
+        auto* act = view->addAction(label);
+        act->setCheckable(true);
+        QSettings s;
+        act->setChecked(s.value(settingsKey, defaultOn).toBool());
+        connect(act, &QAction::toggled, this, [this, settingsKey](bool on){
+            QSettings().setValue(settingsKey, on);
+            mapView_->rebuildScene();
+        });
+    };
+    addRenderToggle(tr("&Electric Circuits"),       QStringLiteral("view/electricCircuits"),    false);
+    addRenderToggle(tr("Connection &Points"),       QStringLiteral("view/connectionPoints"),    false);
+    addRenderToggle(tr("Ruler Attach P&oints"),      QStringLiteral("view/rulerAttachPoints"),   false);
+    addRenderToggle(tr("&Watermark"),                QStringLiteral("view/watermark"),           true);
+    addRenderToggle(tr("Brick &Hulls"),              QStringLiteral("view/brickHulls"),          false);
+    addRenderToggle(tr("Brick E&levation Labels"),   QStringLiteral("view/brickElevation"),      false);
+
     auto* tools = menuBar()->addMenu(tr("&Tools"));
     auto* libAct = tools->addAction(tr("Manage Parts &Libraries..."));
     connect(libAct, &QAction::triggered, this, &MainWindow::onManageLibraries);

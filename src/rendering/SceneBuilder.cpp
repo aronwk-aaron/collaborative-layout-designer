@@ -12,8 +12,11 @@
 #include "../core/Venue.h"
 #include "../parts/PartsLibrary.h"
 
+#include <QSettings>
+
 #include <QBrush>
 #include <QFont>
+#include <QFontMetricsF>
 #include <QGraphicsEllipseItem>
 #include <QGraphicsItemGroup>
 #include <QGraphicsLineItem>
@@ -131,6 +134,14 @@ protected:
 
 void addBrickLayer(const core::LayerBrick& L, QGraphicsItemGroup* group, parts::PartsLibrary& lib,
                    int layerIndex, QHash<QString, QGraphicsItem*>& brickByGuid) {
+    // Read scene-level render toggles once per layer; all bricks in the same
+    // layer share these decisions. Stored under view/ in QSettings.
+    QSettings settings;
+    const bool alwaysShowConns = settings.value(QStringLiteral("view/connectionPoints"), false).toBool();
+    const bool displayHulls    = settings.value(QStringLiteral("view/brickHulls"), false).toBool()
+                                 || L.hull.displayHulls;
+    const bool displayElev     = settings.value(QStringLiteral("view/brickElevation"), false).toBool();
+    const bool displayElectric = settings.value(QStringLiteral("view/electricCircuits"), false).toBool();
     for (const auto& brick : L.bricks) {
         // BlueBrick bakes the color suffix into the PartNumber string itself
         // (e.g. "3811.1" for a blue 32x32 baseplate, or just "TABLE96X190"
@@ -203,8 +214,8 @@ void addBrickLayer(const core::LayerBrick& L, QGraphicsItemGroup* group, parts::
 
         // Connection-point markers: child ellipses in the brick's local coord
         // system so they transform with the brick for free. Hidden by default;
-        // shown on selection via the ItemSelectedChange hook above. The dot
-        // radius in scene pixels stays fixed regardless of zoom (cosmetic).
+        // shown on selection via the ItemSelectedChange hook above (or
+        // unconditionally if view/connectionPoints is on).
         if (meta && !meta->connections.isEmpty()) {
             constexpr double kDotRadiusPx = 3.0;
             for (const auto& c : meta->connections) {
@@ -219,9 +230,65 @@ void addBrickLayer(const core::LayerBrick& L, QGraphicsItemGroup* group, parts::
                 pen.setCosmetic(true);
                 dot->setPen(pen);
                 dot->setBrush(QBrush(col));
-                dot->setZValue(1000);     // above the pixmap
+                dot->setZValue(1000);
                 dot->setData(kBrickDataKind, QStringLiteral("connDot"));
-                dot->setVisible(false);
+                dot->setVisible(alwaysShowConns);
+            }
+        }
+
+        // Hull outline — vanilla's DisplayHulls renders the brick's selection
+        // polygon (we approximate with the displayArea rect for now). Drawn
+        // as a sibling polygon in scene coords so it can't be occluded by
+        // the parent pixmap. Picks up the layer's configured hull color +
+        // thickness; falls back to a sensible default if never configured.
+        if (displayHulls) {
+            auto* hull = new QGraphicsRectItem(areaPx);
+            QPen p(L.hull.color.color.isValid() ? L.hull.color.color : QColor(0, 0, 0));
+            p.setWidthF(L.hull.thickness > 0 ? L.hull.thickness : 1);
+            p.setCosmetic(true);
+            hull->setPen(p);
+            hull->setBrush(Qt::NoBrush);
+            hull->setZValue(brick.altitude + 0.5);
+            group->addToGroup(hull);
+        }
+
+        // Altitude label centered on the brick — matches vanilla's
+        // DisplayBrickElevation (LayerBrick.cs ~line 806).
+        if (displayElev && std::abs(brick.altitude) > 0.001f) {
+            auto* alt = new QGraphicsSimpleTextItem(QString::number(brick.altitude, 'f', 1));
+            QFont f(QStringLiteral("Sans"));
+            f.setPixelSize(10);
+            alt->setFont(f);
+            alt->setBrush(QBrush(QColor(40, 40, 40)));
+            const QRectF bb = alt->boundingRect();
+            alt->setPos(centerPx.x() - bb.width() / 2.0,
+                        centerPx.y() - bb.height() / 2.0);
+            alt->setZValue(brick.altitude + 0.6);
+            group->addToGroup(alt);
+        }
+
+        // Electric circuits — draw a thin coloured line between each pair
+        // of connected connection points. We don't parse BrickLibrary's
+        // ElectricCircuit list; approximate by colouring each active
+        // LinkedTo connection. Cheap visual hint rather than upstream's
+        // polarity-aware rendering.
+        if (displayElectric && meta) {
+            for (const auto& c : brick.connections) {
+                if (c.linkedToId.isEmpty()) continue;
+                // Find the local position of this connection on this brick.
+                const auto& conns = meta->connections;
+                const int idx = &c - &brick.connections[0];
+                if (idx < 0 || idx >= conns.size()) continue;
+                const auto& cm = conns[idx];
+                const QPointF localPx(cm.position.x() * kPx, cm.position.y() * kPx);
+                auto* marker = new QGraphicsEllipseItem(
+                    localPx.x() - 2.5, localPx.y() - 2.5, 5.0, 5.0, item);
+                QPen ep(QColor(220, 140, 0));
+                ep.setWidthF(1.5);
+                ep.setCosmetic(true);
+                marker->setPen(ep);
+                marker->setBrush(QBrush(QColor(255, 200, 50, 160)));
+                marker->setZValue(999);
             }
         }
 
