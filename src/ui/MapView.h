@@ -33,6 +33,7 @@ public:
     // Edit operations (invoked by menu/shortcut actions):
     void rotateSelected(float degrees);
     void deleteSelected();
+    void addPartAtViewCenter(const QString& partKey);
 
 signals:
     void selectionChanged();

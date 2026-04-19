@@ -6,6 +6,7 @@
 #include "../core/LayerGrid.h"
 #include "../core/Map.h"
 #include "../edit/EditCommands.h"
+#include "../parts/PartsLibrary.h"
 #include "../rendering/SceneBuilder.h"
 
 #include <QGraphicsItem>
@@ -14,7 +15,9 @@
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPen>
+#include <QPixmap>
 #include <QUndoStack>
+#include <QUuid>
 #include <QWheelEvent>
 
 namespace cld::ui {
@@ -238,6 +241,41 @@ void MapView::rotateSelected(float degrees) {
     }
     if (entries.empty()) return;
     undoStack_->push(new edit::RotateBricksCommand(*map_, std::move(entries)));
+    rebuildScene();
+}
+
+void MapView::addPartAtViewCenter(const QString& partKey) {
+    if (!map_) return;
+
+    // Pick the first brick layer as the add target. Later we can surface a
+    // "current layer" selection in the layer panel.
+    int targetLayer = -1;
+    for (int i = 0; i < static_cast<int>(map_->layers().size()); ++i) {
+        if (map_->layers()[i]->kind() == core::LayerKind::Brick) {
+            targetLayer = i;
+            break;
+        }
+    }
+    if (targetLayer < 0) return;
+
+    QPixmap pm = parts_.pixmap(partKey);
+    const double pxPerStud = rendering::SceneBuilder::kPixelsPerStud;
+    const double widthStuds  = pm.isNull() ? 2.0 : pm.width()  / pxPerStud;
+    const double heightStuds = pm.isNull() ? 2.0 : pm.height() / pxPerStud;
+
+    // Convert view centre to scene coordinates, then to studs.
+    const QPointF sceneCentre = mapToScene(viewport()->rect().center());
+    const QPointF centreStuds(sceneCentre.x() / pxPerStud, sceneCentre.y() / pxPerStud);
+
+    core::Brick b;
+    b.guid = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    b.partNumber = partKey;
+    b.displayArea = QRectF(centreStuds.x() - widthStuds / 2.0,
+                            centreStuds.y() - heightStuds / 2.0,
+                            widthStuds, heightStuds);
+    b.orientation = 0.0f;
+
+    undoStack_->push(new edit::AddBrickCommand(*map_, targetLayer, std::move(b)));
     rebuildScene();
 }
 

@@ -5,6 +5,8 @@ add_library(cld_ui STATIC
     MapView.h
     LayerPanel.cpp
     LayerPanel.h
+    PartsBrowser.cpp
+    PartsBrowser.h
 )
 
 target_link_libraries(cld_ui

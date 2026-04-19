@@ -2,6 +2,7 @@
 
 #include "LayerPanel.h"
 #include "MapView.h"
+#include "PartsBrowser.h"
 
 #include "../core/Map.h"
 #include "../parts/PartsLibrary.h"
@@ -29,6 +30,11 @@ MainWindow::MainWindow(parts::PartsLibrary& parts, QWidget* parent)
 
     layerPanel_ = new LayerPanel(this);
     addDockWidget(Qt::RightDockWidgetArea, layerPanel_);
+
+    partsBrowser_ = new PartsBrowser(parts_, this);
+    addDockWidget(Qt::LeftDockWidgetArea, partsBrowser_);
+    connect(partsBrowser_, &PartsBrowser::partActivated,
+            mapView_, &MapView::addPartAtViewCenter);
 
     setupMenus();
     updateTitle();

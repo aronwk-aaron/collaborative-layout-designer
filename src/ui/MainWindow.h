@@ -13,6 +13,7 @@ namespace cld::ui {
 
 class MapView;
 class LayerPanel;
+class PartsBrowser;
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -40,8 +41,9 @@ private:
     bool writeMapTo(const QString& path);
 
     parts::PartsLibrary& parts_;
-    MapView*    mapView_   = nullptr;
-    LayerPanel* layerPanel_ = nullptr;
+    MapView*      mapView_     = nullptr;
+    LayerPanel*   layerPanel_  = nullptr;
+    PartsBrowser* partsBrowser_ = nullptr;
 
     QString currentFilePath_;
     int     cleanUndoIndex_ = 0;   // index at which the stack is "clean"
