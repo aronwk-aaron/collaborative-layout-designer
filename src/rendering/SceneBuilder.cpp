@@ -23,10 +23,12 @@
 #include <QGraphicsRectItem>
 #include <QGraphicsScene>
 #include <QGraphicsSimpleTextItem>
+#include <QPainter>
 #include <QPainterPath>
 #include <QPen>
 #include <QPixmap>
 #include <QPolygonF>
+#include <QStyleOptionGraphicsItem>
 
 namespace cld::rendering {
 
@@ -55,6 +57,20 @@ constexpr int kBrickDataKind       = 2;  // value: "brick" to distinguish from o
 // whenever the snap toolbar changes); the per-item override reads the static.
 double gSnapPx = 0.0;
 
+// Paint a bright accent outline around the item's local bounding rect when
+// it's selected. Qt's default "dashed overlay" on selected items is too
+// subtle over the pixmap; users asked for a clearly visible highlight.
+void paintSelectionHighlight(QPainter* p, const QRectF& rect) {
+    p->save();
+    QPen pen(QColor(0x3B, 0x8D, 0xFF));   // bright accent blue
+    pen.setWidthF(2.5);
+    pen.setCosmetic(true);                 // constant pixels regardless of zoom
+    p->setPen(pen);
+    p->setBrush(Qt::NoBrush);
+    p->drawRect(rect);
+    p->restore();
+}
+
 class SnappingPixmap : public QGraphicsPixmapItem {
 public:
     using QGraphicsPixmapItem::QGraphicsPixmapItem;
@@ -67,6 +83,14 @@ protected:
             return p;
         }
         return QGraphicsPixmapItem::itemChange(c, v);
+    }
+    void paint(QPainter* p, const QStyleOptionGraphicsItem* opt, QWidget* w) override {
+        // Strip the selected-state style flag so Qt doesn't draw its muted
+        // default overlay; we paint our own highlight instead.
+        QStyleOptionGraphicsItem cleaned(*opt);
+        cleaned.state &= ~QStyle::State_Selected;
+        QGraphicsPixmapItem::paint(p, &cleaned, w);
+        if (isSelected()) paintSelectionHighlight(p, boundingRect());
     }
 };
 
@@ -82,6 +106,12 @@ protected:
             return p;
         }
         return QGraphicsRectItem::itemChange(c, v);
+    }
+    void paint(QPainter* p, const QStyleOptionGraphicsItem* opt, QWidget* w) override {
+        QStyleOptionGraphicsItem cleaned(*opt);
+        cleaned.state &= ~QStyle::State_Selected;
+        QGraphicsRectItem::paint(p, &cleaned, w);
+        if (isSelected()) paintSelectionHighlight(p, rect());
     }
 };
 
