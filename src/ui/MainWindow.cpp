@@ -315,11 +315,22 @@ MainWindow::MainWindow(parts::PartsLibrary& parts, QWidget* parent)
 
         QString dir = moduleLibraryPanel_->libraryPath();
         if (dir.isEmpty()) {
+            // No folder configured yet — default to <AppData>/modules and
+            // persist it so subsequent saves/loads use the same location.
+            dir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)
+                  + QStringLiteral("/modules");
+            moduleLibraryPanel_->setLibraryPath(dir);
+        }
+        // Ensure the directory exists BEFORE we try to write into it. Show a
+        // specific error (instead of the writeBbm "no such file" one) if we
+        // can't create it — user can then fix permissions or pick another
+        // folder.
+        if (!QDir().mkpath(dir)) {
             QMessageBox::warning(this, tr("Save to library"),
-                tr("Set the module library folder first in Preferences → Library."));
+                tr("Cannot create or access the module library folder:\n%1\n\n"
+                   "Pick a different folder in Preferences → Library.").arg(dir));
             return;
         }
-        QDir().mkpath(dir);
 
         bool ok = false;
         const QString defaultName = mod->name.isEmpty() ? tr("Module") : mod->name;
@@ -334,9 +345,15 @@ MainWindow::MainWindow(parts::PartsLibrary& parts, QWidget* parent)
             if (btn != QMessageBox::Yes) return;
         }
 
+        // Double-check the immediate parent exists (mkpath above should
+        // cover this, but be defensive — the user might have entered a name
+        // with a subfolder, or something raced).
+        QDir().mkpath(QFileInfo(target).absolutePath());
+
         auto r = saveload::writeBbm(out, target);
         if (!r.ok) {
-            QMessageBox::warning(this, tr("Save to library"), r.error);
+            QMessageBox::warning(this, tr("Save to library"),
+                tr("%1\n\nTarget path:\n%2").arg(r.error, target));
             return;
         }
 
