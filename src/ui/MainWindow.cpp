@@ -303,7 +303,7 @@ MainWindow::MainWindow(parts::PartsLibrary& parts, QWidget* parent)
     // Live selection readout — helps confirm that clicks and drag-select
     // are actually producing a selection. Updates whenever the scene's
     // selection set changes.
-    auto* selLabel = new QLabel(this);
+    auto* selLabel = new QLabel(tr("no selection"), this);
     statusBar()->addPermanentWidget(selLabel);
     connect(mapView_, &MapView::selectionChanged, this, [this, selLabel]{
         const int n = mapView_->scene()->selectedItems().size();

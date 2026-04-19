@@ -154,6 +154,14 @@ void addBrickLayer(const core::LayerBrick& L, QGraphicsItemGroup* group, parts::
                 auto* p = new SnappingPixmap(pm);
                 p->setFlag(QGraphicsItem::ItemSendsGeometryChanges, true);
                 p->setTransformationMode(Qt::SmoothTransformation);
+                // Use the full bounding rect as the clickable / selection
+                // shape, not the pixmap alpha mask. BlueBrick parts are GIFs
+                // with transparent backgrounds — the default MaskShape makes
+                // clicks on transparent pixels miss entirely, so the user
+                // can click on what looks like the brick and get no
+                // selection because the cursor landed on a transparent
+                // pixel of the sprite.
+                p->setShapeMode(QGraphicsPixmapItem::BoundingRectShape);
                 p->setOffset(-pm.width() / 2.0, -pm.height() / 2.0);
                 p->setTransformOriginPoint(0, 0);
                 p->setRotation(brick.orientation);
