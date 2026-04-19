@@ -1411,37 +1411,38 @@ void MapView::dropEvent(QDropEvent* e) {
     if (e->mimeData()->hasFormat(moduleMime)) {
         const QString bbmPath = QString::fromUtf8(e->mimeData()->data(moduleMime));
         if (bbmPath.isEmpty()) { e->ignore(); return; }
-        // Delegate to MainWindow via the onImportModuleAtScenePos signal-
-        // equivalent: we directly load the .bbm, build the brick list, and
-        // translate everything so the module's centre lands at scenePos.
         auto res = saveload::readBbm(bbmPath);
         if (!res.ok()) { e->ignore(); return; }
         const double px = rendering::SceneBuilder::kPixelsPerStud;
-        std::vector<core::Brick> bricks;
+
+        // Build per-layer batches (preserves the module's z-order /
+        // layering so tracks don't land on top of scenery) and translate
+        // every batch's bricks so the module's centroid lands at the
+        // drop position.
+        std::vector<edit::ImportBbmAsModuleCommand::LayerBatch> batches;
         QPointF srcCentre; int count = 0;
         for (const auto& L : res.map->layers()) {
             if (!L || L->kind() != core::LayerKind::Brick) continue;
+            edit::ImportBbmAsModuleCommand::LayerBatch batch;
+            batch.layerName = L->name.isEmpty() ? QStringLiteral("Module") : L->name;
             for (const auto& b : static_cast<const core::LayerBrick&>(*L).bricks) {
                 srcCentre += b.displayArea.center(); ++count;
                 core::Brick copy = b;
                 copy.guid.clear();
-                bricks.push_back(std::move(copy));
+                batch.bricks.push_back(std::move(copy));
             }
+            if (!batch.bricks.empty()) batches.push_back(std::move(batch));
         }
-        if (bricks.empty()) { e->ignore(); return; }
+        if (batches.empty() || count == 0) { e->ignore(); return; }
         srcCentre /= count;
         const QPointF targetCentre(scenePos.x() / px, scenePos.y() / px);
         const QPointF translation = targetCentre - srcCentre;
-        for (auto& b : bricks) b.displayArea.translate(translation);
+        for (auto& batch : batches)
+            for (auto& b : batch.bricks) b.displayArea.translate(translation);
 
-        int targetLayer = -1;
-        for (int i = 0; i < static_cast<int>(map_->layers().size()); ++i) {
-            if (map_->layers()[i]->kind() == core::LayerKind::Brick) { targetLayer = i; break; }
-        }
-        if (targetLayer < 0) { e->ignore(); return; }
         const QString name = QFileInfo(bbmPath).completeBaseName();
         undoStack_->push(new edit::ImportBbmAsModuleCommand(
-            *map_, targetLayer, bbmPath, name, std::move(bricks)));
+            *map_, bbmPath, name, std::move(batches)));
         rebuildScene();
         e->acceptProposedAction();
         return;

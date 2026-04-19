@@ -114,12 +114,29 @@ private:
 };
 
 // Load a .bbm, merge its brick layers into the current map (remapping guids
-// to fresh ones to avoid collisions), and register the new bricks as a module.
-// `targetLayerIndex` is the brick-layer in the host map that will receive the
-// imported bricks. Undo removes both the bricks and the module entry.
+// to fresh ones to avoid collisions), and register the new bricks as a
+// module. Preserves the source's per-layer structure: every distinct
+// source-layer-name becomes (or matches) a brick layer in the host map,
+// and each brick lands on its original layer. Undo removes every imported
+// brick, every layer that was newly created for the import, and the
+// module entry itself.
 class ImportBbmAsModuleCommand : public QUndoCommand {
 public:
-    struct Added { int layerIndex = -1; QString guid; };
+    // One batch per source layer. layerName is matched against existing
+    // brick-layer names in the host map; a new brick layer is created
+    // when no match is found.
+    struct LayerBatch {
+        QString layerName;
+        std::vector<core::Brick> bricks;
+    };
+
+    ImportBbmAsModuleCommand(core::Map& map,
+                             QString sourcePath, QString moduleName,
+                             std::vector<LayerBatch> batches,
+                             QUndoCommand* parent = nullptr);
+
+    // Back-compat: single-layer constructor for call sites that haven't
+    // migrated to the batched version yet.
     ImportBbmAsModuleCommand(core::Map& map, int targetLayerIndex,
                              QString sourcePath, QString moduleName,
                              std::vector<core::Brick> bricks,
@@ -127,14 +144,23 @@ public:
     void undo() override;
     void redo() override;
     const QString& moduleId() const { return moduleId_; }
-    int layerIndex() const { return layerIndex_; }
 
 private:
     core::Map& map_;
-    int layerIndex_;
     QString sourcePath_;
     QString moduleId_;
     QString name_;
+    std::vector<LayerBatch> batches_;
+
+    // Populated on first redo so undo can exactly reverse the operation.
+    struct AppliedLayer {
+        QString  layerName;
+        int      layerIndex = -1;
+        bool     wasCreated = false;      // created by this command → remove on undo
+        QList<QString> addedGuids;         // bricks we appended to this layer
+    };
+    std::vector<AppliedLayer> applied_;
+    bool captured_ = false;
     std::vector<core::Brick> bricks_;
 };
 

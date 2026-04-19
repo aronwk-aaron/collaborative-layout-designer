@@ -288,45 +288,136 @@ void RescanModuleCommand::undo() {
 
 // ----- ImportBbmAsModuleCommand -----
 
+ImportBbmAsModuleCommand::ImportBbmAsModuleCommand(core::Map& map,
+                                                   QString sourcePath, QString moduleName,
+                                                   std::vector<LayerBatch> batches,
+                                                   QUndoCommand* parent)
+    : QUndoCommand(parent), map_(map),
+      sourcePath_(std::move(sourcePath)),
+      moduleId_(core::newBbmId()),
+      name_(std::move(moduleName)), batches_(std::move(batches)) {
+    int total = 0; for (const auto& b : batches_) total += b.bricks.size();
+    setText(QObject::tr("Import module (%1 bricks)").arg(total));
+}
+
+// Back-compat single-layer ctor: wraps the args into a one-batch array so
+// the multi-layer redo/undo path is the single code path.
 ImportBbmAsModuleCommand::ImportBbmAsModuleCommand(core::Map& map, int targetLayerIndex,
                                                    QString sourcePath, QString moduleName,
                                                    std::vector<core::Brick> bricks,
                                                    QUndoCommand* parent)
-    : QUndoCommand(parent), map_(map), layerIndex_(targetLayerIndex),
+    : QUndoCommand(parent), map_(map),
       sourcePath_(std::move(sourcePath)),
       moduleId_(core::newBbmId()),
-      name_(std::move(moduleName)), bricks_(std::move(bricks)) {
-    setText(QObject::tr("Import module from %1").arg(sourcePath_));
+      name_(std::move(moduleName)) {
+    // Pick the layer's current name (if any) so undo/redo stays stable.
+    QString layerName = QStringLiteral("Bricks");
+    if (targetLayerIndex >= 0 && targetLayerIndex < static_cast<int>(map.layers().size())) {
+        layerName = map.layers()[targetLayerIndex]->name;
+    }
+    LayerBatch batch;
+    batch.layerName = layerName;
+    batch.bricks = std::move(bricks);
+    batches_.push_back(std::move(batch));
+    setText(QObject::tr("Import module (%1 bricks)").arg(batches_.front().bricks.size()));
+}
+
+namespace {
+int findBrickLayerByName(core::Map& map, const QString& name) {
+    for (int i = 0; i < static_cast<int>(map.layers().size()); ++i) {
+        auto* L = map.layers()[i].get();
+        if (L && L->kind() == core::LayerKind::Brick && L->name == name) return i;
+    }
+    return -1;
+}
 }
 
 void ImportBbmAsModuleCommand::redo() {
-    auto* L = brickLayer(map_, layerIndex_);
-    if (!L) return;
+    // First redo: resolve each batch's target layer (matching by name,
+    // creating a new brick layer when no match exists), then insert
+    // bricks. Subsequent redos (after an undo) replay the same
+    // resolution captured in applied_ so the user gets the same layer
+    // set every time.
+    if (!captured_) {
+        applied_.clear();
+        for (auto& batch : batches_) {
+            AppliedLayer a;
+            a.layerName = batch.layerName;
+            int idx = findBrickLayerByName(map_, batch.layerName);
+            if (idx < 0) {
+                auto L = std::make_unique<core::LayerBrick>();
+                L->guid = core::newBbmId();
+                L->name = batch.layerName.isEmpty() ? QStringLiteral("Module") : batch.layerName;
+                idx = static_cast<int>(map_.layers().size());
+                map_.layers().push_back(std::move(L));
+                a.wasCreated = true;
+            }
+            a.layerIndex = idx;
+            auto* BL = brickLayer(map_, idx);
+            if (!BL) continue;
+            for (auto& b : batch.bricks) {
+                if (b.guid.isEmpty()) b.guid = core::newBbmId();
+                a.addedGuids.append(b.guid);
+                BL->bricks.push_back(b);
+            }
+            applied_.push_back(std::move(a));
+        }
+        captured_ = true;
+    } else {
+        // Re-apply: recreate any layers we had created, re-insert bricks.
+        for (auto& a : applied_) {
+            if (a.wasCreated) {
+                auto L = std::make_unique<core::LayerBrick>();
+                L->guid = core::newBbmId();
+                L->name = a.layerName.isEmpty() ? QStringLiteral("Module") : a.layerName;
+                a.layerIndex = static_cast<int>(map_.layers().size());
+                map_.layers().push_back(std::move(L));
+            } else {
+                a.layerIndex = findBrickLayerByName(map_, a.layerName);
+            }
+            auto* BL = brickLayer(map_, a.layerIndex);
+            if (!BL) continue;
+            // Find the matching batch and re-insert its bricks (with the
+            // guids we already assigned on first redo).
+            for (auto& batch : batches_) {
+                if (batch.layerName != a.layerName) continue;
+                for (const auto& b : batch.bricks) BL->bricks.push_back(b);
+                break;
+            }
+        }
+    }
 
-    // Remap each brick to a fresh guid before inserting so import is
-    // idempotent across multiple imports of the same source file.
     core::Module mod;
     mod.id = moduleId_;
     mod.name = name_;
     mod.sourceFile = sourcePath_;
     mod.importedAt = QDateTime::currentDateTimeUtc();
-    for (auto& b : bricks_) {
-        if (b.guid.isEmpty()) b.guid = core::newBbmId();
-        mod.memberIds.insert(b.guid);
-        L->bricks.push_back(b);
-    }
+    for (const auto& a : applied_)
+        for (const QString& g : a.addedGuids) mod.memberIds.insert(g);
     map_.sidecar.modules.push_back(std::move(mod));
 }
 
 void ImportBbmAsModuleCommand::undo() {
-    auto* L = brickLayer(map_, layerIndex_);
-    if (!L) return;
-    QSet<QString> toRemove;
-    for (const auto& b : bricks_) toRemove.insert(b.guid);
-    L->bricks.erase(
-        std::remove_if(L->bricks.begin(), L->bricks.end(),
-                       [&](const core::Brick& b) { return toRemove.contains(b.guid); }),
-        L->bricks.end());
+    // Remove every brick we added; then pop any layers we created (in
+    // reverse order so their indices stay valid); then drop the module.
+    for (auto& a : applied_) {
+        if (auto* BL = brickLayer(map_, a.layerIndex)) {
+            QSet<QString> toRemove;
+            for (const QString& g : a.addedGuids) toRemove.insert(g);
+            BL->bricks.erase(
+                std::remove_if(BL->bricks.begin(), BL->bricks.end(),
+                               [&](const core::Brick& b) { return toRemove.contains(b.guid); }),
+                BL->bricks.end());
+        }
+    }
+    // Walk applied_ in reverse; for layers we created, drop them so the
+    // host map returns to its pre-import layer count.
+    for (auto it = applied_.rbegin(); it != applied_.rend(); ++it) {
+        if (!it->wasCreated) continue;
+        if (it->layerIndex < 0 ||
+            it->layerIndex >= static_cast<int>(map_.layers().size())) continue;
+        map_.layers().erase(map_.layers().begin() + it->layerIndex);
+    }
     const int i = findModuleIndex(map_, moduleId_);
     if (i >= 0) map_.sidecar.modules.erase(map_.sidecar.modules.begin() + i);
 }

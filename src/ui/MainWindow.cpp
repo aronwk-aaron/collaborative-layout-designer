@@ -282,27 +282,36 @@ MainWindow::MainWindow(parts::PartsLibrary& parts, QWidget* parent)
         for (const auto& m : map->sidecar.modules) if (m.id == id) { mod = &m; break; }
         if (!mod) return;
 
-        // Build a standalone map with just this module's member bricks.
+        // Build a standalone map with ONE brick layer per source layer
+        // that contributes members — preserves z-order / layer identity
+        // so re-import drops bricks onto the right layers instead of
+        // merging them all into one.
         core::Map out;
         out.author = map->author;
         out.lug    = map->lug;
         out.event  = mod->name.isEmpty() ? QStringLiteral("Module") : mod->name;
-        auto layer = std::make_unique<core::LayerBrick>();
-        layer->guid = core::newBbmId();
-        layer->name = QStringLiteral("Module");
+        int total = 0;
         for (const auto& L : map->layers()) {
             if (!L || L->kind() != core::LayerKind::Brick) continue;
+            auto outL = std::make_unique<core::LayerBrick>();
+            outL->guid = core::newBbmId();
+            outL->name = L->name.isEmpty() ? QStringLiteral("Module") : L->name;
+            outL->transparency = L->transparency;
+            outL->visible = L->visible;
+            outL->hull = L->hull;
             for (const auto& b : static_cast<const core::LayerBrick&>(*L).bricks) {
-                if (mod->memberIds.contains(b.guid)) layer->bricks.push_back(b);
+                if (mod->memberIds.contains(b.guid)) outL->bricks.push_back(b);
             }
+            if (outL->bricks.empty()) continue;
+            total += static_cast<int>(outL->bricks.size());
+            out.layers().push_back(std::move(outL));
         }
-        if (layer->bricks.empty()) {
+        if (total == 0) {
             QMessageBox::information(this, tr("Save to library"),
                 tr("This module currently has no brick members."));
             return;
         }
-        out.nbItems = static_cast<int>(layer->bricks.size());
-        out.layers().push_back(std::move(layer));
+        out.nbItems = total;
 
         QString dir = moduleLibraryPanel_->libraryPath();
         if (dir.isEmpty()) {
@@ -339,11 +348,12 @@ MainWindow::MainWindow(parts::PartsLibrary& parts, QWidget* parent)
                 break;
             }
         }
+        const int savedCount = out.nbItems;
         moduleLibraryPanel_->refresh();
         modulesPanel_->setMap(map);
         statusBar()->showMessage(
             tr("Saved module '%1' to library (%2 bricks)")
-                .arg(name).arg(out.nbItems), 4000);
+                .arg(name).arg(savedCount), 4000);
     });
 
     // Re-scan: reload the module's sourceFile, replace its member bricks
@@ -1064,7 +1074,10 @@ void MainWindow::onCreateModuleFromSelection() {
 void MainWindow::onSaveSelectionAsModule() {
     auto* map = mapView_->currentMap();
     if (!map) return;
-    // Gather selected bricks by (layer, guid).
+    // Gather selected bricks BY source layer so the written .bbm has one
+    // brick layer per source layer. Re-importing preserves the z-order
+    // and layer membership of every piece — otherwise tracks end up on
+    // top of scenery, etc.
     struct PickedBrick { int layerIndex; core::Brick brick; };
     std::vector<PickedBrick> picks;
     for (QGraphicsItem* it : mapView_->scene()->selectedItems()) {
@@ -1084,19 +1097,30 @@ void MainWindow::onSaveSelectionAsModule() {
         return;
     }
 
-    // Build a fresh Map containing just those bricks in a single brick layer
-    // so it can be re-loaded into any other project later via the module
-    // library panel (or Modules → Import .bbm as Module).
+    // Build the module map with one LayerBrick per source layer. Iterate
+    // host layers in their original order so the exported z-order matches
+    // the source project.
     core::Map module;
     module.author = map->author;
     module.lug = map->lug;
     module.event = QObject::tr("Module");
-    auto layer = std::make_unique<core::LayerBrick>();
-    layer->guid = core::newBbmId();
-    layer->name = QStringLiteral("Module");
-    for (const auto& p : picks) layer->bricks.push_back(p.brick);
-    module.nbItems = static_cast<int>(layer->bricks.size());
-    module.layers().push_back(std::move(layer));
+    int total = 0;
+    for (int li = 0; li < static_cast<int>(map->layers().size()); ++li) {
+        auto* src = map->layers()[li].get();
+        if (!src || src->kind() != core::LayerKind::Brick) continue;
+        auto outL = std::make_unique<core::LayerBrick>();
+        outL->guid = core::newBbmId();
+        outL->name = src->name.isEmpty() ? QStringLiteral("Module") : src->name;
+        outL->transparency = src->transparency;
+        outL->visible = src->visible;
+        outL->hull = src->hull;
+        for (const auto& p : picks)
+            if (p.layerIndex == li) outL->bricks.push_back(p.brick);
+        if (outL->bricks.empty()) continue;
+        total += static_cast<int>(outL->bricks.size());
+        module.layers().push_back(std::move(outL));
+    }
+    module.nbItems = total;
 
     // Pick target path: if module library path is configured, default there;
     // otherwise fall back to QFileDialog's default.
@@ -1122,53 +1146,53 @@ void MainWindow::onSaveSelectionAsModule() {
     moduleLibraryPanel_->refresh();
 }
 
+// Build the per-source-layer batches for importing a module .bbm. Each
+// brick layer in the file becomes one LayerBatch whose layerName matches
+// the source's layer name. The command then resolves names against the
+// host map's brick layers and creates new layers when no name matches —
+// preserving the module's original z-order.
+static std::vector<edit::ImportBbmAsModuleCommand::LayerBatch>
+batchesFromModuleMap(const core::Map& loaded) {
+    std::vector<edit::ImportBbmAsModuleCommand::LayerBatch> batches;
+    for (const auto& L : loaded.layers()) {
+        if (!L || L->kind() != core::LayerKind::Brick) continue;
+        edit::ImportBbmAsModuleCommand::LayerBatch batch;
+        batch.layerName = L->name.isEmpty() ? QStringLiteral("Module") : L->name;
+        for (const auto& b : static_cast<const core::LayerBrick&>(*L).bricks) {
+            core::Brick copy = b;
+            copy.guid.clear();  // command mints fresh guids
+            batch.bricks.push_back(std::move(copy));
+        }
+        if (!batch.bricks.empty()) batches.push_back(std::move(batch));
+    }
+    return batches;
+}
+
 void MainWindow::onImportModuleFromLibraryPath(const QString& bbmPath) {
     auto* map = mapView_->currentMap();
     if (!map) return;
-    int targetLayer = -1;
-    for (int i = 0; i < static_cast<int>(map->layers().size()); ++i) {
-        if (map->layers()[i]->kind() == core::LayerKind::Brick) { targetLayer = i; break; }
-    }
-    if (targetLayer < 0) {
-        QMessageBox::warning(this, tr("Import module"), tr("No brick layer in the current map."));
-        return;
-    }
     auto loaded = saveload::readBbm(bbmPath);
     if (!loaded.ok()) {
         QMessageBox::warning(this, tr("Import failed"), loaded.error);
         return;
     }
-    std::vector<core::Brick> bricks;
-    for (const auto& L : loaded.map->layers()) {
-        if (L->kind() != core::LayerKind::Brick) continue;
-        for (const auto& b : static_cast<const core::LayerBrick&>(*L).bricks) {
-            core::Brick copy = b;
-            copy.guid.clear();  // regenerated inside the command
-            bricks.push_back(std::move(copy));
-        }
-    }
-    if (bricks.empty()) return;
+    auto batches = batchesFromModuleMap(*loaded.map);
+    if (batches.empty()) return;
+    int total = 0;
+    for (const auto& b : batches) total += b.bricks.size();
     const QString name = QFileInfo(bbmPath).baseName();
-    const int count = static_cast<int>(bricks.size());
     mapView_->undoStack()->push(new edit::ImportBbmAsModuleCommand(
-        *map, targetLayer, bbmPath, name, std::move(bricks)));
+        *map, bbmPath, name, std::move(batches)));
     mapView_->rebuildScene();
     modulesPanel_->setMap(map);
+    layerPanel_->setMap(map, mapView_->builder());
     statusBar()->showMessage(
-        tr("Imported %1 bricks from module '%2'").arg(count).arg(name), 4000);
+        tr("Imported %1 bricks from module '%2'").arg(total).arg(name), 4000);
 }
 
 void MainWindow::onImportBbmAsModule() {
     auto* map = mapView_->currentMap();
     if (!map) return;
-    int targetLayer = -1;
-    for (int i = 0; i < static_cast<int>(map->layers().size()); ++i) {
-        if (map->layers()[i]->kind() == core::LayerKind::Brick) { targetLayer = i; break; }
-    }
-    if (targetLayer < 0) {
-        QMessageBox::warning(this, tr("Import module"), tr("No brick layer in the current map."));
-        return;
-    }
     const QString path = QFileDialog::getOpenFileName(
         this, tr("Import .bbm as module"), {},
         tr("BlueBrick map (*.bbm)"));
@@ -1178,27 +1202,20 @@ void MainWindow::onImportBbmAsModule() {
         QMessageBox::warning(this, tr("Import failed"), loaded.error);
         return;
     }
-    std::vector<core::Brick> bricks;
-    for (const auto& L : loaded.map->layers()) {
-        if (L->kind() != core::LayerKind::Brick) continue;
-        const auto& BL = static_cast<const core::LayerBrick&>(*L);
-        for (const auto& b : BL.bricks) {
-            core::Brick copy = b;
-            copy.guid.clear();  // will be regenerated inside the command
-            bricks.push_back(std::move(copy));
-        }
-    }
-    if (bricks.empty()) {
+    auto batches = batchesFromModuleMap(*loaded.map);
+    if (batches.empty()) {
         QMessageBox::information(this, tr("Import module"),
             tr("The selected file has no brick layers to import."));
         return;
     }
+    int imported = 0;
+    for (const auto& b : batches) imported += b.bricks.size();
     const QString name = QFileInfo(path).baseName();
-    const int imported = static_cast<int>(bricks.size());
     mapView_->undoStack()->push(new edit::ImportBbmAsModuleCommand(
-        *map, targetLayer, path, name, std::move(bricks)));
+        *map, path, name, std::move(batches)));
     mapView_->rebuildScene();
     modulesPanel_->setMap(map);
+    layerPanel_->setMap(map, mapView_->builder());
     statusBar()->showMessage(
         tr("Imported %1 bricks as module '%2'").arg(imported).arg(name), 4000);
 }
