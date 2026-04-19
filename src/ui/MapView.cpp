@@ -155,6 +155,13 @@ MapView::MapView(parts::PartsLibrary& parts, QWidget* parent)
         refreshSelectionOverlay();
         emit selectionChanged();
     });
+    // Also refresh the overlay whenever anything in the scene changes
+    // geometry — this keeps the outline glued to the brick while the user
+    // drags it. Qt debounces `changed` to once per paint cycle, so this
+    // doesn't over-fire during live drag.
+    connect(scene, &QGraphicsScene::changed, this, [this]{
+        if (!this->scene()->selectedItems().isEmpty()) refreshSelectionOverlay();
+    });
 
     builder_ = std::make_unique<rendering::SceneBuilder>(*scene, parts_);
     undoStack_ = std::make_unique<QUndoStack>(this);
@@ -162,11 +169,41 @@ MapView::MapView(parts::PartsLibrary& parts, QWidget* parent)
     // the mutation, so we need to rebuild the scene afterwards for the UI to
     // reflect the restored state. Without this, Ctrl+Z appears to do nothing.
     connect(undoStack_.get(), &QUndoStack::indexChanged, this, [this](int){
-        if (map_) {
-            builder_->build(*map_);
-            refreshSelectionOverlay();
-            viewport()->update();
+        if (!map_) return;
+        // Snapshot the currently-selected (layer, guid, kind) triples before
+        // the rebuild wipes the scene so we can reselect the same logical
+        // items on the rebuilt pixmaps. Without this, moving a brick
+        // deselected it the instant the move committed.
+        struct SelKey { int layer; QString guid; QString kind; };
+        QList<SelKey> preserve;
+        for (QGraphicsItem* it : this->scene()->selectedItems()) {
+            if (!it) continue;
+            const QString kind = it->data(kBrickDataKind).toString();
+            if (kind.isEmpty()) continue;  // e.g. overlay item itself
+            preserve.append({ it->data(kBrickDataLayerIndex).toInt(),
+                              it->data(kBrickDataGuid).toString(), kind });
         }
+        builder_->build(*map_);
+        // Reselect by (layer, guid, kind) — builds a quick index of the new
+        // items once so each lookup is O(1).
+        if (!preserve.isEmpty()) {
+            QHash<QString, QGraphicsItem*> byKey;
+            for (QGraphicsItem* it : this->scene()->items()) {
+                const QString kind = it->data(kBrickDataKind).toString();
+                if (kind.isEmpty()) continue;
+                byKey.insert(QString::number(it->data(kBrickDataLayerIndex).toInt())
+                                 + QLatin1Char('|') + it->data(kBrickDataGuid).toString()
+                                 + QLatin1Char('|') + kind,
+                             it);
+            }
+            for (const auto& k : preserve) {
+                const QString key = QString::number(k.layer) + QLatin1Char('|')
+                                    + k.guid + QLatin1Char('|') + k.kind;
+                if (auto* it = byKey.value(key)) it->setSelected(true);
+            }
+        }
+        refreshSelectionOverlay();
+        viewport()->update();
     });
 }
 
