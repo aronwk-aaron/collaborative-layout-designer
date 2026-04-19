@@ -280,56 +280,6 @@ void MapView::drawBackground(QPainter* painter, const QRectF& rect) {
             for (double y = firstY; y < bottom; y += gridPx)
                 painter->drawLine(QPointF(left, y), QPointF(right, y));
         }
-
-        // Cell index labels (vanilla: A/B/C… along columns, 1/2/3… along
-        // rows or the opposite, depending on cellIndexColumnType /
-        // cellIndexRowType). cellIndexCorner sets the (0,0) origin cell.
-        if (g.displayCellIndex) {
-            QFont f(g.cellIndexFont.familyName);
-            f.setBold(g.cellIndexFont.styleString.contains(QStringLiteral("Bold")));
-            f.setItalic(g.cellIndexFont.styleString.contains(QStringLiteral("Italic")));
-            // Scale the label to ~half the cell in the current zoom so the
-            // letter doesn't vanish when the user zooms out.
-            const int pxSize = std::max(10, static_cast<int>(gridPx * transform().m11() * 0.35));
-            f.setPixelSize(pxSize);
-            painter->save();
-            // Cosmetic text: reset the view's scale so the font is screen-
-            // stable regardless of zoom.
-            painter->setFont(f);
-            painter->setPen(g.cellIndexColor.color);
-            auto labelFor = [](core::CellIndexType t, int n) -> QString {
-                if (t == core::CellIndexType::Letters) {
-                    // A, B, … Z, AA, AB …
-                    QString s;
-                    int v = n; if (v < 0) v = 0;
-                    do { s.prepend(QChar('A' + (v % 26))); v = v / 26 - 1; } while (v >= 0);
-                    return s;
-                }
-                return QString::number(n + 1);
-            };
-            const int col0 = g.cellIndexCorner.x();
-            const int row0 = g.cellIndexCorner.y();
-            // Draw column labels along the top edge of the visible area.
-            const double firstX = std::floor(rect.left() / gridPx) * gridPx;
-            const double firstY = std::floor(rect.top()  / gridPx) * gridPx;
-            QFontMetricsF fm(f);
-            const double labelPadY = 2.0;
-            for (double x = firstX; x < right; x += gridPx) {
-                const int colIdx = static_cast<int>(std::round((x - col0 * gridPx) / gridPx));
-                const QString s = labelFor(g.cellIndexColumnType, colIdx);
-                // Use device-coord text positioning so the letter doesn't
-                // stretch with the view. Paint in scene coords, Qt handles
-                // the transform for us — but fontSize is in pixels so
-                // render-size stays reasonable.
-                painter->drawText(QPointF(x + 4, rect.top() + fm.ascent() + labelPadY), s);
-            }
-            for (double y = firstY; y < bottom; y += gridPx) {
-                const int rowIdx = static_cast<int>(std::round((y - row0 * gridPx) / gridPx));
-                const QString s = labelFor(g.cellIndexRowType, rowIdx);
-                painter->drawText(QPointF(rect.left() + 4, y + fm.ascent() + labelPadY), s);
-            }
-            painter->restore();
-        }
         break;
     }
 }
