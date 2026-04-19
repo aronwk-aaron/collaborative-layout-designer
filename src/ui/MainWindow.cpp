@@ -83,6 +83,19 @@ MainWindow::MainWindow(parts::PartsLibrary& parts, QWidget* parent)
 
     statusBar()->showMessage(
         tr("Parts library: %1 parts indexed").arg(parts_.partCount()));
+
+    // Restore the window geometry + dock layout the user left at last exit,
+    // and assign stable object names so Qt can identify each dock on save/restore.
+    layerPanel_->setObjectName(QStringLiteral("dock.layers"));
+    partsBrowser_->setObjectName(QStringLiteral("dock.parts"));
+    modulesPanel_->setObjectName(QStringLiteral("dock.modules"));
+    QSettings s;
+    s.beginGroup(QStringLiteral("ui"));
+    const QByteArray geom = s.value(QStringLiteral("geometry")).toByteArray();
+    const QByteArray state = s.value(QStringLiteral("state")).toByteArray();
+    s.endGroup();
+    if (!geom.isEmpty())  restoreGeometry(geom);
+    if (!state.isEmpty()) restoreState(state);
 }
 
 MainWindow::~MainWindow() = default;
@@ -371,8 +384,14 @@ bool MainWindow::maybeSave() {
 }
 
 void MainWindow::closeEvent(QCloseEvent* e) {
-    if (maybeSave()) e->accept();
-    else             e->ignore();
+    if (!maybeSave()) { e->ignore(); return; }
+    // Persist window geometry + dock layout for the next launch.
+    QSettings s;
+    s.beginGroup(QStringLiteral("ui"));
+    s.setValue(QStringLiteral("geometry"), saveGeometry());
+    s.setValue(QStringLiteral("state"),    saveState());
+    s.endGroup();
+    e->accept();
 }
 
 void MainWindow::onManageLibraries() {
