@@ -9,6 +9,8 @@ add_library(cld_edit STATIC
     TextCommands.h
     LayerCommands.cpp
     LayerCommands.h
+    AreaCommands.cpp
+    AreaCommands.h
 )
 
 target_include_directories(cld_edit PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)

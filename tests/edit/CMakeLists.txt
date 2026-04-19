@@ -3,6 +3,7 @@ add_executable(cld_edit_tests
     ModuleCommandsTest.cpp
     LabelCommandsTest.cpp
     LayerCommandsTest.cpp
+    AreaCommandsTest.cpp
 )
 
 target_link_libraries(cld_edit_tests

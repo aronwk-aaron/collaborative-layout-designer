@@ -47,7 +47,9 @@
 #include <QPlainTextEdit>
 #include <QSettings>
 #include <QStatusBar>
+#include <QHBoxLayout>
 #include <QToolBar>
+#include <QToolButton>
 #include <QVBoxLayout>
 #include <QUndoStack>
 #include <QUuid>
@@ -140,6 +142,62 @@ MainWindow::MainWindow(parts::PartsLibrary& parts, QWidget* parent)
     };
     for (const auto& o : snapOptions) snapCombo_->addItem(o.first, o.second);
     toolbar->addWidget(snapCombo_);
+
+    toolbar->addSeparator();
+    toolbar->addWidget(new QLabel(tr("  Tool: "), this));
+    auto* toolGroupHost = new QWidget(this);
+    auto* toolRow = new QHBoxLayout(toolGroupHost);
+    toolRow->setContentsMargins(0, 0, 0, 0);
+    toolRow->setSpacing(1);
+    auto* selectBtn = new QToolButton(toolGroupHost);
+    selectBtn->setText(tr("Select"));
+    selectBtn->setCheckable(true); selectBtn->setChecked(true);
+    auto* paintBtn = new QToolButton(toolGroupHost);
+    paintBtn->setText(tr("Paint")); paintBtn->setCheckable(true);
+    auto* eraseBtn = new QToolButton(toolGroupHost);
+    eraseBtn->setText(tr("Erase")); eraseBtn->setCheckable(true);
+    toolRow->addWidget(selectBtn);
+    toolRow->addWidget(paintBtn);
+    toolRow->addWidget(eraseBtn);
+    toolbar->addWidget(toolGroupHost);
+
+    auto* colorBtn = new QToolButton(this);
+    colorBtn->setToolTip(tr("Paint colour"));
+    auto refreshColorBtn = [this, colorBtn]{
+        QPixmap pm(20, 20);
+        pm.fill(mapView_->paintColor());
+        colorBtn->setIcon(QIcon(pm));
+    };
+    {
+        QSettings s; s.beginGroup(QStringLiteral("editing"));
+        const QColor savedColor(s.value(QStringLiteral("paintColor"),
+                                          QColor(0, 128, 0).name()).toString());
+        s.endGroup();
+        if (savedColor.isValid()) mapView_->setPaintColor(savedColor);
+    }
+    refreshColorBtn();
+    toolbar->addWidget(colorBtn);
+
+    auto setTool = [this, selectBtn, paintBtn, eraseBtn](MapView::Tool t){
+        selectBtn->setChecked(t == MapView::Tool::Select);
+        paintBtn->setChecked(t == MapView::Tool::PaintArea);
+        eraseBtn->setChecked(t == MapView::Tool::EraseArea);
+        mapView_->setTool(t);
+    };
+    connect(selectBtn, &QToolButton::clicked, [setTool]{ setTool(MapView::Tool::Select); });
+    connect(paintBtn,  &QToolButton::clicked, [setTool]{ setTool(MapView::Tool::PaintArea); });
+    connect(eraseBtn,  &QToolButton::clicked, [setTool]{ setTool(MapView::Tool::EraseArea); });
+    connect(colorBtn, &QToolButton::clicked, [this, refreshColorBtn]{
+        const QColor c = QColorDialog::getColor(mapView_->paintColor(), this,
+                                                 tr("Paint colour"),
+                                                 QColorDialog::ShowAlphaChannel);
+        if (!c.isValid()) return;
+        mapView_->setPaintColor(c);
+        refreshColorBtn();
+        QSettings s; s.beginGroup(QStringLiteral("editing"));
+        s.setValue(QStringLiteral("paintColor"), c.name(QColor::HexArgb));
+        s.endGroup();
+    });
 
     toolbar->addSeparator();
     toolbar->addWidget(new QLabel(tr("  Rotate: "), this));

@@ -2,9 +2,12 @@
 
 #include "../core/Brick.h"
 
+#include <QColor>
 #include <QGraphicsView>
 #include <QHash>
+#include <QPoint>
 #include <QPointF>
+#include <QSet>
 #include <QString>
 
 #include <memory>
@@ -66,6 +69,15 @@ public:
     // Prompt the user to edit the selected single text cell's content.
     void editSelectedTextContent();
 
+    // Active tool — affects left-click behaviour on the map.
+    enum class Tool { Select, PaintArea, EraseArea };
+    void setTool(Tool t) { tool_ = t; }
+    Tool tool() const { return tool_; }
+
+    // Area paint state (read by the paint handler).
+    void setPaintColor(QColor c) { paintColor_ = c; }
+    QColor paintColor() const { return paintColor_; }
+
 signals:
     void selectionChanged();
 
@@ -114,6 +126,12 @@ private:
     // Snap + rotation step config, updated by MainWindow from toolbar + QSettings.
     double snapStepStuds_       = 0.0;     // 0 disables snap
     double rotationStepDegrees_ = 90.0;
+
+    Tool   tool_ = Tool::Select;
+    QColor paintColor_ = QColor(0, 128, 0);
+    // Track which cells we already painted in the current stroke so dragging
+    // a single cell size across cells adds exactly one change per cell.
+    QSet<QPoint> strokeCellsTouched_;
 };
 
 }

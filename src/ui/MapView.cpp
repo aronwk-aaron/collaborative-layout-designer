@@ -2,11 +2,13 @@
 
 #include "../core/Brick.h"
 #include "../core/Layer.h"
+#include "../core/LayerArea.h"
 #include "../core/LayerBrick.h"
 #include "../core/LayerGrid.h"
 #include "../core/LayerText.h"
 #include "../core/Map.h"
 #include "../core/TextCell.h"
+#include "../edit/AreaCommands.h"
 #include "../edit/EditCommands.h"
 #include "../edit/TextCommands.h"
 #include "../parts/PartsLibrary.h"
@@ -230,11 +232,78 @@ void MapView::mousePressEvent(QMouseEvent* e) {
         e->accept();
         return;
     }
+    // Paint / erase: swallow the event so the graphics view doesn't start a
+    // rubber band or drag, and stamp the cell under the cursor.
+    if (e->button() == Qt::LeftButton && map_ &&
+        (tool_ == Tool::PaintArea || tool_ == Tool::EraseArea)) {
+        strokeCellsTouched_.clear();
+        // Find top-most visible area layer; paint there.
+        int targetLayer = -1;
+        core::LayerArea* target = nullptr;
+        for (int i = static_cast<int>(map_->layers().size()) - 1; i >= 0; --i) {
+            auto* L = map_->layers()[i].get();
+            if (L && L->kind() == core::LayerKind::Area && L->visible) {
+                targetLayer = i;
+                target = static_cast<core::LayerArea*>(L);
+                break;
+            }
+        }
+        if (target) {
+            const double pxPerStud = rendering::SceneBuilder::kPixelsPerStud;
+            const QPointF sp = mapToScene(e->pos());
+            const double cell = std::max(1, target->areaCellSizeInStud) * pxPerStud;
+            const int cx = static_cast<int>(std::floor(sp.x() / cell));
+            const int cy = static_cast<int>(std::floor(sp.y() / cell));
+            strokeCellsTouched_.insert(QPoint(cx, cy));
+            std::vector<edit::PaintAreaCellsCommand::Change> chg;
+            chg.push_back({ cx, cy,
+                tool_ == Tool::PaintArea ? std::optional<QColor>(paintColor_)
+                                          : std::nullopt });
+            undoStack_->push(new edit::PaintAreaCellsCommand(*map_, targetLayer, std::move(chg)));
+            rebuildScene();
+        }
+        e->accept();
+        return;
+    }
     QGraphicsView::mousePressEvent(e);
     if (e->button() == Qt::LeftButton) captureDragStart();
 }
 
 void MapView::mouseMoveEvent(QMouseEvent* e) {
+    // Continue a paint/erase stroke as long as the left button is held down
+    // and we're in a paint tool. Group each cell change as its own command so
+    // Ctrl+Z rolls back one cell at a time (matches vanilla BlueBrick's
+    // per-click behaviour).
+    if (map_ && (tool_ == Tool::PaintArea || tool_ == Tool::EraseArea)
+        && (e->buttons() & Qt::LeftButton)) {
+        int targetLayer = -1;
+        core::LayerArea* target = nullptr;
+        for (int i = static_cast<int>(map_->layers().size()) - 1; i >= 0; --i) {
+            auto* L = map_->layers()[i].get();
+            if (L && L->kind() == core::LayerKind::Area && L->visible) {
+                targetLayer = i; target = static_cast<core::LayerArea*>(L); break;
+            }
+        }
+        if (target) {
+            const double pxPerStud = rendering::SceneBuilder::kPixelsPerStud;
+            const QPointF sp = mapToScene(e->pos());
+            const double cell = std::max(1, target->areaCellSizeInStud) * pxPerStud;
+            const int cx = static_cast<int>(std::floor(sp.x() / cell));
+            const int cy = static_cast<int>(std::floor(sp.y() / cell));
+            const QPoint k(cx, cy);
+            if (!strokeCellsTouched_.contains(k)) {
+                strokeCellsTouched_.insert(k);
+                std::vector<edit::PaintAreaCellsCommand::Change> chg;
+                chg.push_back({ cx, cy,
+                    tool_ == Tool::PaintArea ? std::optional<QColor>(paintColor_)
+                                              : std::nullopt });
+                undoStack_->push(new edit::PaintAreaCellsCommand(*map_, targetLayer, std::move(chg)));
+                rebuildScene();
+            }
+        }
+        e->accept();
+        return;
+    }
     if (panning_ && (e->buttons() & Qt::MiddleButton)) {
         const QPoint delta = e->pos() - panAnchor_;
         panAnchor_ = e->pos();
