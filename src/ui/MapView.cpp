@@ -356,6 +356,68 @@ void MapView::contextMenuEvent(QContextMenuEvent* e) {
     e->accept();
 }
 
+void MapView::copySelection() {
+    clipboard_.clear();
+    if (!map_) return;
+    for (QGraphicsItem* it : scene()->selectedItems()) {
+        if (!isBrickItem(it)) continue;
+        const int li = it->data(kBrickDataLayerIndex).toInt();
+        const QString guid = it->data(kBrickDataGuid).toString();
+        if (li < 0 || li >= static_cast<int>(map_->layers().size())) continue;
+        auto* L = map_->layers()[li].get();
+        if (!L || L->kind() != core::LayerKind::Brick) continue;
+        for (const auto& b : static_cast<core::LayerBrick&>(*L).bricks) {
+            if (b.guid == guid) { clipboard_.push_back(b); break; }
+        }
+    }
+}
+
+void MapView::cutSelection() {
+    copySelection();
+    deleteSelected();
+}
+
+void MapView::pasteClipboard() {
+    if (!map_ || clipboard_.empty()) return;
+    int targetLayer = -1;
+    for (int i = 0; i < static_cast<int>(map_->layers().size()); ++i) {
+        if (map_->layers()[i]->kind() == core::LayerKind::Brick) { targetLayer = i; break; }
+    }
+    if (targetLayer < 0) return;
+
+    // Place pasted bricks offset from their originals so they don't sit on
+    // top of the source. Offset of 2 studs matches vanilla BlueBrick.
+    constexpr double kPasteOffsetStuds = 2.0;
+    std::vector<core::Brick> pasted;
+    pasted.reserve(clipboard_.size());
+    for (const auto& src : clipboard_) {
+        core::Brick b = src;
+        b.guid = QUuid::createUuid().toString(QUuid::WithoutBraces);
+        b.displayArea.translate(kPasteOffsetStuds, kPasteOffsetStuds);
+        // Pasted brick keeps no previous group membership — modules are
+        // tracked separately in the sidecar.
+        b.myGroupId.clear();
+        pasted.push_back(std::move(b));
+    }
+    undoStack_->push(new edit::AddBricksCommand(*map_, targetLayer, std::move(pasted)));
+    rebuildScene();
+}
+
+void MapView::duplicateSelection() {
+    copySelection();
+    pasteClipboard();
+}
+
+void MapView::selectAll() {
+    for (QGraphicsItem* it : scene()->items()) {
+        if (isBrickItem(it)) it->setSelected(true);
+    }
+}
+
+void MapView::deselectAll() {
+    scene()->clearSelection();
+}
+
 void MapView::dragEnterEvent(QDragEnterEvent* e) {
     if (e->mimeData()->hasFormat(QString::fromLatin1(PartsBrowser::kPartMimeType))) {
         e->acceptProposedAction();

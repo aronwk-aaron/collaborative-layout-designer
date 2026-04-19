@@ -111,6 +111,29 @@ TEST(EditCommands, DeleteUndoRestoresIndex) {
     EXPECT_EQ(L->bricks[1].guid, QStringLiteral("b"));
 }
 
+TEST(EditCommands, AddBricksBatchAtomicUndo) {
+    core::Map m = makeMapWithBrickLayer();
+    auto* L = static_cast<core::LayerBrick*>(m.layers()[0].get());
+    L->bricks.push_back(makeBrick(QStringLiteral("existing"), QStringLiteral("x"), QRectF()));
+
+    QUndoStack stack;
+    std::vector<core::Brick> batch = {
+        makeBrick(QStringLiteral("n1"), QStringLiteral("a"), QRectF()),
+        makeBrick(QStringLiteral("n2"), QStringLiteral("b"), QRectF()),
+        makeBrick(QStringLiteral("n3"), QStringLiteral("c"), QRectF()),
+    };
+    stack.push(new edit::AddBricksCommand(m, 0, batch));
+    EXPECT_EQ(L->bricks.size(), 4u);
+
+    // Single undo removes all three at once.
+    stack.undo();
+    ASSERT_EQ(L->bricks.size(), 1u);
+    EXPECT_EQ(L->bricks[0].guid, QStringLiteral("existing"));
+
+    stack.redo();
+    EXPECT_EQ(L->bricks.size(), 4u);
+}
+
 TEST(EditCommands, MultiBrickDelete) {
     core::Map m = makeMapWithBrickLayer();
     auto* L = static_cast<core::LayerBrick*>(m.layers()[0].get());

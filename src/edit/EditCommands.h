@@ -97,4 +97,23 @@ private:
     int         insertAt_;
 };
 
+// Append a batch of bricks to the given layer as a single undoable step. Used
+// by Paste / Duplicate so the user doesn't see N individual undo entries for
+// a single clipboard operation.
+class AddBricksCommand : public QUndoCommand {
+public:
+    AddBricksCommand(core::Map& map, int layerIndex, std::vector<core::Brick> bricks,
+                     QUndoCommand* parent = nullptr);
+
+    void undo() override;
+    void redo() override;
+
+    const std::vector<core::Brick>& bricks() const { return bricks_; }
+
+private:
+    core::Map& map_;
+    int layerIndex_;
+    std::vector<core::Brick> bricks_;
+};
+
 }

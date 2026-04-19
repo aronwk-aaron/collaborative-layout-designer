@@ -142,6 +142,32 @@ void MainWindow::setupMenus() {
     connect(rotCW, &QAction::triggered, [this]{ mapView_->rotateSelected(90.0f); });
 
     edit->addSeparator();
+    auto* cutAct = edit->addAction(tr("Cu&t"));
+    cutAct->setShortcut(QKeySequence::Cut);
+    connect(cutAct, &QAction::triggered, [this]{ mapView_->cutSelection(); });
+
+    auto* copyAct = edit->addAction(tr("&Copy"));
+    copyAct->setShortcut(QKeySequence::Copy);
+    connect(copyAct, &QAction::triggered, [this]{ mapView_->copySelection(); });
+
+    auto* pasteAct = edit->addAction(tr("&Paste"));
+    pasteAct->setShortcut(QKeySequence::Paste);
+    connect(pasteAct, &QAction::triggered, [this]{ mapView_->pasteClipboard(); });
+
+    auto* dupAct = edit->addAction(tr("&Duplicate"));
+    dupAct->setShortcut(QKeySequence(tr("Ctrl+D")));
+    connect(dupAct, &QAction::triggered, [this]{ mapView_->duplicateSelection(); });
+
+    edit->addSeparator();
+    auto* selAllAct = edit->addAction(tr("Select &All"));
+    selAllAct->setShortcut(QKeySequence::SelectAll);
+    connect(selAllAct, &QAction::triggered, [this]{ mapView_->selectAll(); });
+
+    auto* selNoneAct = edit->addAction(tr("Deselect All"));
+    selNoneAct->setShortcut(QKeySequence(tr("Ctrl+Shift+A")));
+    connect(selNoneAct, &QAction::triggered, [this]{ mapView_->deselectAll(); });
+
+    edit->addSeparator();
     auto* addLabel = edit->addAction(tr("Add &Anchored Label..."));
     addLabel->setShortcut(QKeySequence(tr("Ctrl+L")));
     connect(addLabel, &QAction::triggered, this, [this]{

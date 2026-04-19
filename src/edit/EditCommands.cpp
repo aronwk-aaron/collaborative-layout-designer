@@ -123,4 +123,30 @@ void AddBrickCommand::undo() {
     }
 }
 
+// ----- AddBricksCommand -----
+
+AddBricksCommand::AddBricksCommand(core::Map& map, int layerIndex, std::vector<core::Brick> bricks,
+                                   QUndoCommand* parent)
+    : QUndoCommand(parent), map_(map), layerIndex_(layerIndex), bricks_(std::move(bricks)) {
+    setText(QObject::tr("Add %1 brick(s)").arg(bricks_.size()));
+}
+
+void AddBricksCommand::redo() {
+    if (auto* L = brickLayer(map_, layerIndex_)) {
+        for (const auto& b : bricks_) L->bricks.push_back(b);
+    }
+}
+
+void AddBricksCommand::undo() {
+    auto* L = brickLayer(map_, layerIndex_);
+    if (!L) return;
+    // Guids are unique within our bricks_ list; remove each from the layer.
+    QSet<QString> toRemove;
+    for (const auto& b : bricks_) toRemove.insert(b.guid);
+    L->bricks.erase(
+        std::remove_if(L->bricks.begin(), L->bricks.end(),
+                       [&](const core::Brick& b) { return toRemove.contains(b.guid); }),
+        L->bricks.end());
+}
+
 }

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "../core/Brick.h"
+
 #include <QGraphicsView>
 #include <QHash>
 #include <QPointF>
@@ -35,6 +37,15 @@ public:
     void deleteSelected();
     void addPartAtViewCenter(const QString& partKey);
     void addPartAtScenePos(const QString& partKey, QPointF scenePosPx);
+
+    // Clipboard / selection ops.
+    void copySelection();            // copy selected bricks to the internal clipboard
+    void cutSelection();             // copy + delete
+    void pasteClipboard();           // insert clipboard bricks with fresh guids + offset
+    void duplicateSelection();       // copy + paste in one command
+    void selectAll();
+    void deselectAll();
+    bool clipboardEmpty() const { return clipboard_.empty(); }
 
 signals:
     void selectionChanged();
@@ -74,6 +85,11 @@ private:
     // Middle-mouse pan state.
     bool    panning_ = false;
     QPoint  panAnchor_;
+
+    // Internal (in-process) brick clipboard. Cross-process paste would require
+    // serialising to QMimeData via the system clipboard; deferred until a user
+    // actually needs it.
+    std::vector<core::Brick> clipboard_;
 };
 
 }
