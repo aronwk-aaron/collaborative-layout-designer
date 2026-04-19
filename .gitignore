@@ -1,0 +1,64 @@
+# Build outputs
+build/
+build-*/
+out/
+cmake-build-*/
+Testing/
+install/
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+CMakeScripts/
+cmake_install.cmake
+Makefile
+compile_commands.json
+CTestTestfile.cmake
+_deps/
+
+# Qt
+*.pro.user
+*.pro.user.*
+*.moc
+moc_*.cpp
+moc_*.h
+qrc_*.cpp
+ui_*.h
+*.qmlc
+*.jsc
+
+# Object + binary
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.so.*
+*.dylib
+*.dll
+*.exe
+*.app/
+*.pdb
+*.ilk
+
+# IDEs
+.vscode/
+!.vscode/settings.shared.json
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Local settings
+.claude/settings.local.json
+local_*.cmake
+
+# Packaging artifacts
+*.dmg
+*.msi
+*.AppImage
+*.deb
+*.rpm
+dist/

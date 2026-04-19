@@ -1,0 +1,3 @@
+[submodule "parts/BlueBrickParts"]
+	path = parts/BlueBrickParts
+	url = https://github.com/Lswbanban/BlueBrickParts.git
