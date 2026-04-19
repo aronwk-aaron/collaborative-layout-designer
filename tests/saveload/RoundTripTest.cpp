@@ -345,9 +345,12 @@ TEST(RoundTrip, MapWithLayerRuler) {
     ASSERT_NE(parsed, nullptr);
     ASSERT_EQ(parsed->rulers.size(), 2u);
     ASSERT_EQ(parsed->rulers[0].kind, core::RulerKind::Linear);
-    // Ruler items do not serialize an id attribute in vanilla; guid is
-    // expected to round-trip as empty even though we populated it on write.
-    EXPECT_EQ(parsed->rulers[0].linear.guid, QString());
+    // Ruler items don't carry an id attribute in the serialized XML
+    // (vanilla parity), so writer emits no id and reader sees empty.
+    // migrateNonNumericIds then mints a fresh numeric id on load so
+    // every ruler has a unique, non-empty guid — otherwise in-app
+    // selection / sidecar references collapse every ruler into one.
+    EXPECT_FALSE(parsed->rulers[0].linear.guid.isEmpty());
     EXPECT_EQ(parsed->rulers[0].linear.point1, QPointF(10, 20));
     EXPECT_EQ(parsed->rulers[0].linear.point2, QPointF(110, 20));
     EXPECT_EQ(parsed->rulers[0].linear.attachedBrick1Id, QStringLiteral("500"));
@@ -356,7 +359,8 @@ TEST(RoundTrip, MapWithLayerRuler) {
     EXPECT_TRUE(parsed->rulers[0].linear.displayDistance);
     EXPECT_FALSE(parsed->rulers[0].linear.displayUnit);
     ASSERT_EQ(parsed->rulers[1].kind, core::RulerKind::Circular);
-    EXPECT_EQ(parsed->rulers[1].circular.guid, QString());
+    EXPECT_FALSE(parsed->rulers[1].circular.guid.isEmpty());
+    EXPECT_NE(parsed->rulers[0].linear.guid, parsed->rulers[1].circular.guid);
     EXPECT_EQ(parsed->rulers[1].circular.center, QPointF(0, 0));
     EXPECT_FLOAT_EQ(parsed->rulers[1].circular.radius, 20.0f);
     EXPECT_EQ(parsed->rulers[1].circular.attachedBrickId, QStringLiteral("501"));

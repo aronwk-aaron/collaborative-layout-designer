@@ -404,18 +404,26 @@ void MapView::refreshSelectionOverlay() {
         if (!it || it == selectionOverlay_) continue;
         if (isRulerItem(it)) {
             const QString guid = it->data(kBrickDataGuid).toString();
-            if (rulerGuidsSeen.contains(guid)) continue;
-            rulerGuidsSeen.insert(guid);
-            QRectF sbr;
-            for (QGraphicsItem* any : scene()->items()) {
-                if (!isRulerItem(any)) continue;
-                if (any->data(kBrickDataGuid).toString() != guid) continue;
-                sbr = sbr.united(any->sceneBoundingRect());
+            // Empty guid means the ruler lost its id somewhere and
+            // every ruler would share it — highlighting all of them
+            // together is worse than just highlighting what the user
+            // actually clicked. Fall back to the single-item path.
+            if (!guid.isEmpty()) {
+                if (rulerGuidsSeen.contains(guid)) continue;
+                rulerGuidsSeen.insert(guid);
+                QRectF sbr;
+                for (QGraphicsItem* any : scene()->items()) {
+                    if (!isRulerItem(any)) continue;
+                    if (any->data(kBrickDataGuid).toString() != guid) continue;
+                    sbr = sbr.united(any->sceneBoundingRect());
+                }
+                if (sbr.width()  < 2.0) sbr.adjust(-3.0, 0.0, 3.0, 0.0);
+                if (sbr.height() < 2.0) sbr.adjust(0.0, -3.0, 0.0, 3.0);
+                if (!sbr.isEmpty()) polys.append(QPolygonF(sbr));
+                continue;
             }
-            if (sbr.width()  < 2.0) sbr.adjust(-3.0, 0.0, 3.0, 0.0);
-            if (sbr.height() < 2.0) sbr.adjust(0.0, -3.0, 0.0, 3.0);
-            if (!sbr.isEmpty()) polys.append(QPolygonF(sbr));
-            continue;
+            // Empty guid — fall through to the single-item path below so
+            // we highlight only the clicked piece, not every ruler.
         }
         const QRectF local = it->boundingRect();
         const bool localThin = (local.width() < 1.0 || local.height() < 1.0);

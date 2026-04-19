@@ -133,7 +133,24 @@ bool isNumericId(const QString& s) {
 
 void migrateNonNumericIds(core::Map& map) {
     QHash<QString, QString> remap;  // old -> new
-    auto ensure = [&](QString& id) {
+
+    // Item/layer identity. Empty is NOT a valid item id — older .bbm
+    // files (and some we generate by hand) skipped the id attribute on
+    // rulers and text cells, which collapsed every such item's guid to
+    // "". Downstream code keys on guid (scene item tagging, module
+    // memberIds, undo commands), so a fresh id is minted for any empty
+    // guid here.
+    auto ensureId = [&](QString& id) {
+        if (!id.isEmpty() && isNumericId(id)) return;
+        if (id.isEmpty()) { id = core::newBbmId(); return; }
+        auto it = remap.find(id);
+        if (it == remap.end()) it = remap.insert(id, core::newBbmId());
+        id = it.value();
+    };
+    // Optional reference: empty means "no affiliation" (e.g. myGroupId
+    // on an unaffiliated brick, LinkedTo on a free connection point).
+    // Only remap non-empty non-numeric values.
+    auto ensureRef = [&](QString& id) {
         if (isNumericId(id)) return;
         auto it = remap.find(id);
         if (it == remap.end()) it = remap.insert(id, core::newBbmId());
@@ -142,31 +159,31 @@ void migrateNonNumericIds(core::Map& map) {
 
     for (auto& layerPtr : map.layers()) {
         if (!layerPtr) continue;
-        ensure(layerPtr->guid);
+        ensureId(layerPtr->guid);
 
         if (layerPtr->kind() == core::LayerKind::Brick) {
             auto& L = static_cast<core::LayerBrick&>(*layerPtr);
             for (auto& b : L.bricks) {
-                ensure(b.guid);
-                ensure(b.myGroupId);
+                ensureId(b.guid);
+                ensureRef(b.myGroupId);
                 for (auto& cp : b.connections) {
-                    ensure(cp.guid);
-                    ensure(cp.linkedToId);
+                    ensureId(cp.guid);
+                    ensureRef(cp.linkedToId);
                 }
             }
             for (auto& g : L.groups) {
-                ensure(g.guid);
-                ensure(g.myGroupId);
+                ensureId(g.guid);
+                ensureRef(g.myGroupId);
             }
         } else if (layerPtr->kind() == core::LayerKind::Text) {
             auto& L = static_cast<core::LayerText&>(*layerPtr);
             for (auto& c : L.textCells) {
-                ensure(c.guid);
-                ensure(c.myGroupId);
+                ensureId(c.guid);
+                ensureRef(c.myGroupId);
             }
             for (auto& g : L.groups) {
-                ensure(g.guid);
-                ensure(g.myGroupId);
+                ensureId(g.guid);
+                ensureRef(g.myGroupId);
             }
         } else if (layerPtr->kind() == core::LayerKind::Ruler) {
             auto& L = static_cast<core::LayerRuler&>(*layerPtr);
@@ -174,18 +191,18 @@ void migrateNonNumericIds(core::Map& map) {
                 auto& base = (any.kind == core::RulerKind::Linear)
                                  ? static_cast<core::RulerItemBase&>(any.linear)
                                  : static_cast<core::RulerItemBase&>(any.circular);
-                ensure(base.guid);
-                ensure(base.myGroupId);
+                ensureId(base.guid);
+                ensureRef(base.myGroupId);
                 if (any.kind == core::RulerKind::Linear) {
-                    ensure(any.linear.attachedBrick1Id);
-                    ensure(any.linear.attachedBrick2Id);
+                    ensureRef(any.linear.attachedBrick1Id);
+                    ensureRef(any.linear.attachedBrick2Id);
                 } else {
-                    ensure(any.circular.attachedBrickId);
+                    ensureRef(any.circular.attachedBrickId);
                 }
             }
             for (auto& g : L.groups) {
-                ensure(g.guid);
-                ensure(g.myGroupId);
+                ensureId(g.guid);
+                ensureRef(g.myGroupId);
             }
         }
     }
