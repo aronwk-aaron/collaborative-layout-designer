@@ -151,6 +151,14 @@ private:
     // Redrawn whenever scene()->selectionChanged fires.
     class SelectionOverlay* selectionOverlay_ = nullptr;
     void refreshSelectionOverlay();
+
+    // Set by the live connection-snap hook when the dragged brick is
+    // currently locked to a connection; read by the overlay so the
+    // selection outline renders in connection-snap colour to give the
+    // user live feedback. Also stored in scene coords so the overlay can
+    // draw a ring at the exact connection point.
+    bool    liveSnapActive_ = false;
+    QPointF liveSnapPointScene_;
 };
 
 }

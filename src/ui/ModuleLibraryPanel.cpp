@@ -7,6 +7,7 @@
 #include <QListWidget>
 #include <QListWidgetItem>
 #include <QMenu>
+#include <QMimeData>
 #include <QPushButton>
 #include <QSettings>
 #include <QStandardPaths>
@@ -22,6 +23,25 @@ QString defaultModuleLibraryPath() {
     const QString base = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
     return base.isEmpty() ? QString() : base + QStringLiteral("/modules");
 }
+
+// Minimal QListWidget subclass that encodes the dragged item's file path
+// under our custom module MIME type. MapView::dropEvent picks it up and
+// imports the module at the drop position.
+class ModuleListWidget : public QListWidget {
+public:
+    using QListWidget::QListWidget;
+    QStringList mimeTypes() const override {
+        return { QString::fromLatin1(kModuleDragMimeType) };
+    }
+    QMimeData* mimeData(const QList<QListWidgetItem*>& items) const override {
+        auto* m = new QMimeData;
+        if (!items.isEmpty()) {
+            const QString path = items.first()->data(Qt::UserRole).toString();
+            m->setData(QString::fromLatin1(kModuleDragMimeType), path.toUtf8());
+        }
+        return m;
+    }
+};
 }
 
 ModuleLibraryPanel::ModuleLibraryPanel(QWidget* parent)
@@ -43,7 +63,9 @@ ModuleLibraryPanel::ModuleLibraryPanel(QWidget* parent)
     row->addWidget(refreshBtn);
     col->addLayout(row);
 
-    list_ = new QListWidget(host);
+    list_ = new ModuleListWidget(host);
+    list_->setDragEnabled(true);
+    list_->setDragDropMode(QAbstractItemView::DragOnly);
     col->addWidget(list_);
 
     setWidget(host);

@@ -238,9 +238,12 @@ void addBrickLayer(const core::LayerBrick& L, LayerSink& sink, parts::PartsLibra
         // Connection-point markers: child ellipses in the brick's local coord
         // system so they transform with the brick for free. Hidden by default;
         // shown on selection via the ItemSelectedChange hook above (or
-        // unconditionally if view/connectionPoints is on).
+        // unconditionally if view/connectionPoints is on). Radius bumped to
+        // 6px with a white ring + type-coloured fill so they stand out
+        // clearly on any brick colour — user asked for larger/more obvious
+        // markers.
         if (meta && !meta->connections.isEmpty()) {
-            constexpr double kDotRadiusPx = 3.0;
+            constexpr double kDotRadiusPx = 6.0;
             for (const auto& c : meta->connections) {
                 if (c.type.isEmpty()) continue;
                 const QPointF localPx(c.position.x() * kPx, c.position.y() * kPx);
@@ -248,8 +251,8 @@ void addBrickLayer(const core::LayerBrick& L, LayerSink& sink, parts::PartsLibra
                     localPx.x() - kDotRadiusPx, localPx.y() - kDotRadiusPx,
                     kDotRadiusPx * 2, kDotRadiusPx * 2, item);
                 QColor col = colorForConnectionType(c.type);
-                QPen pen(col.darker(160));
-                pen.setWidthF(1.0);
+                QPen pen(QColor(255, 255, 255));
+                pen.setWidthF(2.0);
                 pen.setCosmetic(true);
                 dot->setPen(pen);
                 dot->setBrush(QBrush(col));

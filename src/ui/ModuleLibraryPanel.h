@@ -9,12 +9,17 @@ class QListWidgetItem;
 
 namespace cld::ui {
 
+// MIME type used when dragging a module from the library panel onto the map.
+// The payload is the module .bbm's absolute path (UTF-8).
+inline constexpr const char* kModuleDragMimeType = "application/x-cld-module-path";
+
 // A simple library of module .bbm files on disk. Backed by a QSettings folder
 // path ("modules/libraryPath"). Lists every .bbm in that folder; double-click
 // (or the right-click "Import into map" action) emits moduleImportRequested
 // with the full file path. MainWindow turns that into the existing
 // ImportBbmAsModuleCommand flow, so saving a module here and loading it into
-// another project is symmetric.
+// another project is symmetric. The list is also drag-enabled so the user
+// can drop a module onto the map at a specific cursor position.
 class ModuleLibraryPanel : public QDockWidget {
     Q_OBJECT
 public:
