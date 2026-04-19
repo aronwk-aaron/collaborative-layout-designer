@@ -67,6 +67,19 @@ bool isRulerItem(const QGraphicsItem* it) {
 
 double studToPx() { return rendering::SceneBuilder::kPixelsPerStud; }
 
+// Forward declarations for helpers defined further down so the MapView
+// constructor (which hands a lambda into SceneBuilder::setLiveConnectionSnapHook)
+// can refer to them.
+struct ConnectionSnapResult {
+    bool    applied = false;
+    QPointF newCenter;
+    float   newOrientation = 0.0f;
+};
+ConnectionSnapResult computeConnectionSnap(
+    const core::Map& map, parts::PartsLibrary& lib,
+    const QSet<QString>& movingGuids, const QString& draggedPart,
+    float draggedOrientation, QPointF draggedCenter, double thresholdStuds);
+
 }  // namespace
 
 // Dedicated overlay item: a single scene item that paints the selection
@@ -164,6 +177,45 @@ MapView::MapView(parts::PartsLibrary& parts, QWidget* parent)
     });
 
     builder_ = std::make_unique<rendering::SceneBuilder>(*scene, parts_);
+
+    // Install the live connection-priority snap hook. Vanilla's
+    // getMovedSnapPoint does the same thing on every mouse-move: find the
+    // nearest free connection of matching type and, if close enough, snap
+    // there instead of to the grid. We only handle position in the live
+    // hook (drop-time rotation is done in commitDragIfMoved); this keeps
+    // the live feel "magnetic" without the complexity of rotating an item
+    // mid-drag.
+    rendering::SceneBuilder::setLiveConnectionSnapHook(
+        [this](QGraphicsItem* item, QPointF proposedScenePos) -> std::optional<QPointF> {
+            if (!map_ || !item) return std::nullopt;
+            const QString guid = item->data(kBrickDataGuid).toString();
+            const int li       = item->data(kBrickDataLayerIndex).toInt();
+            if (guid.isEmpty() || li < 0 ||
+                li >= static_cast<int>(map_->layers().size())) return std::nullopt;
+            auto* L = map_->layers()[li].get();
+            if (!L || L->kind() != core::LayerKind::Brick) return std::nullopt;
+            const core::LayerBrick& BL = static_cast<const core::LayerBrick&>(*L);
+            const core::Brick* b = nullptr;
+            for (const auto& br : BL.bricks) if (br.guid == guid) { b = &br; break; }
+            if (!b) return std::nullopt;
+
+            // Convert item pos (scene pixels) to the proposed brick centre
+            // (scene pixels). SnappingPixmap items are positioned at the
+            // brick's centre (setOffset(-w/2,-h/2) + setPos(centre)).
+            const double px = rendering::SceneBuilder::kPixelsPerStud;
+            const QPointF proposedCentreStuds(proposedScenePos.x() / px,
+                                                proposedScenePos.y() / px);
+            QSet<QString> moving; moving.insert(guid);
+            const double threshold = std::max(4.0, snapStepStuds_);
+            auto snap = computeConnectionSnap(*map_, parts_, moving,
+                                              b->partNumber, b->orientation,
+                                              proposedCentreStuds, threshold);
+            if (!snap.applied) return std::nullopt;
+            // Return the snapped centre in scene pixels. No rotation during
+            // live drag — the drop-time commitDragIfMoved handles that.
+            return QPointF(snap.newCenter.x() * px, snap.newCenter.y() * px);
+        });
+
     undoStack_ = std::make_unique<QUndoStack>(this);
     // Every undo / redo mutates core::Map; the scene items were built before
     // the mutation, so we need to rebuild the scene afterwards for the UI to
@@ -342,11 +394,8 @@ QPointF rotatePoint(QPointF p, double degrees) {
     return { p.x() * c - p.y() * s, p.x() * s + p.y() * c };
 }
 
-struct ConnectionSnapResult {
-    bool    applied = false;
-    QPointF newCenter;            // in studs
-    float   newOrientation = 0.0f;
-};
+// (ConnectionSnapResult + declaration are forward-declared near the top
+// of this file so MapView's constructor can refer to the helper.)
 
 // Look for a connection point on any brick OTHER than those in `movingGuids`
 // that's close (in world stud coords) to one of the dragged brick's

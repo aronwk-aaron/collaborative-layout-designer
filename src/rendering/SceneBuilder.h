@@ -2,7 +2,11 @@
 
 #include <QHash>
 #include <QList>
+#include <QPointF>
 #include <QString>
+
+#include <functional>
+#include <optional>
 
 class QGraphicsItem;
 class QGraphicsScene;
@@ -32,6 +36,16 @@ public:
     // Applied by the per-item ItemPositionChange override so the brick snaps
     // under the cursor during drag, not only on release.
     static void setLiveSnapStepStuds(double snapStepStuds);
+
+    // Install a hook the brick items consult on every live drag frame. If
+    // the hook returns a non-empty position, that overrides grid snap — so
+    // MapView can make connections win over the grid (vanilla's
+    // getMovedSnapPoint flow: search for the nearest free connection point
+    // of matching type; only fall back to the grid if none is close
+    // enough). Passed (item, proposed scene pos); returns nullopt for
+    // "no connection snap applicable".
+    using LiveSnapHook = std::function<std::optional<QPointF>(QGraphicsItem*, QPointF)>;
+    static void setLiveConnectionSnapHook(LiveSnapHook hook);
 
     // Toggle the visibility of a layer (by index). Returns false if out of range.
     bool setLayerVisible(int layerIndex, bool visible);

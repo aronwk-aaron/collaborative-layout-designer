@@ -77,6 +77,8 @@ constexpr int kBrickDataKind       = 2;  // value: "brick" to distinguish from o
 // ItemPositionChange. SceneBuilder exposes a setter (called from MainWindow
 // whenever the snap toolbar changes); the per-item override reads the static.
 double gSnapPx = 0.0;
+// Connection-priority hook installed by MapView. See SceneBuilder.h.
+SceneBuilder::LiveSnapHook gLiveSnapHook;
 
 // Selection is now painted from MapView::drawForeground so every item kind
 // (pixmap, rect, line, ellipse) gets a consistent, unmistakable highlight
@@ -113,11 +115,21 @@ public:
     using QGraphicsPixmapItem::QGraphicsPixmapItem;
 protected:
     QVariant itemChange(GraphicsItemChange c, const QVariant& v) override {
-        if (c == ItemPositionChange && gSnapPx > 0.0 && (flags() & ItemIsMovable)) {
+        if (c == ItemPositionChange && (flags() & ItemIsMovable)) {
             QPointF p = v.toPointF();
-            p.setX(std::round(p.x() / gSnapPx) * gSnapPx);
-            p.setY(std::round(p.y() / gSnapPx) * gSnapPx);
-            return p;
+            // Try connection snap FIRST (matches vanilla's getMovedSnapPoint
+            // connection-priority behavior). Only fall back to the grid snap
+            // if no free connection is close enough.
+            if (gLiveSnapHook) {
+                if (auto snapped = gLiveSnapHook(this, p)) {
+                    return *snapped;
+                }
+            }
+            if (gSnapPx > 0.0) {
+                p.setX(std::round(p.x() / gSnapPx) * gSnapPx);
+                p.setY(std::round(p.y() / gSnapPx) * gSnapPx);
+                return p;
+            }
         }
         if (c == ItemSelectedChange) {
             setConnectionDotsVisible(this, v.toBool());
@@ -582,6 +594,10 @@ void addRulerLayer(const core::LayerRuler& L, LayerSink& sink, int layerIndex) {
 
 void SceneBuilder::setLiveSnapStepStuds(double snapStepStuds) {
     gSnapPx = snapStepStuds * kPixelsPerStud;
+}
+
+void SceneBuilder::setLiveConnectionSnapHook(LiveSnapHook hook) {
+    gLiveSnapHook = std::move(hook);
 }
 
 SceneBuilder::SceneBuilder(QGraphicsScene& scene, parts::PartsLibrary& parts)
