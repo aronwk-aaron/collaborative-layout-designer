@@ -436,8 +436,14 @@ void addRulerLayer(const core::LayerRuler& L, LayerSink& sink, int layerIndex) {
             QPointF offsetP1 = anchor1, offsetP2 = anchor2;
             const QPointF dir = anchor2 - anchor1;
             const double  len = std::hypot(dir.x(), dir.y());
+            // Perpendicular-offset vector: vanilla BlueBrick computes this
+            // as (Uy, -Ux) where U is the unit vector along the ruler line
+            // (LayerRulerItem.cs updateDisplayData line 877). Our previous
+            // (-Uy, Ux) was opposite sign, so an OffsetDistance of -48 on a
+            // left-to-right ruler moved the line upward instead of downward
+            // and the red Nikki-area ruler ended up above the map.
             QPointF nrm;
-            if (len > 0.001) nrm = QPointF(-dir.y() / len, dir.x() / len);
+            if (len > 0.001) nrm = QPointF(dir.y() / len, -dir.x() / len);
             const bool needOffset = r.allowOffset && std::abs(r.offsetDistance) > 0.001f && len > 0.001;
             if (needOffset) {
                 const double off = studToPx(r.offsetDistance);
@@ -459,19 +465,27 @@ void addRulerLayer(const core::LayerRuler& L, LayerSink& sink, int layerIndex) {
                     ? formatDistance(distStuds, r.unit)
                     : QString::number(distStuds, 'f', 2);
                 const QPointF midPx = (offsetP1 + offsetP2) / 2.0;
-                const double angleDeg = std::atan2(offsetP2.y() - offsetP1.y(),
-                                                    offsetP2.x() - offsetP1.x()) * 180.0 / M_PI;
+
+                // Keep the label readable: if the ruler's line angle would
+                // rotate the text upside-down (90° < |angle| ≤ 180°), flip
+                // by 180° so it stays right-reading. Upstream uses the same
+                // "always readable" convention.
+                double angleDeg = std::atan2(offsetP2.y() - offsetP1.y(),
+                                              offsetP2.x() - offsetP1.x()) * 180.0 / M_PI;
+                if (angleDeg > 90.0 || angleDeg < -90.0) angleDeg += 180.0;
 
                 // Build label to measure its width, then split the line around it.
                 QFont f(r.measureFont.familyName);
                 f.setBold(r.measureFont.styleString.contains(QStringLiteral("Bold")));
                 f.setItalic(r.measureFont.styleString.contains(QStringLiteral("Italic")));
-                // Upstream's measurement font is pt-sized but scales with
-                // zoom. We scale per scene pixel so the label stays readable.
-                const int pxSize = std::max(12, static_cast<int>(r.measureFont.sizePt * 2.2));
+                // Upstream's font is pt-sized and renders at screen size; we
+                // bump the pixel size generously so it's readable at normal
+                // zoom. Matches the visual weight of vanilla's "36.12 ft"
+                // label instead of the tiny clipped fragment we had before.
+                const int pxSize = std::max(16, static_cast<int>(r.measureFont.sizePt * 3.5));
                 f.setPixelSize(pxSize);
                 QFontMetricsF fm(f);
-                const double halfText = fm.horizontalAdvance(text) / 2.0 + 4.0;
+                const double halfText = fm.horizontalAdvance(text) / 2.0 + 6.0;
 
                 // Unit vector along the ruler line (in offset-line coords).
                 QPointF unit(dir.x() / len, dir.y() / len);
@@ -486,7 +500,8 @@ void addRulerLayer(const core::LayerRuler& L, LayerSink& sink, int layerIndex) {
                 sink.add(seg2);
                 selectableLine = seg1;
 
-                // Label centred on midPx, rotated to match the line.
+                // Label centred on midPx, rotated to match the (possibly
+                // flipped) line angle so text always reads left-to-right.
                 auto* t = new QGraphicsSimpleTextItem(text);
                 t->setFont(f);
                 t->setBrush(QBrush(r.measureFontColor.color));
