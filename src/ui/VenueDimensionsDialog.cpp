@@ -1,11 +1,13 @@
 #include "VenueDimensionsDialog.h"
 
+#include <QComboBox>
 #include <QDialogButtonBox>
 #include <QDoubleSpinBox>
 #include <QFormLayout>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
+#include <QLineEdit>
 #include <QMessageBox>
 #include <QPushButton>
 #include <QTableWidget>
@@ -13,6 +15,59 @@
 #include <QVBoxLayout>
 
 #include <cmath>
+
+namespace cld::ui {
+namespace {
+// Compass presets for the Angle column. Users can still type any custom
+// numeric value (the combobox is editable) — these just make the common
+// cases one click instead of remembering the convention.
+struct AnglePreset { const char* label; double angleDeg; };
+static const AnglePreset kAnglePresets[] = {
+    { "→ East (0°)",      0.0   },
+    { "↘ SE (45°)",       45.0  },
+    { "↓ South (90°)",    90.0  },
+    { "↙ SW (135°)",      135.0 },
+    { "← West (180°)",    180.0 },
+    { "↖ NW (225°)",      225.0 },
+    { "↑ North (270°)",   270.0 },
+    { "↗ NE (315°)",      315.0 },
+};
+
+QComboBox* makeAngleCombo(double initialDeg) {
+    auto* c = new QComboBox();
+    c->setEditable(true);  // lets the user type a custom angle
+    for (const auto& p : kAnglePresets) {
+        c->addItem(QObject::tr(p.label), p.angleDeg);
+    }
+    // Match the preset whose angle equals the initial value, or show the
+    // numeric value directly so custom entries round-trip cleanly.
+    int matchIdx = -1;
+    for (int i = 0; i < c->count(); ++i) {
+        if (std::abs(c->itemData(i).toDouble() - initialDeg) < 0.001) { matchIdx = i; break; }
+    }
+    if (matchIdx >= 0) c->setCurrentIndex(matchIdx);
+    else               c->setCurrentText(QString::number(initialDeg, 'f', 2));
+    return c;
+}
+
+double readAngleFromCombo(QComboBox* c) {
+    if (!c) return 0.0;
+    // If the displayed text matches a preset label exactly, trust its
+    // stored data; otherwise parse the numeric text for custom entries.
+    const int idx = c->findText(c->currentText());
+    if (idx >= 0) return c->itemData(idx).toDouble();
+    const QString raw = c->currentText().trimmed();
+    // Preset labels contain "(N°)"; fall back to scanning for the
+    // numeric portion so the user can type either "45" or "↘ SE (45°)".
+    for (int i = 0; i < c->count(); ++i) {
+        if (c->itemText(i) == raw) return c->itemData(i).toDouble();
+    }
+    bool ok = false;
+    const double v = raw.toDouble(&ok);
+    return ok ? v : 0.0;
+}
+}
+}
 
 namespace cld::ui {
 
@@ -68,9 +123,11 @@ VenueDimensionsDialog::VenueDimensionsDialog(QWidget* parent) : QDialog(parent) 
         const int r = table->rowCount();
         table->insertRow(r);
         auto* lenItem = new QTableWidgetItem(QString::number(lengthFt, 'f', 2));
-        auto* angItem = new QTableWidgetItem(QString::number(angle,    'f', 2));
         table->setItem(r, 0, lenItem);
-        table->setItem(r, 1, angItem);
+        // Angle column uses an editable combobox seeded with compass
+        // presets so the user can click the most common directions or
+        // type a custom angle (e.g. 37.5).
+        table->setCellWidget(r, 1, makeAngleCombo(angle));
     };
     addRow();
 
@@ -102,7 +159,7 @@ VenueDimensionsDialog::VenueDimensionsDialog(QWidget* parent) : QDialog(parent) 
             const int r = table->rowCount();
             table->insertRow(r);
             table->setItem(r, 0, new QTableWidgetItem(QString::number(lenFt, 'f', 2)));
-            table->setItem(r, 1, new QTableWidgetItem(QString::number(ang,   'f', 2)));
+            table->setCellWidget(r, 1, makeAngleCombo(ang));
         };
         append(widthFt, 0.0);
         append(depthFt, 90.0);
@@ -119,10 +176,10 @@ VenueDimensionsDialog::VenueDimensionsDialog(QWidget* parent) : QDialog(parent) 
         pts.push_back(cur);
         for (int r = 0; r < table->rowCount(); ++r) {
             auto* lenItem = table->item(r, 0);
-            auto* angItem = table->item(r, 1);
-            if (!lenItem || !angItem) continue;
+            auto* angCombo = qobject_cast<QComboBox*>(table->cellWidget(r, 1));
+            if (!lenItem || !angCombo) continue;
             const double lengthFt = lenItem->text().toDouble();
-            const double angDeg   = angItem->text().toDouble();
+            const double angDeg   = readAngleFromCombo(angCombo);
             if (lengthFt <= 0.0) continue;
             const double lengthStuds = lengthFt * kStudsPerFoot;
             const double rad = angDeg * M_PI / 180.0;
