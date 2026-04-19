@@ -33,11 +33,15 @@ ModulesPanel::ModulesPanel(QWidget* parent)
     createBtn->setToolTip(tr("Create a module from the current selection"));
     auto* importBtn = new QPushButton(tr("Import…"), host);
     importBtn->setToolTip(tr("Import a .bbm file as a module"));
+    auto* saveLibBtn = new QPushButton(tr("Save to Library"), host);
+    saveLibBtn->setToolTip(tr("Save the selected module as a .bbm in the module library folder"));
+    saveLibBtn->setEnabled(false);
     auto* deleteBtn = new QPushButton(tr("Delete"), host);
     deleteBtn->setToolTip(tr("Delete the selected module"));
     deleteBtn->setEnabled(false);
     row->addWidget(createBtn);
     row->addWidget(importBtn);
+    row->addWidget(saveLibBtn);
     row->addWidget(deleteBtn);
     row->addStretch();
     col->addLayout(row);
@@ -56,12 +60,21 @@ ModulesPanel::ModulesPanel(QWidget* parent)
         const QString id = sel->toolTip();
         if (!id.isEmpty()) emit moduleDeleteRequested(id);
     });
-    // Delete button enables only when a valid module row is selected.
-    // Also auto-select the module's members on the map when the user
-    // clicks a row, so the module is ready to move / rotate / delete.
-    connect(list_, &QListWidget::currentItemChanged, this, [this, deleteBtn](QListWidgetItem* cur, QListWidgetItem*){
-        deleteBtn->setEnabled(cur && !cur->toolTip().isEmpty());
-        if (cur && !cur->toolTip().isEmpty()) emit selectMembersRequested(cur->toolTip());
+    connect(saveLibBtn, &QPushButton::clicked, this, [this]{
+        auto* sel = list_->currentItem();
+        if (!sel) return;
+        const QString id = sel->toolTip();
+        if (!id.isEmpty()) emit saveToLibraryRequested(id);
+    });
+    // Delete + Save-to-library buttons enable only when a valid module row
+    // is selected. Also auto-select the module's members on the map when
+    // the user clicks a row, so the module is ready to move / rotate /
+    // delete.
+    connect(list_, &QListWidget::currentItemChanged, this, [this, deleteBtn, saveLibBtn](QListWidgetItem* cur, QListWidgetItem*){
+        const bool valid = cur && !cur->toolTip().isEmpty();
+        deleteBtn->setEnabled(valid);
+        saveLibBtn->setEnabled(valid);
+        if (valid) emit selectMembersRequested(cur->toolTip());
     });
 
     connect(list_, &QWidget::customContextMenuRequested, this, [this](const QPoint& pos) {
