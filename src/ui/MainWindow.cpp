@@ -66,6 +66,12 @@ MainWindow::MainWindow(parts::PartsLibrary& parts, QWidget* parent)
 
     modulesPanel_ = new ModulesPanel(this);
     addDockWidget(Qt::RightDockWidgetArea, modulesPanel_);
+    connect(modulesPanel_, &ModulesPanel::moduleDeleteRequested, this, [this](const QString& id){
+        if (!mapView_->currentMap()) return;
+        mapView_->undoStack()->push(
+            new edit::DeleteModuleCommand(*mapView_->currentMap(), id));
+        modulesPanel_->setMap(mapView_->currentMap());
+    });
 
     setupMenus();
     updateTitle();

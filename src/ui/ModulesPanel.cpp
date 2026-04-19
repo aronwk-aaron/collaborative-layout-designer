@@ -4,16 +4,30 @@
 #include "../core/Module.h"
 #include "../core/Sidecar.h"
 
+#include <QContextMenuEvent>
 #include <QFileInfo>
 #include <QListWidget>
 #include <QListWidgetItem>
+#include <QMenu>
 
 namespace cld::ui {
 
 ModulesPanel::ModulesPanel(QWidget* parent)
     : QDockWidget(tr("Modules"), parent) {
     list_ = new QListWidget(this);
+    list_->setContextMenuPolicy(Qt::CustomContextMenu);
     setWidget(list_);
+
+    connect(list_, &QWidget::customContextMenuRequested, this, [this](const QPoint& pos) {
+        auto* item = list_->itemAt(pos);
+        if (!item) return;
+        const QString id = item->toolTip();  // we stash the module id in the tooltip
+        if (id.isEmpty()) return;
+        QMenu menu(this);
+        auto* del = menu.addAction(tr("Delete module"));
+        connect(del, &QAction::triggered, [this, id]{ emit moduleDeleteRequested(id); });
+        menu.exec(list_->mapToGlobal(pos));
+    });
 }
 
 void ModulesPanel::setMap(const core::Map* map) {

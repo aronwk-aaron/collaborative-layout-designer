@@ -2,7 +2,10 @@
 
 #include "../parts/PartsLibrary.h"
 
+#include <QApplication>
+#include <QClipboard>
 #include <QComboBox>
+#include <QContextMenuEvent>
 #include <QDir>
 #include <QFileInfo>
 #include <QHBoxLayout>
@@ -10,6 +13,7 @@
 #include <QLineEdit>
 #include <QListWidget>
 #include <QListWidgetItem>
+#include <QMenu>
 #include <QPixmap>
 #include <QSet>
 #include <QSize>
@@ -63,6 +67,22 @@ PartsBrowser::PartsBrowser(parts::PartsLibrary& lib, QWidget* parent)
     connect(filter_,   &QLineEdit::textChanged,        this, [this](const QString&) { applyFilter(); });
     connect(grid_, &QListWidget::itemActivated, this, [this](QListWidgetItem* it) {
         if (it) emit partActivated(it->data(kPartKeyRole).toString());
+    });
+
+    grid_->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(grid_, &QWidget::customContextMenuRequested, this, [this](const QPoint& pos){
+        auto* it = grid_->itemAt(pos);
+        if (!it) return;
+        QMenu menu(this);
+        const QString key = it->data(kPartKeyRole).toString();
+        auto* add = menu.addAction(tr("Add '%1' to map").arg(key));
+        connect(add, &QAction::triggered, [this, key]{ emit partActivated(key); });
+        menu.addSeparator();
+        auto* copy = menu.addAction(tr("Copy part number"));
+        connect(copy, &QAction::triggered, [key]{
+            QApplication::clipboard()->setText(key);
+        });
+        menu.exec(grid_->mapToGlobal(pos));
     });
 
     rebuild();

@@ -4,8 +4,11 @@
 #include "../core/Map.h"
 #include "../rendering/SceneBuilder.h"
 
+#include <QContextMenuEvent>
+#include <QInputDialog>
 #include <QListWidget>
 #include <QListWidgetItem>
+#include <QMenu>
 
 namespace cld::ui {
 
@@ -27,11 +30,33 @@ const char* layerKindName(core::LayerKind k) {
 
 LayerPanel::LayerPanel(QWidget* parent) : QDockWidget(tr("Layers"), parent) {
     list_ = new QListWidget(this);
+    list_->setContextMenuPolicy(Qt::CustomContextMenu);
     setWidget(list_);
     connect(list_, &QListWidget::itemChanged, this, [this](QListWidgetItem* item) {
         if (!builder_) return;
         const int idx = list_->row(item);
         builder_->setLayerVisible(idx, item->checkState() == Qt::Checked);
+    });
+    connect(list_, &QWidget::customContextMenuRequested, this, [this](const QPoint& pos) {
+        auto* item = list_->itemAt(pos);
+        if (!item) return;
+        QMenu menu(this);
+        const bool visible = (item->checkState() == Qt::Checked);
+        auto* toggle = menu.addAction(visible ? tr("Hide") : tr("Show"));
+        connect(toggle, &QAction::triggered, [item, visible]{
+            item->setCheckState(visible ? Qt::Unchecked : Qt::Checked);
+        });
+        auto* allOn = menu.addAction(tr("Show all layers"));
+        connect(allOn, &QAction::triggered, [this]{
+            for (int i = 0; i < list_->count(); ++i) list_->item(i)->setCheckState(Qt::Checked);
+        });
+        auto* allOff = menu.addAction(tr("Hide all other layers"));
+        connect(allOff, &QAction::triggered, [this, item]{
+            for (int i = 0; i < list_->count(); ++i) {
+                list_->item(i)->setCheckState(list_->item(i) == item ? Qt::Checked : Qt::Unchecked);
+            }
+        });
+        menu.exec(list_->mapToGlobal(pos));
     });
 }
 

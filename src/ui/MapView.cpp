@@ -9,9 +9,11 @@
 #include "../parts/PartsLibrary.h"
 #include "../rendering/SceneBuilder.h"
 
+#include <QContextMenuEvent>
 #include <QGraphicsItem>
 #include <QGraphicsScene>
 #include <QKeyEvent>
+#include <QMenu>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPen>
@@ -277,6 +279,43 @@ void MapView::addPartAtViewCenter(const QString& partKey) {
 
     undoStack_->push(new edit::AddBrickCommand(*map_, targetLayer, std::move(b)));
     rebuildScene();
+}
+
+void MapView::contextMenuEvent(QContextMenuEvent* e) {
+    // If the right-click happens on an item that is not part of the existing
+    // selection, clear the selection and select that one item so the menu's
+    // actions act on what the user clicked.
+    if (auto* under = itemAt(e->pos())) {
+        if (!under->isSelected()) {
+            scene()->clearSelection();
+            under->setSelected(true);
+        }
+    }
+
+    QMenu menu(this);
+    const bool hasSel = !scene()->selectedItems().isEmpty();
+
+    if (hasSel) {
+        auto* ccw = menu.addAction(tr("Rotate 90° CCW"));
+        connect(ccw, &QAction::triggered, [this]{ rotateSelected(-90.0f); });
+        auto* cw = menu.addAction(tr("Rotate 90° CW"));
+        connect(cw, &QAction::triggered, [this]{ rotateSelected(90.0f); });
+        menu.addSeparator();
+        auto* del = menu.addAction(tr("Delete"));
+        del->setShortcut(Qt::Key_Delete);
+        connect(del, &QAction::triggered, [this]{ deleteSelected(); });
+        menu.addSeparator();
+    }
+
+    auto* undo = menu.addAction(tr("Undo"));
+    undo->setEnabled(undoStack_->canUndo());
+    connect(undo, &QAction::triggered, undoStack_.get(), &QUndoStack::undo);
+    auto* redo = menu.addAction(tr("Redo"));
+    redo->setEnabled(undoStack_->canRedo());
+    connect(redo, &QAction::triggered, undoStack_.get(), &QUndoStack::redo);
+
+    menu.exec(e->globalPos());
+    e->accept();
 }
 
 void MapView::deleteSelected() {
