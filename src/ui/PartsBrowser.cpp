@@ -27,9 +27,50 @@ namespace {
 constexpr int kIconSize = 64;
 
 // Store the part key on each item so we can retrieve it on activation.
-constexpr int kPartKeyRole = Qt::UserRole + 1;
+constexpr int kPartKeyRole  = Qt::UserRole + 1;
 // Store the category (derived from parent folder) for filtering.
 constexpr int kCategoryRole = Qt::UserRole + 2;
+// A lowercased concatenation of everything searchable for fuzzy matching.
+constexpr int kFuzzyHayRole = Qt::UserRole + 3;
+
+// Subsequence-based fuzzy match: every character in `needle` must appear in
+// `hay` in order (not necessarily consecutive). Returns a score where higher
+// is a better match; 0 means no match. The scorer rewards consecutive hits,
+// start-of-string matches, and shorter overall match spans so that typing
+// "plt" ranks "plate" above "specialist".
+int fuzzyScore(const QString& needleLower, const QString& hayLower) {
+    if (needleLower.isEmpty()) return 1;
+    int hi = 0;
+    int score = 0;
+    int consecutive = 0;
+    int firstHit = -1;
+    int lastHit = -1;
+    for (QChar nc : needleLower) {
+        bool matched = false;
+        while (hi < hayLower.size()) {
+            if (hayLower[hi] == nc) {
+                if (firstHit < 0) firstHit = hi;
+                if (lastHit == hi - 1) consecutive++;
+                else                   consecutive = 0;
+                lastHit = hi;
+                score += 10 + consecutive * 5;          // reward runs
+                if (hi == 0) score += 15;                // reward start-of-string
+                ++hi;
+                matched = true;
+                break;
+            }
+            ++hi;
+        }
+        if (!matched) return 0;
+    }
+    // Penalise how far in we had to reach to find the first hit and how
+    // spread-out the matches were.
+    const qsizetype nLen  = needleLower.size();
+    const qsizetype spread = static_cast<qsizetype>(lastHit - firstHit) - (nLen - 1);
+    if (firstHit > 0) score -= static_cast<int>(std::min<qsizetype>(firstHit, 10));
+    score -= static_cast<int>(std::min<qsizetype>(spread, 10));
+    return std::max(score, 1);
+}
 
 }
 
@@ -45,7 +86,7 @@ PartsBrowser::PartsBrowser(parts::PartsLibrary& lib, QWidget* parent)
     row->addWidget(category_, 1);
 
     filter_ = new QLineEdit(host);
-    filter_->setPlaceholderText(tr("Filter…"));
+    filter_->setPlaceholderText(tr("Fuzzy filter — e.g. \"plt2\" matches \"plate2x4\""));
     row->addWidget(filter_, 2);
     col->addLayout(row);
 
@@ -58,7 +99,9 @@ PartsBrowser::PartsBrowser(parts::PartsLibrary& lib, QWidget* parent)
     grid_->setUniformItemSizes(true);
     grid_->setWordWrap(true);
     grid_->setTextElideMode(Qt::ElideRight);
-    grid_->setGridSize(QSize(kIconSize + 24, kIconSize + 32));
+    // Extra vertical room for a two-line caption (part key + short description)
+    // underneath each thumbnail.
+    grid_->setGridSize(QSize(kIconSize + 36, kIconSize + 52));
     col->addWidget(grid_);
 
     setWidget(host);
@@ -109,17 +152,28 @@ void PartsBrowser::rebuild() {
         const QString cat = categoryForPath(meta->xmlFilePath);
         cats.insert(cat);
 
-        auto* item = new QListWidgetItem(key);
-        // Description as tooltip (preferring English).
+        // Pick a display description, preferring English but falling back to
+        // whatever's present.
+        QString desc;
         for (const auto& d : meta->descriptions) {
-            if (d.language == QStringLiteral("en")) {
-                item->setToolTip(QStringLiteral("%1\n%2").arg(key, d.text));
-                break;
-            }
+            if (d.language == QStringLiteral("en")) { desc = d.text; break; }
         }
-        if (item->toolTip().isEmpty() && !meta->descriptions.isEmpty()) {
-            item->setToolTip(QStringLiteral("%1\n%2").arg(key, meta->descriptions.front().text));
+        if (desc.isEmpty() && !meta->descriptions.isEmpty()) {
+            desc = meta->descriptions.front().text;
         }
+
+        // Two-line caption: part key on top, first chunk of description below.
+        // QListView::IconMode wraps long text but for density we manually cap
+        // the description to a short length.
+        QString descShort = desc;
+        if (descShort.size() > 28) descShort = descShort.left(27) + QChar(0x2026);  // …
+        const QString caption = descShort.isEmpty()
+            ? key
+            : QStringLiteral("%1\n%2").arg(key, descShort);
+
+        auto* item = new QListWidgetItem(caption);
+        item->setToolTip(desc.isEmpty() ? key : QStringLiteral("%1\n%2").arg(key, desc));
+        item->setTextAlignment(Qt::AlignHCenter | Qt::AlignTop);
 
         // Icon from the part GIF, scaled to kIconSize.
         if (!meta->gifFilePath.isEmpty()) {
@@ -133,6 +187,9 @@ void PartsBrowser::rebuild() {
 
         item->setData(kPartKeyRole,  key);
         item->setData(kCategoryRole, cat);
+        // Haystack: key + description, lowercased once here so the filter
+        // doesn't re-lower on every keystroke.
+        item->setData(kFuzzyHayRole, (key + QLatin1Char(' ') + desc).toLower());
         grid_->addItem(item);
     }
 
@@ -152,15 +209,43 @@ void PartsBrowser::applyFilter() {
     const QString needle = filter_->text().trimmed().toLower();
     const QString cat = category_->currentText();
     const bool allCats = (category_->currentIndex() <= 0);
+
+    // First pass: filter by category and compute a fuzzy score. An empty filter
+    // keeps every item visible with score 1. Items with score 0 get hidden.
+    std::vector<std::pair<int, QListWidgetItem*>> scored;  // (score, item)
     for (int i = 0; i < grid_->count(); ++i) {
         auto* it = grid_->item(i);
-        const QString key = it->data(kPartKeyRole).toString();
         const QString itemCat = it->data(kCategoryRole).toString();
-        const bool catOk  = allCats || (itemCat == cat);
-        const bool textOk = needle.isEmpty()
-            || key.toLower().contains(needle)
-            || it->toolTip().toLower().contains(needle);
-        it->setHidden(!(catOk && textOk));
+        const bool catOk = allCats || (itemCat == cat);
+        if (!catOk) { it->setHidden(true); continue; }
+        const int score = fuzzyScore(needle, it->data(kFuzzyHayRole).toString());
+        if (score <= 0) { it->setHidden(true); continue; }
+        it->setHidden(false);
+        scored.emplace_back(score, it);
+    }
+
+    // Sort the visible items so best fuzzy matches show first; within equal
+    // scores keep alphabetical order by part key for stability.
+    if (!needle.isEmpty() && !scored.empty()) {
+        grid_->setSortingEnabled(false);
+        std::stable_sort(scored.begin(), scored.end(),
+            [](const auto& a, const auto& b) {
+                if (a.first != b.first) return a.first > b.first;
+                return a.second->data(kPartKeyRole).toString()
+                     < b.second->data(kPartKeyRole).toString();
+            });
+        // Re-order by removing and reinserting in score order.
+        for (size_t i = 0; i < scored.size(); ++i) {
+            const int currentRow = grid_->row(scored[i].second);
+            if (currentRow != static_cast<int>(i)) {
+                auto* taken = grid_->takeItem(currentRow);
+                grid_->insertItem(static_cast<int>(i), taken);
+            }
+        }
+    } else {
+        // Re-enable alphabetical ordering when the filter is empty.
+        grid_->setSortingEnabled(true);
+        grid_->sortItems(Qt::AscendingOrder);
     }
 }
 
