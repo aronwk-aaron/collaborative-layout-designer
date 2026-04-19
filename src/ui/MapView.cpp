@@ -15,6 +15,7 @@
 #include "../edit/TextCommands.h"
 #include "../parts/PartsLibrary.h"
 #include "../rendering/SceneBuilder.h"
+#include "EditDialogs.h"
 #include "PartsBrowser.h"   // kPartMimeType
 
 #include <QContextMenuEvent>
@@ -58,6 +59,10 @@ bool isBrickItem(const QGraphicsItem* it) {
 
 bool isTextItem(const QGraphicsItem* it) {
     return it && it->data(kBrickDataKind).toString() == QStringLiteral("text");
+}
+
+bool isRulerItem(const QGraphicsItem* it) {
+    return it && it->data(kBrickDataKind).toString() == QStringLiteral("ruler");
 }
 
 double studToPx() { return rendering::SceneBuilder::kPixelsPerStud; }
@@ -655,6 +660,31 @@ void MapView::contextMenuEvent(QContextMenuEvent* e) {
     const bool singleText = onlyText && sel.size() == 1;
 
     if (hasSel) {
+        // Properties... opens the type-appropriate dialog for a single item.
+        if (sel.size() == 1) {
+            QGraphicsItem* only = sel.front();
+            const int li = only->data(kBrickDataLayerIndex).toInt();
+            const QString guid = only->data(kBrickDataGuid).toString();
+            if (isBrickItem(only)) {
+                auto* prop = menu.addAction(tr("Properties..."));
+                connect(prop, &QAction::triggered, [this, li, guid]{
+                    if (editBrickDialog(this, *map_, li, guid, parts_, *undoStack_))
+                        rebuildScene();
+                });
+            } else if (isRulerItem(only)) {
+                auto* prop = menu.addAction(tr("Properties..."));
+                connect(prop, &QAction::triggered, [this, li, guid]{
+                    if (editRulerDialog(this, *map_, li, guid, *undoStack_))
+                        rebuildScene();
+                });
+            } else if (isTextItem(only)) {
+                auto* prop = menu.addAction(tr("Properties..."));
+                connect(prop, &QAction::triggered, [this, li, guid]{
+                    if (editTextDialog(this, *map_, li, guid, *undoStack_))
+                        rebuildScene();
+                });
+            }
+        }
         if (singleText) {
             auto* edit = menu.addAction(tr("Edit Text..."));
             connect(edit, &QAction::triggered, [this]{ editSelectedTextContent(); });
@@ -842,12 +872,24 @@ void MapView::editSelectedTextContent() {
 }
 
 void MapView::mouseDoubleClickEvent(QMouseEvent* e) {
-    if (auto* under = itemAt(e->pos()); under && isTextItem(under)) {
+    if (auto* under = itemAt(e->pos())) {
         scene()->clearSelection();
         under->setSelected(true);
-        editSelectedTextContent();
-        e->accept();
-        return;
+        const int li = under->data(kBrickDataLayerIndex).toInt();
+        const QString guid = under->data(kBrickDataGuid).toString();
+        bool handled = false;
+        if (isBrickItem(under)) {
+            handled = editBrickDialog(this, *map_, li, guid, parts_, *undoStack_);
+        } else if (isRulerItem(under)) {
+            handled = editRulerDialog(this, *map_, li, guid, *undoStack_);
+        } else if (isTextItem(under)) {
+            handled = editTextDialog(this, *map_, li, guid, *undoStack_);
+        }
+        if (handled) rebuildScene();
+        if (handled || isBrickItem(under) || isRulerItem(under) || isTextItem(under)) {
+            e->accept();
+            return;
+        }
     }
     QGraphicsView::mouseDoubleClickEvent(e);
 }

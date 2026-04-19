@@ -198,6 +198,32 @@ void ReorderBricksCommand::undo() {
     }
 }
 
+// ----- EditBrickCommand -----
+
+EditBrickCommand::EditBrickCommand(core::Map& map, BrickRef ref, State before, State after,
+                                   QUndoCommand* parent)
+    : QUndoCommand(parent), map_(map), ref_(std::move(ref)),
+      before_(std::move(before)), after_(std::move(after)) {
+    setText(QObject::tr("Edit brick %1").arg(after_.partNumber));
+}
+
+namespace {
+void applyBrickState(core::Brick& b, const EditBrickCommand::State& s) {
+    b.partNumber = s.partNumber;
+    b.displayArea.moveTo(s.topLeft);
+    b.orientation = s.orientation;
+    b.altitude = s.altitude;
+    b.activeConnectionPointIndex = s.activeConnectionPointIndex;
+}
+}
+
+void EditBrickCommand::redo() {
+    if (auto* b = findBrick(map_, ref_)) applyBrickState(*b, after_);
+}
+void EditBrickCommand::undo() {
+    if (auto* b = findBrick(map_, ref_)) applyBrickState(*b, before_);
+}
+
 // ----- AddBricksCommand -----
 
 AddBricksCommand::AddBricksCommand(core::Map& map, int layerIndex, std::vector<core::Brick> bricks,

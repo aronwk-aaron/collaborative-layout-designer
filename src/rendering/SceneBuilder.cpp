@@ -349,7 +349,7 @@ void addRulerLabel(QGraphicsItemGroup* group, const QString& text,
     group->addToGroup(t);
 }
 
-void addRulerLayer(const core::LayerRuler& L, QGraphicsItemGroup* group) {
+void addRulerLayer(const core::LayerRuler& L, QGraphicsItemGroup* group, int layerIndex) {
     for (const auto& any : L.rulers) {
         if (any.kind == core::RulerKind::Linear) {
             const auto& r = any.linear;
@@ -386,11 +386,15 @@ void addRulerLayer(const core::LayerRuler& L, QGraphicsItemGroup* group) {
                 }
             }
 
-            // Main line.
+            // Main line — selectable so the user can Edit Ruler...
             auto* line = new QGraphicsLineItem(p1px.x(), p1px.y(), p2px.x(), p2px.y());
             QPen pen(r.color.color);
             pen.setWidthF(r.lineThickness);
             line->setPen(pen);
+            line->setFlag(QGraphicsItem::ItemIsSelectable, true);
+            line->setData(kBrickDataLayerIndex, layerIndex);
+            line->setData(kBrickDataGuid,       r.guid);
+            line->setData(kBrickDataKind,       QStringLiteral("ruler"));
             group->addToGroup(line);
 
             // Offset line + connector ticks. Vanilla BlueBrick draws an
@@ -441,6 +445,10 @@ void addRulerLayer(const core::LayerRuler& L, QGraphicsItemGroup* group) {
             pen.setWidthF(r.lineThickness);
             el->setPen(pen);
             el->setBrush(Qt::NoBrush);
+            el->setFlag(QGraphicsItem::ItemIsSelectable, true);
+            el->setData(kBrickDataLayerIndex, layerIndex);
+            el->setData(kBrickDataGuid,       r.guid);
+            el->setData(kBrickDataKind,       QStringLiteral("ruler"));
             group->addToGroup(el);
 
             // Radius label to the right of centre.
@@ -503,7 +511,7 @@ void SceneBuilder::addLayer(const core::Layer& L, int layerIndex) {
             addAreaLayer(static_cast<const core::LayerArea&>(L), group);
             break;
         case core::LayerKind::Ruler:
-            addRulerLayer(static_cast<const core::LayerRuler&>(L), group);
+            addRulerLayer(static_cast<const core::LayerRuler&>(L), group, layerIndex);
             break;
         case core::LayerKind::AnchoredText:
             break;

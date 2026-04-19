@@ -122,6 +122,32 @@ private:
     bool haveSnapshot_ = false;
 };
 
+// Edit a single brick's mutable properties in one undoable step. Upstream's
+// EditBrickForm exposes part number (for ReplaceBrick), position, orientation,
+// altitude, and active connection point — we capture the same surface here so
+// one dialog drives everything. Fields whose before/after match are no-ops.
+class EditBrickCommand : public QUndoCommand {
+public:
+    struct State {
+        QString partNumber;
+        QPointF topLeft;          // studs
+        float   orientation = 0.0f;
+        float   altitude    = 0.0f;
+        int     activeConnectionPointIndex = 0;
+    };
+
+    EditBrickCommand(core::Map& map, BrickRef ref, State before, State after,
+                     QUndoCommand* parent = nullptr);
+    void undo() override;
+    void redo() override;
+
+private:
+    core::Map& map_;
+    BrickRef   ref_;
+    State      before_;
+    State      after_;
+};
+
 // Append a batch of bricks to the given layer as a single undoable step. Used
 // by Paste / Duplicate so the user doesn't see N individual undo entries for
 // a single clipboard operation.

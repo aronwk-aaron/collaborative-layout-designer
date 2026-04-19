@@ -13,6 +13,8 @@ add_library(cld_ui STATIC
     ModuleLibraryPanel.h
     LibraryPathsDialog.cpp
     LibraryPathsDialog.h
+    EditDialogs.cpp
+    EditDialogs.h
 )
 
 target_link_libraries(cld_ui
