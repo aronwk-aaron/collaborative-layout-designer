@@ -1147,17 +1147,22 @@ void MapView::setSnapStepStuds(double studs) {
 void MapView::copySelection() {
     clipboard_.clear();
     if (!map_) return;
+    // scene->selectedItems() returns items in no particular order. If we
+    // copied in that order, pasting would scramble back-to-front
+    // z-ordering within the source layer. Instead collect the selected
+    // guids and walk each brick layer's vector in order — that preserves
+    // the within-layer z-order (earlier in the vector = further back)
+    // across copy + paste.
+    QSet<QString> selectedGuids;
     for (QGraphicsItem* it : scene()->selectedItems()) {
-        if (!isBrickItem(it)) continue;
-        const int li = it->data(kBrickDataLayerIndex).toInt();
-        const QString guid = it->data(kBrickDataGuid).toString();
-        if (li < 0 || li >= static_cast<int>(map_->layers().size())) continue;
-        auto* L = map_->layers()[li].get();
+        if (isBrickItem(it)) selectedGuids.insert(it->data(kBrickDataGuid).toString());
+    }
+    if (selectedGuids.isEmpty()) return;
+    for (const auto& L : map_->layers()) {
         if (!L || L->kind() != core::LayerKind::Brick) continue;
-        for (const auto& b : static_cast<core::LayerBrick&>(*L).bricks) {
-            if (b.guid == guid) {
+        for (const auto& b : static_cast<const core::LayerBrick&>(*L).bricks) {
+            if (selectedGuids.contains(b.guid)) {
                 clipboard_.push_back({ L->name, b });
-                break;
             }
         }
     }
