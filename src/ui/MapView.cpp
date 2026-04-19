@@ -83,10 +83,11 @@ public:
         setFlag(QGraphicsItem::ItemIsMovable,    false);
     }
 
-    QRectF boundingRect() const override {
-        // Huge rect so Qt always includes us in the paint region.
-        return QRectF(-1e6, -1e6, 2e6, 2e6);
-    }
+    // Bounding rect tracks the union of outline polys so this item doesn't
+    // inflate scene()->itemsBoundingRect() (which drives fitInView).
+    // Previously we returned a huge constant rect, which made fitInView
+    // zoom the view out to cover millions of scene units.
+    QRectF boundingRect() const override { return bounds_; }
 
     void paint(QPainter* p, const QStyleOptionGraphicsItem*, QWidget*) override {
         if (polys_.isEmpty()) return;
@@ -107,12 +108,22 @@ public:
     }
 
     void setOutlines(QList<QPolygonF> polys) {
+        prepareGeometryChange();  // tell Qt the bounding rect is about to change
         polys_ = std::move(polys);
+        // Compute tight bounds as the union of every polygon's bounding rect,
+        // inflated slightly so the 5px cosmetic outer pen isn't clipped.
+        QRectF total;
+        for (const QPolygonF& poly : polys_) {
+            total = total.united(poly.boundingRect());
+        }
+        bounds_ = total.isEmpty() ? QRectF()
+                                  : total.adjusted(-4, -4, 4, 4);
         update();
     }
 
 private:
     QList<QPolygonF> polys_;
+    QRectF bounds_;
 };
 
 MapView::MapView(parts::PartsLibrary& parts, QWidget* parent)
