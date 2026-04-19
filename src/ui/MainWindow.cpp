@@ -2,6 +2,7 @@
 
 #include "LayerPanel.h"
 #include "LibraryPathsDialog.h"
+#include "PreferencesDialog.h"
 #include "MapView.h"
 #include "ModuleLibraryPanel.h"
 #include "ModulesPanel.h"
@@ -512,6 +513,18 @@ void MainWindow::setupMenus() {
     tools->addSeparator();
     auto* partListAct = tools->addAction(tr("Export &Part List (CSV)..."));
     connect(partListAct, &QAction::triggered, this, &MainWindow::onExportPartList);
+    tools->addSeparator();
+    auto* prefsAct = tools->addAction(tr("&Preferences..."));
+    prefsAct->setShortcut(QKeySequence::Preferences);
+    connect(prefsAct, &QAction::triggered, this, [this]{
+        PreferencesDialog dlg(this);
+        dlg.exec();
+        // Re-apply editing-related settings the user may have changed.
+        QSettings s; s.beginGroup(QStringLiteral("editing"));
+        mapView_->setSnapStepStuds(s.value(QStringLiteral("snapStepStuds"), 0.0).toDouble());
+        mapView_->setRotationStepDegrees(s.value(QStringLiteral("rotationStepDegrees"), 90.0).toDouble());
+        s.endGroup();
+    });
 
     // ----- Map menu -----
     auto* mapMenu = menuBar()->addMenu(tr("&Map"));
