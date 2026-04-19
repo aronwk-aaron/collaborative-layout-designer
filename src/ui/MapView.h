@@ -34,6 +34,7 @@ public:
     void rotateSelected(float degrees);
     void deleteSelected();
     void addPartAtViewCenter(const QString& partKey);
+    void addPartAtScenePos(const QString& partKey, QPointF scenePosPx);
 
 signals:
     void selectionChanged();
@@ -46,6 +47,9 @@ protected:
     void mouseReleaseEvent(QMouseEvent* e) override;
     void keyPressEvent(QKeyEvent* e) override;
     void contextMenuEvent(QContextMenuEvent* e) override;
+    void dragEnterEvent(QDragEnterEvent* e) override;
+    void dragMoveEvent(QDragMoveEvent* e) override;
+    void dropEvent(QDropEvent* e) override;
 
 private:
     struct BrickOriginSnapshot {

@@ -7,6 +7,7 @@
 #include <QComboBox>
 #include <QContextMenuEvent>
 #include <QDir>
+#include <QDrag>
 #include <QFileInfo>
 #include <QHBoxLayout>
 #include <QIcon>
@@ -14,6 +15,7 @@
 #include <QListWidget>
 #include <QListWidgetItem>
 #include <QMenu>
+#include <QMimeData>
 #include <QPixmap>
 #include <QSet>
 #include <QSize>
@@ -32,6 +34,23 @@ constexpr int kPartKeyRole  = Qt::UserRole + 1;
 constexpr int kCategoryRole = Qt::UserRole + 2;
 // A lowercased concatenation of everything searchable for fuzzy matching.
 constexpr int kFuzzyHayRole = Qt::UserRole + 3;
+
+// Local QListWidget that supplies a custom MIME payload on drag so MapView
+// can identify a drop as a part-from-the-library rather than generic text.
+class DraggablePartsList : public QListWidget {
+public:
+    using QListWidget::QListWidget;
+protected:
+    QMimeData* mimeData(const QList<QListWidgetItem*>& items) const override {
+        auto* mime = new QMimeData();
+        if (!items.isEmpty()) {
+            const QString key = items.first()->data(kPartKeyRole).toString();
+            mime->setData(QString::fromLatin1(PartsBrowser::kPartMimeType), key.toUtf8());
+            mime->setText(key);  // fallback for targets that only read plain text
+        }
+        return mime;
+    }
+};
 
 // Subsequence-based fuzzy match: every character in `needle` must appear in
 // `hay` in order (not necessarily consecutive). Returns a score where higher
@@ -90,12 +109,16 @@ PartsBrowser::PartsBrowser(parts::PartsLibrary& lib, QWidget* parent)
     row->addWidget(filter_, 2);
     col->addLayout(row);
 
-    grid_ = new QListWidget(host);
+    grid_ = new DraggablePartsList(host);
     grid_->setViewMode(QListView::IconMode);
     grid_->setResizeMode(QListView::Adjust);
     grid_->setMovement(QListView::Static);
     grid_->setIconSize(QSize(kIconSize, kIconSize));
     grid_->setSpacing(6);
+    // Enable drag so users can pick a part and drop it anywhere on the map.
+    grid_->setDragEnabled(true);
+    grid_->setDragDropMode(QAbstractItemView::DragOnly);
+    grid_->setDefaultDropAction(Qt::CopyAction);
     grid_->setUniformItemSizes(true);
     grid_->setWordWrap(true);
     grid_->setTextElideMode(Qt::ElideRight);

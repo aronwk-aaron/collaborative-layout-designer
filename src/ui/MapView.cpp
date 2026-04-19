@@ -8,12 +8,17 @@
 #include "../edit/EditCommands.h"
 #include "../parts/PartsLibrary.h"
 #include "../rendering/SceneBuilder.h"
+#include "PartsBrowser.h"   // kPartMimeType
 
 #include <QContextMenuEvent>
+#include <QDragEnterEvent>
+#include <QDragMoveEvent>
+#include <QDropEvent>
 #include <QGraphicsItem>
 #include <QGraphicsScene>
 #include <QKeyEvent>
 #include <QMenu>
+#include <QMimeData>
 #include <QMouseEvent>
 #include <QScrollBar>
 #include <QPainter>
@@ -46,6 +51,7 @@ double studToPx() { return rendering::SceneBuilder::kPixelsPerStud; }
 MapView::MapView(parts::PartsLibrary& parts, QWidget* parent)
     : QGraphicsView(parent), parts_(parts) {
     setRenderHints(QPainter::Antialiasing | QPainter::SmoothPixmapTransform);
+    setAcceptDrops(true);   // accept part drags from the PartsBrowser panel
     // Left-button drag: rubber-band select (item drag is still available via
     // ItemIsMovable on individual brick items). Middle-button drag: pan the
     // view (handled manually in mousePress/Move/Release).
@@ -277,6 +283,11 @@ void MapView::rotateSelected(float degrees) {
 
 void MapView::addPartAtViewCenter(const QString& partKey) {
     if (!map_) return;
+    addPartAtScenePos(partKey, mapToScene(viewport()->rect().center()));
+}
+
+void MapView::addPartAtScenePos(const QString& partKey, QPointF sceneCenterPx) {
+    if (!map_) return;
 
     // Pick the first brick layer as the add target. Later we can surface a
     // "current layer" selection in the layer panel.
@@ -294,9 +305,7 @@ void MapView::addPartAtViewCenter(const QString& partKey) {
     const double widthStuds  = pm.isNull() ? 2.0 : pm.width()  / pxPerStud;
     const double heightStuds = pm.isNull() ? 2.0 : pm.height() / pxPerStud;
 
-    // Convert view centre to scene coordinates, then to studs.
-    const QPointF sceneCentre = mapToScene(viewport()->rect().center());
-    const QPointF centreStuds(sceneCentre.x() / pxPerStud, sceneCentre.y() / pxPerStud);
+    const QPointF centreStuds(sceneCenterPx.x() / pxPerStud, sceneCenterPx.y() / pxPerStud);
 
     core::Brick b;
     b.guid = QUuid::createUuid().toString(QUuid::WithoutBraces);
@@ -345,6 +354,34 @@ void MapView::contextMenuEvent(QContextMenuEvent* e) {
 
     menu.exec(e->globalPos());
     e->accept();
+}
+
+void MapView::dragEnterEvent(QDragEnterEvent* e) {
+    if (e->mimeData()->hasFormat(QString::fromLatin1(PartsBrowser::kPartMimeType))) {
+        e->acceptProposedAction();
+        return;
+    }
+    QGraphicsView::dragEnterEvent(e);
+}
+
+void MapView::dragMoveEvent(QDragMoveEvent* e) {
+    if (e->mimeData()->hasFormat(QString::fromLatin1(PartsBrowser::kPartMimeType))) {
+        e->acceptProposedAction();
+        return;
+    }
+    QGraphicsView::dragMoveEvent(e);
+}
+
+void MapView::dropEvent(QDropEvent* e) {
+    const QString mime = QString::fromLatin1(PartsBrowser::kPartMimeType);
+    if (!e->mimeData()->hasFormat(mime)) { QGraphicsView::dropEvent(e); return; }
+    const QString key = QString::fromUtf8(e->mimeData()->data(mime));
+    if (key.isEmpty()) { e->ignore(); return; }
+    // Drop position is in viewport coords — convert to scene coords so the
+    // brick lands exactly where the cursor released.
+    const QPointF scenePos = mapToScene(e->position().toPoint());
+    addPartAtScenePos(key, scenePos);
+    e->acceptProposedAction();
 }
 
 void MapView::deleteSelected() {

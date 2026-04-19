@@ -22,6 +22,10 @@ public:
 
     void rebuild();   // re-read the library and repopulate
 
+    // MIME type used when a thumbnail is dragged out of this panel. MapView
+    // recognises the same string in its drop handler.
+    static constexpr const char* kPartMimeType = "application/x-cld-part";
+
 signals:
     void partActivated(const QString& key);
 
