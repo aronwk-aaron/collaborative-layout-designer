@@ -23,6 +23,11 @@ public:
     void build(const core::Map& map);
     void clear();
 
+    // Configure live drag-snap. `snapStepStuds` of 0 disables snapping.
+    // Applied by the per-item ItemPositionChange override so the brick snaps
+    // under the cursor during drag, not only on release.
+    static void setLiveSnapStepStuds(double snapStepStuds);
+
     // Toggle the visibility of a layer (by index). Returns false if out of range.
     bool setLayerVisible(int layerIndex, bool visible);
 

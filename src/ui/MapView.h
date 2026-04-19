@@ -36,7 +36,7 @@ public:
     QUndoStack* undoStack() { return undoStack_.get(); }
 
     // Snap step applied to brick drag-drop, in studs. 0 disables snapping.
-    void  setSnapStepStuds(double studs) { snapStepStuds_ = studs; }
+    void  setSnapStepStuds(double studs);
     double snapStepStuds() const { return snapStepStuds_; }
 
     // Default rotation step in degrees — used by the menu Rotate CW/CCW

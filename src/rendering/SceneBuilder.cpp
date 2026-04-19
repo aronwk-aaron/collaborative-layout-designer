@@ -49,6 +49,42 @@ constexpr int kBrickDataLayerIndex = 0;
 constexpr int kBrickDataGuid       = 1;
 constexpr int kBrickDataKind       = 2;  // value: "brick" to distinguish from other items
 
+// Live snap during drag: when set to >0, QGraphicsPixmapItem / QGraphicsRectItem
+// subclasses round their pos() to multiples of this scene-pixel value on every
+// ItemPositionChange. SceneBuilder exposes a setter (called from MainWindow
+// whenever the snap toolbar changes); the per-item override reads the static.
+double gSnapPx = 0.0;
+
+class SnappingPixmap : public QGraphicsPixmapItem {
+public:
+    using QGraphicsPixmapItem::QGraphicsPixmapItem;
+protected:
+    QVariant itemChange(GraphicsItemChange c, const QVariant& v) override {
+        if (c == ItemPositionChange && gSnapPx > 0.0 && (flags() & ItemIsMovable)) {
+            QPointF p = v.toPointF();
+            p.setX(std::round(p.x() / gSnapPx) * gSnapPx);
+            p.setY(std::round(p.y() / gSnapPx) * gSnapPx);
+            return p;
+        }
+        return QGraphicsPixmapItem::itemChange(c, v);
+    }
+};
+
+class SnappingRect : public QGraphicsRectItem {
+public:
+    using QGraphicsRectItem::QGraphicsRectItem;
+protected:
+    QVariant itemChange(GraphicsItemChange c, const QVariant& v) override {
+        if (c == ItemPositionChange && gSnapPx > 0.0 && (flags() & ItemIsMovable)) {
+            QPointF p = v.toPointF();
+            p.setX(std::round(p.x() / gSnapPx) * gSnapPx);
+            p.setY(std::round(p.y() / gSnapPx) * gSnapPx);
+            return p;
+        }
+        return QGraphicsRectItem::itemChange(c, v);
+    }
+};
+
 void addBrickLayer(const core::LayerBrick& L, QGraphicsItemGroup* group, parts::PartsLibrary& lib,
                    int layerIndex, QHash<QString, QGraphicsItem*>& brickByGuid) {
     for (const auto& brick : L.bricks) {
@@ -80,7 +116,8 @@ void addBrickLayer(const core::LayerBrick& L, QGraphicsItemGroup* group, parts::
         if (meta && !meta->gifFilePath.isEmpty()) {
             QPixmap pm(meta->gifFilePath);
             if (!pm.isNull()) {
-                auto* p = new QGraphicsPixmapItem(pm);
+                auto* p = new SnappingPixmap(pm);
+                p->setFlag(QGraphicsItem::ItemSendsGeometryChanges, true);
                 p->setTransformationMode(Qt::SmoothTransformation);
                 p->setOffset(-pm.width() / 2.0, -pm.height() / 2.0);
                 p->setTransformOriginPoint(0, 0);
@@ -91,9 +128,13 @@ void addBrickLayer(const core::LayerBrick& L, QGraphicsItemGroup* group, parts::
             }
         }
         if (!item) {
-            // Fallback placeholder: dashed rectangle in the brick's AABB so the
-            // layout shape still shows when a part GIF is missing.
-            auto* r = new QGraphicsRectItem(areaPx);
+            // Fallback placeholder: dashed rectangle centred on origin so
+            // drag + snap act on the brick's centre (consistent with pixmap
+            // items above).
+            auto* r = new SnappingRect(QRectF(-areaPx.width() / 2.0, -areaPx.height() / 2.0,
+                                               areaPx.width(), areaPx.height()));
+            r->setFlag(QGraphicsItem::ItemSendsGeometryChanges, true);
+            r->setPos(centerPx);
             QPen pen(QColor(200, 80, 80));
             pen.setStyle(Qt::DashLine);
             r->setPen(pen);
@@ -207,6 +248,10 @@ void addRulerLayer(const core::LayerRuler& L, QGraphicsItemGroup* group) {
     }
 }
 
+}
+
+void SceneBuilder::setLiveSnapStepStuds(double snapStepStuds) {
+    gSnapPx = snapStepStuds * kPixelsPerStud;
 }
 
 SceneBuilder::SceneBuilder(QGraphicsScene& scene, parts::PartsLibrary& parts)

@@ -65,6 +65,10 @@ MapView::MapView(parts::PartsLibrary& parts, QWidget* parent)
     : QGraphicsView(parent), parts_(parts) {
     setRenderHints(QPainter::Antialiasing | QPainter::SmoothPixmapTransform);
     setAcceptDrops(true);   // accept part drags from the PartsBrowser panel
+    // Full-viewport repaints avoid the "trails" behind rotated bricks that
+    // SmartViewportUpdate leaves when the item's bounding rect in scene
+    // coords changes more than its local rect signals.
+    setViewportUpdateMode(QGraphicsView::FullViewportUpdate);
     // Left-button drag: rubber-band select (item drag is still available via
     // ItemIsMovable on individual brick items). Middle-button drag: pan the
     // view (handled manually in mousePress/Move/Release).
@@ -80,6 +84,15 @@ MapView::MapView(parts::PartsLibrary& parts, QWidget* parent)
 
     builder_ = std::make_unique<rendering::SceneBuilder>(*scene, parts_);
     undoStack_ = std::make_unique<QUndoStack>(this);
+    // Every undo / redo mutates core::Map; the scene items were built before
+    // the mutation, so we need to rebuild the scene afterwards for the UI to
+    // reflect the restored state. Without this, Ctrl+Z appears to do nothing.
+    connect(undoStack_.get(), &QUndoStack::indexChanged, this, [this](int){
+        if (map_) {
+            builder_->build(*map_);
+            viewport()->update();
+        }
+    });
 }
 
 MapView::~MapView() = default;
@@ -335,6 +348,17 @@ void MapView::mouseReleaseEvent(QMouseEvent* e) {
         e->accept();
         return;
     }
+    // "Drag out to delete": if the user started a drag in Select mode and
+    // released outside the map viewport (typically over the Parts panel or
+    // any other dock), treat it as a delete rather than a move.
+    if (e->button() == Qt::LeftButton && !dragStart_.empty()
+        && !viewport()->rect().contains(e->pos())) {
+        dragStart_.clear();
+        QGraphicsView::mouseReleaseEvent(e);
+        deleteSelected();
+        e->accept();
+        return;
+    }
     if (e->button() == Qt::LeftButton && drawingRuler_ && map_) {
         drawingRuler_ = false;
         const QPointF endScene = mapToScene(e->pos());
@@ -557,6 +581,13 @@ void MapView::contextMenuEvent(QContextMenuEvent* e) {
 
     menu.exec(e->globalPos());
     e->accept();
+}
+
+void MapView::setSnapStepStuds(double studs) {
+    snapStepStuds_ = studs;
+    // Propagate to the rendering side so item-level ItemPositionChange snaps
+    // bricks live while dragging (in addition to commit-time snap on release).
+    rendering::SceneBuilder::setLiveSnapStepStuds(studs);
 }
 
 void MapView::copySelection() {
