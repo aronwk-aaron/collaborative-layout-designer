@@ -121,7 +121,16 @@ LayerPanel::LayerPanel(QWidget* parent) : QDockWidget(tr("Layers"), parent) {
     connect(list_, &QListWidget::itemChanged, this, [this](QListWidgetItem* item) {
         if (!builder_) return;
         const int idx = list_->row(item);
-        builder_->setLayerVisible(idx, item->checkState() == Qt::Checked);
+        const bool visible = item->checkState() == Qt::Checked;
+        builder_->setLayerVisible(idx, visible);
+        // Also persist on the underlying Layer so a later scene rebuild
+        // (triggered by e.g. a move / undo / paste) honours the user's
+        // visibility choice. Without this, any rebuildScene call would
+        // read the Layer's default visible=true and make hidden layers
+        // reappear despite the checkbox still showing unchecked.
+        if (map_ && idx >= 0 && idx < static_cast<int>(map_->layers().size())) {
+            map_->layers()[idx]->visible = visible;
+        }
     });
     // Clicking (or arrow-keying) onto a row sets it as the active layer —
     // vanilla BlueBrick uses Map.selectedLayerIndex for new-item placements.

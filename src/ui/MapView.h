@@ -88,6 +88,10 @@ public:
 
 signals:
     void selectionChanged();
+    // Emitted when the layer set changes shape (a new layer was added as
+    // part of a paste across layers, an imported module created layers,
+    // etc.) so MainWindow can refresh the LayerPanel.
+    void layersChanged();
 
 protected:
     void wheelEvent(QWheelEvent* e) override;
@@ -129,7 +133,16 @@ private:
     // Internal (in-process) brick clipboard. Cross-process paste would require
     // serialising to QMimeData via the system clipboard; deferred until a user
     // actually needs it.
-    std::vector<core::Brick> clipboard_;
+    // Clipboard entries carry the source layer's name so paste can route
+    // each brick back to a matching layer (creating one if necessary).
+    // Copying a multi-layer selection and pasting into any map preserves
+    // the layering — otherwise track pieces would flatten onto the first
+    // brick layer along with scenery and everything looks broken.
+    struct ClipEntry {
+        QString     sourceLayerName;
+        core::Brick brick;
+    };
+    std::vector<ClipEntry> clipboard_;
 
     // Snap + rotation step config, updated by MainWindow from toolbar + QSettings.
     double snapStepStuds_       = 0.0;     // 0 disables snap

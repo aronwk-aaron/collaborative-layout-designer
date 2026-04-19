@@ -1111,7 +1111,10 @@ void MapView::copySelection() {
         auto* L = map_->layers()[li].get();
         if (!L || L->kind() != core::LayerKind::Brick) continue;
         for (const auto& b : static_cast<core::LayerBrick&>(*L).bricks) {
-            if (b.guid == guid) { clipboard_.push_back(b); break; }
+            if (b.guid == guid) {
+                clipboard_.push_back({ L->name, b });
+                break;
+            }
         }
     }
 }
@@ -1123,16 +1126,9 @@ void MapView::cutSelection() {
 
 void MapView::pasteClipboard() {
     if (!map_ || clipboard_.empty()) return;
-    int targetLayer = -1;
-    for (int i = 0; i < static_cast<int>(map_->layers().size()); ++i) {
-        if (map_->layers()[i]->kind() == core::LayerKind::Brick) { targetLayer = i; break; }
-    }
-    if (targetLayer < 0) return;
 
-    // Compute the clipboard group's own centre (stud coords) and translate
-    // everything so that centre lands at the current mouse position (if the
-    // cursor is over the viewport) or the view centre otherwise. Matches the
-    // "paste lands where I'm looking" UX vanilla BlueBrick uses.
+    // Compute the clipboard group's own centre (stud coords) across every
+    // entry regardless of source layer, so the paste group stays rigid.
     const double pxPerStud = rendering::SceneBuilder::kPixelsPerStud;
     QPoint viewPos = viewport()->mapFromGlobal(QCursor::pos());
     QPointF targetSceneCentrePx;
@@ -1143,28 +1139,57 @@ void MapView::pasteClipboard() {
     }
     const QPointF targetCentreStuds(targetSceneCentrePx.x() / pxPerStud,
                                      targetSceneCentrePx.y() / pxPerStud);
-
     QPointF srcCentre;
-    for (const auto& src : clipboard_) srcCentre += src.displayArea.center();
+    for (const auto& src : clipboard_) srcCentre += src.brick.displayArea.center();
     srcCentre /= clipboard_.size();
-
     const QPointF translation = targetCentreStuds - srcCentre;
 
-    std::vector<core::Brick> pasted;
-    pasted.reserve(clipboard_.size());
+    // Group clipboard entries by source layer name so each group lands on
+    // a matching layer in the current map (creating one if none exists).
+    // Preserves the original layering — a multi-layer copy pastes back as
+    // a multi-layer set, not flattened to a single layer.
+    QHash<QString, std::vector<core::Brick>> byLayer;
+    QStringList layerOrder;    // stable iteration order
     QSet<QString> newGuids;
     for (const auto& src : clipboard_) {
-        core::Brick b = src;
+        core::Brick b = src.brick;
         b.guid = core::newBbmId();
         newGuids.insert(b.guid);
         b.displayArea.translate(translation);
         b.myGroupId.clear();
-        pasted.push_back(std::move(b));
+        const QString key = src.sourceLayerName.isEmpty()
+            ? QStringLiteral("Bricks") : src.sourceLayerName;
+        if (!byLayer.contains(key)) layerOrder << key;
+        byLayer[key].push_back(std::move(b));
     }
-    undoStack_->push(new edit::AddBricksCommand(*map_, targetLayer, std::move(pasted)));
+
+    auto findOrCreateLayer = [this](const QString& name) -> int {
+        for (int i = 0; i < static_cast<int>(map_->layers().size()); ++i) {
+            auto* L = map_->layers()[i].get();
+            if (L && L->kind() == core::LayerKind::Brick && L->name == name) return i;
+        }
+        // No match — create a new brick layer with that name.
+        auto L = std::make_unique<core::LayerBrick>();
+        L->guid = core::newBbmId();
+        L->name = name.isEmpty() ? QStringLiteral("Bricks") : name;
+        const int idx = static_cast<int>(map_->layers().size());
+        map_->layers().push_back(std::move(L));
+        return idx;
+    };
+
+    undoStack_->beginMacro(tr("Paste (%1 bricks across %2 layer(s))")
+                               .arg(clipboard_.size()).arg(layerOrder.size()));
+    for (const QString& name : layerOrder) {
+        const int li = findOrCreateLayer(name);
+        if (li < 0) continue;
+        auto& bricks = byLayer[name];
+        undoStack_->push(new edit::AddBricksCommand(*map_, li, std::move(bricks)));
+    }
+    undoStack_->endMacro();
+
     rebuildScene();
-    // Auto-select the freshly-pasted bricks so the user can immediately
-    // drag / rotate / delete them as a group. Matches BlueBrick's paste UX.
+    emit layersChanged();
+    // Auto-select the freshly-pasted bricks.
     scene()->clearSelection();
     for (QGraphicsItem* it : scene()->items()) {
         if (!isBrickItem(it)) continue;

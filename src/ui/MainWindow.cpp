@@ -56,6 +56,7 @@
 #include <QMenu>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QRegularExpression>
 #include <QSpinBox>
 #include <QSettings>
 #include <QStandardPaths>
@@ -336,12 +337,25 @@ MainWindow::MainWindow(parts::PartsLibrary& parts, QWidget* parent)
             return;
         }
 
+        // Sanitize the filename: strip characters that are invalid on
+        // Windows/macOS/Linux filesystems and any leading/trailing dots
+        // or spaces. Falls back to "Module" if the result would be empty.
+        auto sanitizeFilename = [](QString n) -> QString {
+            static const QRegularExpression bad(QStringLiteral(R"([<>:"/\\|?*\x00-\x1F])"));
+            n.replace(bad, QStringLiteral("_"));
+            while (n.startsWith(QLatin1Char('.')) || n.startsWith(QLatin1Char(' '))) n.remove(0, 1);
+            while (n.endsWith(QLatin1Char('.'))  || n.endsWith(QLatin1Char(' ')))  n.chop(1);
+            if (n.isEmpty()) n = QStringLiteral("Module");
+            return n;
+        };
+
         bool ok = false;
-        const QString defaultName = mod->name.isEmpty() ? tr("Module") : mod->name;
-        const QString name = QInputDialog::getText(
+        const QString defaultName = sanitizeFilename(mod->name.isEmpty() ? tr("Module") : mod->name);
+        const QString rawName = QInputDialog::getText(
             this, tr("Save to library"), tr("Module name (filename):"),
             QLineEdit::Normal, defaultName, &ok);
-        if (!ok || name.isEmpty()) return;
+        if (!ok || rawName.isEmpty()) return;
+        const QString name = sanitizeFilename(rawName);
         const QString target = QDir(dir).filePath(name + QStringLiteral(".bbm"));
         if (QFile::exists(target)) {
             const auto btn = QMessageBox::question(this, tr("Save to library"),
@@ -607,6 +621,9 @@ MainWindow::MainWindow(parts::PartsLibrary& parts, QWidget* parent)
         const int n = mapView_->scene()->selectedItems().size();
         selLabel->setText(n == 0 ? tr("no selection")
                                  : tr("selected: %1").arg(n));
+    });
+    connect(mapView_, &MapView::layersChanged, this, [this]{
+        layerPanel_->setMap(mapView_->currentMap(), mapView_->builder());
     });
 
     // Auto-save: 60s tick, writes to AppDataLocation/autosave.bbm whenever
@@ -1154,10 +1171,20 @@ void MainWindow::onSaveSelectionAsModule() {
     // otherwise fall back to QFileDialog's default.
     QString startDir = moduleLibraryPanel_->libraryPath();
     QDir().mkpath(startDir);  // best-effort
-    const QString defaultName = QInputDialog::getText(
+    const QString rawName = QInputDialog::getText(
         this, tr("Save module"), tr("Module name:"),
         QLineEdit::Normal, tr("New Module"));
-    if (defaultName.isEmpty()) return;
+    if (rawName.isEmpty()) return;
+    // Sanitize the filename — same logic as the save-to-library handler.
+    auto sanitize = [](QString n) -> QString {
+        static const QRegularExpression bad(QStringLiteral(R"([<>:"/\\|?*\x00-\x1F])"));
+        n.replace(bad, QStringLiteral("_"));
+        while (n.startsWith(QLatin1Char('.')) || n.startsWith(QLatin1Char(' '))) n.remove(0, 1);
+        while (n.endsWith(QLatin1Char('.'))  || n.endsWith(QLatin1Char(' ')))  n.chop(1);
+        if (n.isEmpty()) n = QStringLiteral("Module");
+        return n;
+    };
+    const QString defaultName = sanitize(rawName);
     QString target = QFileDialog::getSaveFileName(
         this, tr("Save selection as module"),
         startDir.isEmpty() ? defaultName + ".bbm" : QDir(startDir).filePath(defaultName + ".bbm"),
