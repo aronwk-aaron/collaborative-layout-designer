@@ -3,6 +3,8 @@ add_library(cld_edit STATIC
     EditCommands.h
     ModuleCommands.cpp
     ModuleCommands.h
+    LabelCommands.cpp
+    LabelCommands.h
 )
 
 target_include_directories(cld_edit PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)

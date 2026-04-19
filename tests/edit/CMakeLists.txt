@@ -1,6 +1,7 @@
 add_executable(cld_edit_tests
     EditCommandsTest.cpp
     ModuleCommandsTest.cpp
+    LabelCommandsTest.cpp
 )
 
 target_link_libraries(cld_edit_tests

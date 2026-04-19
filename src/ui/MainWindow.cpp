@@ -11,7 +11,9 @@
 #include "../core/Brick.h"
 #include "../core/Layer.h"
 #include "../core/LayerBrick.h"
+#include "../core/AnchoredLabel.h"
 #include "../edit/EditCommands.h"
+#include "../edit/LabelCommands.h"
 #include "../edit/ModuleCommands.h"
 #include "../saveload/BbmReader.h"
 #include "../saveload/BbmWriter.h"
@@ -33,6 +35,7 @@
 #include <QSettings>
 #include <QStatusBar>
 #include <QUndoStack>
+#include <QUuid>
 
 namespace cld::ui {
 
@@ -114,6 +117,43 @@ void MainWindow::setupMenus() {
     auto* rotCW = edit->addAction(tr("Rotate 90° C&W"));
     rotCW->setShortcut(QKeySequence(tr("Shift+R")));
     connect(rotCW, &QAction::triggered, [this]{ mapView_->rotateSelected(90.0f); });
+
+    edit->addSeparator();
+    auto* addLabel = edit->addAction(tr("Add &Anchored Label..."));
+    addLabel->setShortcut(QKeySequence(tr("Ctrl+L")));
+    connect(addLabel, &QAction::triggered, this, [this]{
+        auto* map = mapView_->currentMap();
+        if (!map) return;
+        // If a single brick is selected, anchor to it; otherwise anchor to the
+        // view centre in world coords.
+        QString targetId;
+        core::AnchorKind kind = core::AnchorKind::World;
+        QPointF offsetStuds;
+        auto sel = mapView_->scene()->selectedItems();
+        if (sel.size() == 1 && sel[0]->data(2).toString() == QStringLiteral("brick")) {
+            targetId = sel[0]->data(1).toString();
+            kind = core::AnchorKind::Brick;
+            offsetStuds = QPointF(2.0, -2.0);  // small initial offset from centre
+        } else {
+            const QPointF scenePos = mapView_->mapToScene(mapView_->viewport()->rect().center());
+            offsetStuds = QPointF(scenePos.x() / 8.0, scenePos.y() / 8.0);
+        }
+        bool ok = false;
+        const QString text = QInputDialog::getText(
+            this, tr("Anchored label"), tr("Label text:"),
+            QLineEdit::Normal, {}, &ok);
+        if (!ok || text.isEmpty()) return;
+
+        core::AnchoredLabel L;
+        L.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+        L.text = text;
+        L.color = core::ColorSpec::fromKnown(QColor(Qt::black), QStringLiteral("Black"));
+        L.kind = kind;
+        L.targetId = targetId;
+        L.offset = offsetStuds;
+        mapView_->undoStack()->push(new edit::AddAnchoredLabelCommand(*map, std::move(L)));
+        mapView_->rebuildScene();
+    });
 
     auto* view = menuBar()->addMenu(tr("&View"));
     auto* zIn = view->addAction(tr("Zoom &In"));
