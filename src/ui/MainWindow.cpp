@@ -37,7 +37,9 @@
 #include <QFormLayout>
 #include <QGraphicsItem>
 #include <QGraphicsScene>
+#include <QImage>
 #include <QInputDialog>
+#include <QPainter>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMenuBar>
@@ -227,6 +229,43 @@ void MainWindow::setupMenus() {
     auto* saveAsAct = file->addAction(tr("Save &As..."));
     saveAsAct->setShortcut(QKeySequence::SaveAs);
     connect(saveAsAct, &QAction::triggered, this, &MainWindow::onSaveAs);
+
+    file->addSeparator();
+    auto* exportAct = file->addAction(tr("Export as &Image..."));
+    connect(exportAct, &QAction::triggered, this, [this]{
+        if (!mapView_->currentMap()) return;
+        auto* scene = mapView_->scene();
+        const QRectF bounds = scene->itemsBoundingRect().adjusted(-20, -20, 20, 20);
+        if (bounds.isEmpty()) {
+            QMessageBox::information(this, tr("Export"), tr("The map is empty."));
+            return;
+        }
+        const QString path = QFileDialog::getSaveFileName(
+            this, tr("Export map as image"),
+            currentFilePath_.isEmpty() ? QString() : QFileInfo(currentFilePath_).baseName() + ".png",
+            tr("PNG (*.png);;JPEG (*.jpg *.jpeg)"));
+        if (path.isEmpty()) return;
+        bool ok = false;
+        const int width = QInputDialog::getInt(
+            this, tr("Image width"),
+            tr("Output width in pixels (height auto-scales):"), 1600, 128, 16384, 1, &ok);
+        if (!ok) return;
+        const double aspect = bounds.height() / bounds.width();
+        const int height = std::max(64, static_cast<int>(width * aspect));
+        QImage img(width, height, QImage::Format_ARGB32);
+        img.fill(mapView_->currentMap()->backgroundColor.color);
+        {
+            QPainter p(&img);
+            p.setRenderHint(QPainter::Antialiasing);
+            p.setRenderHint(QPainter::SmoothPixmapTransform);
+            scene->render(&p, QRectF(0, 0, width, height), bounds, Qt::KeepAspectRatio);
+        }
+        if (!img.save(path)) {
+            QMessageBox::warning(this, tr("Export failed"), tr("Could not write %1").arg(path));
+            return;
+        }
+        statusBar()->showMessage(tr("Exported %1x%2 to %3").arg(width).arg(height).arg(path), 5000);
+    });
 
     file->addSeparator();
     auto* quit = file->addAction(tr("&Quit"));
