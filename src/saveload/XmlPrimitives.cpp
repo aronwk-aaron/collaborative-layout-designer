@@ -53,7 +53,7 @@ double readDoubleElement(QXmlStreamReader& r) {
     return ok ? v : 0.0;
 }
 
-QColor readColor(QXmlStreamReader& r) {
+core::ColorSpec readColor(QXmlStreamReader& r) {
     // <Wrapper><IsKnownColor>bool</IsKnownColor><Name>string</Name></Wrapper>
     bool isKnown = false;
     QString name;
@@ -67,15 +67,18 @@ QColor readColor(QXmlStreamReader& r) {
         }
     }
     if (isKnown) {
-        QColor c(name);
-        if (c.isValid()) return c;
+        // Preserve the knownName verbatim so writes round-trip even when Qt can't
+        // resolve the KnownColor enum value to an identical QColor (System.Drawing's
+        // KnownColor palette is a superset of what QColor::fromString recognizes).
+        const QColor resolved(name);
+        return core::ColorSpec::fromKnown(resolved.isValid() ? resolved : QColor(Qt::black), name);
     }
     // Unknown color: `name` is a signed 32-bit ARGB as hex or decimal.
     bool ok = false;
     const auto argb = static_cast<quint32>(name.toLongLong(&ok, 16));
-    if (ok) return QColor::fromRgba(argb);
+    if (ok) return core::ColorSpec::fromArgb(QColor::fromRgba(argb));
     const auto dec = static_cast<quint32>(name.toLongLong(&ok, 10));
-    if (ok) return QColor::fromRgba(dec);
+    if (ok) return core::ColorSpec::fromArgb(QColor::fromRgba(dec));
     return {};
 }
 
@@ -110,6 +113,16 @@ QRectF readRectF(QXmlStreamReader& r) {
         else r.skipCurrentElement();
     }
     return { x, y, w, h };
+}
+
+std::vector<float> readFloatArray(QXmlStreamReader& r) {
+    // Upstream writes <Wrapper><value>...</value>*</Wrapper>.
+    std::vector<float> out;
+    while (r.readNextStartElement()) {
+        if (r.name() == QStringLiteral("value")) out.push_back(readFloatElement(r));
+        else r.skipCurrentElement();
+    }
+    return out;
 }
 
 core::FontSpec readFont(QXmlStreamReader& r, int dataVersion) {
@@ -149,18 +162,20 @@ void writeTextElement(QXmlStreamWriter& w, const QString& name, const QString& v
     w.writeTextElement(name, v);
 }
 
-void writeColor(QXmlStreamWriter& w, const QString& name, const QColor& c) {
+void writeColor(QXmlStreamWriter& w, const QString& name, const core::ColorSpec& c) {
     w.writeStartElement(name);
-    // C# Color.IsKnownColor is true only if the color came from Color.FromName/KnownColor —
-    // we don't track that round-trip distinction, so always serialize as an ARGB hex.
-    // This is a known divergence; flagged in the forward-compat CI when comparing byte-for-byte.
-    writeBoolElement(w, QStringLiteral("IsKnownColor"), false);
-    const quint32 argb = (static_cast<quint32>(c.alpha()) << 24)
-                       | (static_cast<quint32>(c.red())   << 16)
-                       | (static_cast<quint32>(c.green()) << 8)
-                       | static_cast<quint32>(c.blue());
-    // C# writes signed int32 via int.Parse(..., HexNumber); we emit unsigned hex (8 chars).
-    writeTextElement(w, QStringLiteral("Name"), QStringLiteral("%1").arg(argb, 8, 16, QLatin1Char('0')).toUpper());
+    writeBoolElement(w, QStringLiteral("IsKnownColor"), c.isKnown());
+    if (c.isKnown()) {
+        writeTextElement(w, QStringLiteral("Name"), c.knownName);
+    } else {
+        const quint32 argb = (static_cast<quint32>(c.color.alpha()) << 24)
+                           | (static_cast<quint32>(c.color.red())   << 16)
+                           | (static_cast<quint32>(c.color.green()) << 8)
+                           | static_cast<quint32>(c.color.blue());
+        // Vanilla emits lowercase hex: int.ToString("x") (we observed "ffffffff" style).
+        writeTextElement(w, QStringLiteral("Name"),
+                         QStringLiteral("%1").arg(argb, 8, 16, QLatin1Char('0')));
+    }
     w.writeEndElement();
 }
 
@@ -184,6 +199,12 @@ void writeRectF(QXmlStreamWriter& w, const QString& name, const QRectF& r) {
     writeFloatElement(w, QStringLiteral("Y"), static_cast<float>(r.y()));
     writeFloatElement(w, QStringLiteral("Width"),  static_cast<float>(r.width()));
     writeFloatElement(w, QStringLiteral("Height"), static_cast<float>(r.height()));
+    w.writeEndElement();
+}
+
+void writeFloatArray(QXmlStreamWriter& w, const QString& name, const std::vector<float>& values) {
+    w.writeStartElement(name);
+    for (float v : values) writeFloatElement(w, QStringLiteral("value"), v);
     w.writeEndElement();
 }
 

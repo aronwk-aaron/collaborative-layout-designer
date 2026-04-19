@@ -264,8 +264,9 @@ QString textAlignmentToString(core::TextAlignment a) {
 }
 
 void writeTextCell(QXmlStreamWriter& w, const core::TextCell& t) {
+    // Vanilla <TextCell> has no id attribute (unlike <Brick>). Upstream:
+    // LayerTextCell.cs WriteXml writes only the start tag + base + fields.
     w.writeStartElement(QStringLiteral("TextCell"));
-    w.writeAttribute(QStringLiteral("id"), t.guid);
     writeItemCommon(w, t);
     xml::writeTextElement (w, QStringLiteral("Text"),        t.text);
     xml::writeFloatElement(w, QStringLiteral("Orientation"), t.orientation);
@@ -349,6 +350,9 @@ void writeLayerArea(QXmlStreamWriter& w, const core::LayerArea& a) {
                            | (static_cast<quint32>(c.color.red())   << 16)
                            | (static_cast<quint32>(c.color.green()) << 8)
                            | static_cast<quint32>(c.color.blue());
+        // Vanilla emits the color as int.ToString("X") (uppercase hex) for LayerArea
+        // — verified in upstream LayerArea.cs WriteXml. Note the deliberate divergence
+        // from the <IsKnownColor>/<Name> wrapper which uses lowercase hex.
         xml::writeTextElement(w, QStringLiteral("color"),
             QStringLiteral("%1").arg(argb, 0, 16).toUpper());
         w.writeEndElement();
@@ -359,36 +363,49 @@ void writeLayerArea(QXmlStreamWriter& w, const core::LayerArea& a) {
 
 // ---------- LayerRuler ----------
 
-void readRulerBase(QXmlStreamReader& r, core::RulerItemBase& base, int dataVersion) {
-    base.guid = r.attributes().value(QStringLiteral("id")).toString();
-    readItemCommon(r, base, dataVersion);
-    // upstream RulerItem base reads Color, LineThickness, DisplayDistance, DisplayUnit in order.
-    while (r.tokenType() == QXmlStreamReader::StartElement || r.readNextStartElement()) {
-        if (r.tokenType() != QXmlStreamReader::StartElement) break;
-        const auto n = r.name();
-        if      (n == QStringLiteral("Color"))           base.color = xml::readColor(r);
-        else if (n == QStringLiteral("LineThickness"))   base.lineThickness = xml::readFloatElement(r);
-        else if (n == QStringLiteral("DisplayDistance")) base.displayDistance = xml::readBoolElement(r);
-        else if (n == QStringLiteral("DisplayUnit"))     { base.displayUnit = xml::readBoolElement(r); return; }
-        else { r.skipCurrentElement(); return; }
-    }
+bool consumeRulerBaseField(QXmlStreamReader& r, core::RulerItemBase& base, int dataVersion, QStringView n) {
+    if      (n == QStringLiteral("Color"))                base.color = xml::readColor(r);
+    else if (n == QStringLiteral("LineThickness"))        base.lineThickness = xml::readFloatElement(r);
+    else if (n == QStringLiteral("DisplayDistance"))      base.displayDistance = xml::readBoolElement(r);
+    else if (n == QStringLiteral("DisplayUnit"))          base.displayUnit = xml::readBoolElement(r);
+    else if (n == QStringLiteral("GuidelineColor"))       base.guidelineColor = xml::readColor(r);
+    else if (n == QStringLiteral("GuidelineThickness"))   base.guidelineThickness = xml::readFloatElement(r);
+    else if (n == QStringLiteral("GuidelineDashPattern")) base.guidelineDashPattern = xml::readFloatArray(r);
+    else if (n == QStringLiteral("Unit"))                 base.unit = xml::readIntElement(r);
+    else if (n == QStringLiteral("MeasureFont"))          base.measureFont = xml::readFont(r, dataVersion);
+    else if (n == QStringLiteral("MeasureFontColor"))     base.measureFontColor = xml::readColor(r);
+    else return false;
+    return true;
 }
 
 void writeRulerBase(QXmlStreamWriter& w, const core::RulerItemBase& b) {
     writeItemCommon(w, b);
-    xml::writeColor       (w, QStringLiteral("Color"),           b.color);
-    xml::writeFloatElement(w, QStringLiteral("LineThickness"),   b.lineThickness);
-    xml::writeBoolElement (w, QStringLiteral("DisplayDistance"), b.displayDistance);
-    xml::writeBoolElement (w, QStringLiteral("DisplayUnit"),     b.displayUnit);
+    xml::writeColor       (w, QStringLiteral("Color"),                b.color);
+    xml::writeFloatElement(w, QStringLiteral("LineThickness"),        b.lineThickness);
+    xml::writeBoolElement (w, QStringLiteral("DisplayDistance"),      b.displayDistance);
+    xml::writeBoolElement (w, QStringLiteral("DisplayUnit"),          b.displayUnit);
+    xml::writeColor       (w, QStringLiteral("GuidelineColor"),       b.guidelineColor);
+    xml::writeFloatElement(w, QStringLiteral("GuidelineThickness"),   b.guidelineThickness);
+    xml::writeFloatArray  (w, QStringLiteral("GuidelineDashPattern"), b.guidelineDashPattern);
+    xml::writeIntElement  (w, QStringLiteral("Unit"),                 b.unit);
+    xml::writeFont        (w, QStringLiteral("MeasureFont"),          b.measureFont);
+    xml::writeColor       (w, QStringLiteral("MeasureFontColor"),     b.measureFontColor);
 }
 
 core::LayerRuler::AnyRuler readRulerItem(QXmlStreamReader& r, int dataVersion) {
     core::LayerRuler::AnyRuler out;
-    if (r.name() == QStringLiteral("LinearRuler")) {
-        out.kind = core::RulerKind::Linear;
-        readRulerBase(r, out.linear, dataVersion);
-        while (r.readNextStartElement()) {
-            const auto n = r.name();
+    const bool isLinear = (r.name() == QStringLiteral("LinearRuler"));
+    out.kind = isLinear ? core::RulerKind::Linear : core::RulerKind::Circular;
+    auto& base = isLinear ? static_cast<core::RulerItemBase&>(out.linear)
+                          : static_cast<core::RulerItemBase&>(out.circular);
+    // Upstream reads LayerItem common (DisplayArea + MyGroup) then ruler-base
+    // fields then subclass fields, all in a fixed order. We loop on start
+    // elements and dispatch by name to stay lenient against minor reordering.
+    readItemCommon(r, base, dataVersion);
+    while (r.readNextStartElement()) {
+        const auto n = r.name();
+        if (consumeRulerBaseField(r, base, dataVersion, n)) continue;
+        if (isLinear) {
             if      (n == QStringLiteral("Point1"))         out.linear.point1 = xml::readPointF(r);
             else if (n == QStringLiteral("Point2"))         out.linear.point2 = xml::readPointF(r);
             else if (n == QStringLiteral("AttachedBrick1")) out.linear.attachedBrick1Id = xml::readTextElement(r);
@@ -396,12 +413,7 @@ core::LayerRuler::AnyRuler readRulerItem(QXmlStreamReader& r, int dataVersion) {
             else if (n == QStringLiteral("OffsetDistance")) out.linear.offsetDistance = xml::readFloatElement(r);
             else if (n == QStringLiteral("AllowOffset"))    out.linear.allowOffset = xml::readBoolElement(r);
             else r.skipCurrentElement();
-        }
-    } else {
-        out.kind = core::RulerKind::Circular;
-        readRulerBase(r, out.circular, dataVersion);
-        while (r.readNextStartElement()) {
-            const auto n = r.name();
+        } else {
             if      (n == QStringLiteral("Center"))        out.circular.center = xml::readPointF(r);
             else if (n == QStringLiteral("Radius"))        out.circular.radius = xml::readFloatElement(r);
             else if (n == QStringLiteral("AttachedBrick")) out.circular.attachedBrickId = xml::readTextElement(r);
@@ -412,9 +424,10 @@ core::LayerRuler::AnyRuler readRulerItem(QXmlStreamReader& r, int dataVersion) {
 }
 
 void writeRulerItem(QXmlStreamWriter& w, const core::LayerRuler::AnyRuler& any) {
+    // Ruler subtypes (LinearRuler / CircularRuler) do not emit an id attribute
+    // upstream — only <Brick> does.
     if (any.kind == core::RulerKind::Linear) {
         w.writeStartElement(QStringLiteral("LinearRuler"));
-        w.writeAttribute(QStringLiteral("id"), any.linear.guid);
         writeRulerBase(w, any.linear);
         xml::writePointF      (w, QStringLiteral("Point1"), any.linear.point1);
         xml::writePointF      (w, QStringLiteral("Point2"), any.linear.point2);
@@ -425,7 +438,6 @@ void writeRulerItem(QXmlStreamWriter& w, const core::LayerRuler::AnyRuler& any) 
         w.writeEndElement();
     } else {
         w.writeStartElement(QStringLiteral("CircularRuler"));
-        w.writeAttribute(QStringLiteral("id"), any.circular.guid);
         writeRulerBase(w, any.circular);
         xml::writePointF      (w, QStringLiteral("Center"), any.circular.center);
         xml::writeFloatElement(w, QStringLiteral("Radius"), any.circular.radius);

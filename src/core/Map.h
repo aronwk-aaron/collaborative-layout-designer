@@ -1,8 +1,8 @@
 #pragma once
 
+#include "ColorSpec.h"
 #include "Ids.h"
 
-#include <QColor>
 #include <QDate>
 #include <QRectF>
 #include <QString>
@@ -42,13 +42,20 @@ public:
 
     int     dataVersion = kCurrentDataVersion;
 
+    // Count of content items across all layers. Vanilla computes this at save
+    // time from each layer's NbItems. We preserve the value read from disk so
+    // load-save round-trips match byte-for-byte even before Phase 2 rendering
+    // code starts mutating layer contents. When mutations land, the writer
+    // should recompute via LayerBrick::bricks.size() etc.
+    int     nbItems = 0;
+
     QString author;
     QString lug;
     QString event;
     QDate   date = QDate::currentDate();
     QString comment;
 
-    QColor  backgroundColor = Qt::white;
+    ColorSpec backgroundColor = ColorSpec::fromKnown(QColor(Qt::white), QStringLiteral("White"));
 
     ExportInfo exportInfo;
 

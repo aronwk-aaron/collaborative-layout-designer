@@ -1,9 +1,9 @@
 #pragma once
 
+#include "ColorSpec.h"
 #include "FontSpec.h"
 #include "LayerItem.h"
 
-#include <QColor>
 #include <QString>
 
 namespace cld::core {
@@ -17,7 +17,7 @@ enum class TextAlignment {
 struct TextCell : LayerItem {
     QString       text;
     float         orientation = 0.0f;
-    QColor        fontColor = Qt::black;
+    ColorSpec     fontColor = ColorSpec::fromKnown(QColor(Qt::black), QStringLiteral("Black"));
     FontSpec      font;
     TextAlignment alignment = TextAlignment::Center;
 };

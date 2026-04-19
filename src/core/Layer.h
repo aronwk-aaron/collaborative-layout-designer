@@ -1,8 +1,8 @@
 #pragma once
 
+#include "ColorSpec.h"
 #include "Ids.h"
 
-#include <QColor>
 #include <QString>
 
 namespace cld::core {
@@ -17,9 +17,9 @@ enum class LayerKind {
 };
 
 struct HullProperties {
-    bool   displayHulls = false;
-    QColor color = Qt::black;
-    int    thickness = 1;
+    bool      displayHulls = false;
+    ColorSpec color;
+    int       thickness = 1;
 };
 
 class Layer {

@@ -11,6 +11,7 @@ add_library(cld_core STATIC
     LayerArea.h
     LayerRuler.h
     FontSpec.h
+    ColorSpec.h
     Brick.h
     Group.h
     TextCell.h

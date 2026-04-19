@@ -50,6 +50,32 @@ TEST(RealFixture, TightCornerLoads) {
     EXPECT_GE(nBrick, 1);
 }
 
+TEST(RealFixture, TightCornerByteExactRoundTrip) {
+    // Gold-standard Phase 1 gate: load the real .bbm, re-save through our
+    // pipeline, and assert the output is byte-for-byte identical to the input.
+    // Any regression here means vanilla BlueBrick would see different bytes.
+    if (!corpusAvailable()) GTEST_SKIP();
+    const QString path = corpusDir() + QStringLiteral("/tight-corner.bbm");
+    if (!QFile::exists(path)) GTEST_SKIP();
+
+    QFile src(path);
+    ASSERT_TRUE(src.open(QIODevice::ReadOnly));
+    const QByteArray original = src.readAll();
+
+    auto loaded = saveload::readBbm(path);
+    ASSERT_TRUE(loaded.ok()) << loaded.error.toStdString();
+
+    QByteArray written;
+    {
+        QBuffer out(&written);
+        ASSERT_TRUE(out.open(QIODevice::WriteOnly));
+        ASSERT_TRUE(saveload::writeBbm(*loaded.map, out).ok);
+    }
+
+    ASSERT_EQ(written.size(), original.size()) << "byte-count mismatch";
+    EXPECT_EQ(written, original);
+}
+
 TEST(RealFixture, TightCornerSemanticRoundTrip) {
     // Load -> save to an in-memory buffer -> load again -> compare field-level
     // identity (not byte-exact; byte-exact is a later gate).
@@ -77,7 +103,7 @@ TEST(RealFixture, TightCornerSemanticRoundTrip) {
     EXPECT_EQ(second.map->lug,    first.map->lug);
     EXPECT_EQ(second.map->event,  first.map->event);
     EXPECT_EQ(second.map->date,   first.map->date);
-    EXPECT_EQ(second.map->backgroundColor.rgba(), first.map->backgroundColor.rgba());
+    EXPECT_EQ(second.map->backgroundColor, first.map->backgroundColor);
     ASSERT_EQ(second.map->layers().size(), first.map->layers().size());
 
     // Compare brick counts per layer — catches item-list truncation.

@@ -27,7 +27,7 @@ core::Map makeSampleMap() {
     m.event = QStringLiteral("Spring 2026 Exhibition");
     m.date = QDate(2026, 4, 18);
     m.comment = QStringLiteral("Line 1\nLine 2 with UTF-8: café");
-    m.backgroundColor = QColor(240, 240, 240);
+    m.backgroundColor = core::ColorSpec::fromArgb(QColor(240, 240, 240));
     m.exportInfo.exportPath = QStringLiteral("export/out.png");
     m.exportInfo.fileTypeIndex = 4;
     m.exportInfo.area = QRectF(0.0, 0.0, 1024.0, 768.0);
@@ -64,7 +64,7 @@ TEST(RoundTrip, MapHeaderInMemory) {
     EXPECT_EQ(round.event, original.event);
     EXPECT_EQ(round.date, original.date);
     EXPECT_EQ(round.comment, original.comment);
-    EXPECT_EQ(round.backgroundColor.rgba(), original.backgroundColor.rgba());
+    EXPECT_EQ(round.backgroundColor, original.backgroundColor);
     EXPECT_EQ(round.exportInfo.exportPath, original.exportInfo.exportPath);
     EXPECT_EQ(round.exportInfo.fileTypeIndex, original.exportInfo.fileTypeIndex);
     EXPECT_EQ(round.exportInfo.area, original.exportInfo.area);
@@ -100,11 +100,11 @@ TEST(RoundTrip, MapWithLayerGrid) {
     grid->visible = false;
     grid->transparency = 75;
     grid->hull.displayHulls = true;
-    grid->hull.color = QColor(200, 100, 50);
+    grid->hull.color = core::ColorSpec::fromArgb(QColor(200, 100, 50));
     grid->hull.thickness = 3;
-    grid->gridColor = QColor(10, 20, 30, 255);
+    grid->gridColor = core::ColorSpec::fromArgb(QColor(10, 20, 30, 255));
     grid->gridThickness = 2.5f;
-    grid->subGridColor = QColor(100, 110, 120, 180);
+    grid->subGridColor = core::ColorSpec::fromArgb(QColor(100, 110, 120, 180));
     grid->subGridThickness = 0.75f;
     grid->gridSizeInStud = 16;
     grid->subDivisionNumber = 8;
@@ -114,7 +114,7 @@ TEST(RoundTrip, MapWithLayerGrid) {
     grid->cellIndexFont.familyName = QStringLiteral("Courier New");
     grid->cellIndexFont.sizePt = 12.0f;
     grid->cellIndexFont.styleString = QStringLiteral("Bold, Italic");
-    grid->cellIndexColor = QColor(255, 128, 0);
+    grid->cellIndexColor = core::ColorSpec::fromArgb(QColor(255, 128, 0));
     grid->cellIndexColumnType = core::CellIndexType::Numbers;
     grid->cellIndexRowType = core::CellIndexType::Letters;
     grid->cellIndexCorner = QPoint(10, -5);
@@ -143,11 +143,11 @@ TEST(RoundTrip, MapWithLayerGrid) {
     EXPECT_EQ(parsed->visible, src.visible);
     EXPECT_EQ(parsed->transparency, src.transparency);
     EXPECT_EQ(parsed->hull.displayHulls, src.hull.displayHulls);
-    EXPECT_EQ(parsed->hull.color.rgba(), src.hull.color.rgba());
+    EXPECT_EQ(parsed->hull.color.color.rgba(), src.hull.color.color.rgba());
     EXPECT_EQ(parsed->hull.thickness, src.hull.thickness);
-    EXPECT_EQ(parsed->gridColor.rgba(), src.gridColor.rgba());
+    EXPECT_EQ(parsed->gridColor.color.rgba(), src.gridColor.color.rgba());
     EXPECT_FLOAT_EQ(parsed->gridThickness, src.gridThickness);
-    EXPECT_EQ(parsed->subGridColor.rgba(), src.subGridColor.rgba());
+    EXPECT_EQ(parsed->subGridColor.color.rgba(), src.subGridColor.color.rgba());
     EXPECT_FLOAT_EQ(parsed->subGridThickness, src.subGridThickness);
     EXPECT_EQ(parsed->gridSizeInStud, src.gridSizeInStud);
     EXPECT_EQ(parsed->subDivisionNumber, src.subDivisionNumber);
@@ -157,7 +157,7 @@ TEST(RoundTrip, MapWithLayerGrid) {
     EXPECT_EQ(parsed->cellIndexFont.familyName, src.cellIndexFont.familyName);
     EXPECT_FLOAT_EQ(parsed->cellIndexFont.sizePt, src.cellIndexFont.sizePt);
     EXPECT_EQ(parsed->cellIndexFont.styleString, src.cellIndexFont.styleString);
-    EXPECT_EQ(parsed->cellIndexColor.rgba(), src.cellIndexColor.rgba());
+    EXPECT_EQ(parsed->cellIndexColor.color.rgba(), src.cellIndexColor.color.rgba());
     EXPECT_EQ(parsed->cellIndexColumnType, src.cellIndexColumnType);
     EXPECT_EQ(parsed->cellIndexRowType, src.cellIndexRowType);
     EXPECT_EQ(parsed->cellIndexCorner, src.cellIndexCorner);
@@ -171,7 +171,7 @@ TEST(RoundTrip, MapWithLayerBrick) {
     layer->name = QStringLiteral("Track");
     layer->visible = true;
     layer->transparency = 90;
-    layer->hull.color = QColor(50, 80, 120);
+    layer->hull.color = core::ColorSpec::fromArgb(QColor(50, 80, 120));
     layer->hull.thickness = 2;
     layer->displayBrickElevation = true;
 
@@ -241,7 +241,7 @@ TEST(RoundTrip, MapWithLayerText) {
     c.displayArea = QRectF(0, 0, 100, 20);
     c.text = QStringLiteral("Hello\nworld");
     c.orientation = 45.0f;
-    c.fontColor = QColor(128, 0, 128);
+    c.fontColor = core::ColorSpec::fromArgb(QColor(128, 0, 128));
     c.font.familyName = QStringLiteral("Arial");
     c.font.sizePt = 14.0f;
     c.font.styleString = QStringLiteral("Italic");
@@ -307,7 +307,7 @@ TEST(RoundTrip, MapWithLayerRuler) {
     lin.kind = core::RulerKind::Linear;
     lin.linear.guid = QStringLiteral("ruler-1");
     lin.linear.displayArea = QRectF(0, 0, 100, 10);
-    lin.linear.color = QColor(255, 0, 0);
+    lin.linear.color = core::ColorSpec::fromArgb(QColor(255, 0, 0));
     lin.linear.lineThickness = 1.5f;
     lin.linear.displayDistance = true;
     lin.linear.displayUnit = false;
@@ -323,7 +323,7 @@ TEST(RoundTrip, MapWithLayerRuler) {
     cir.kind = core::RulerKind::Circular;
     cir.circular.guid = QStringLiteral("ruler-2");
     cir.circular.displayArea = QRectF(-20, -20, 40, 40);
-    cir.circular.color = QColor(0, 255, 0);
+    cir.circular.color = core::ColorSpec::fromArgb(QColor(0, 255, 0));
     cir.circular.lineThickness = 2.0f;
     cir.circular.displayDistance = false;
     cir.circular.displayUnit = true;
@@ -343,7 +343,9 @@ TEST(RoundTrip, MapWithLayerRuler) {
     ASSERT_NE(parsed, nullptr);
     ASSERT_EQ(parsed->rulers.size(), 2u);
     ASSERT_EQ(parsed->rulers[0].kind, core::RulerKind::Linear);
-    EXPECT_EQ(parsed->rulers[0].linear.guid, QStringLiteral("ruler-1"));
+    // Ruler items do not serialize an id attribute in vanilla; guid is
+    // expected to round-trip as empty even though we populated it on write.
+    EXPECT_EQ(parsed->rulers[0].linear.guid, QString());
     EXPECT_EQ(parsed->rulers[0].linear.point1, QPointF(10, 20));
     EXPECT_EQ(parsed->rulers[0].linear.point2, QPointF(110, 20));
     EXPECT_EQ(parsed->rulers[0].linear.attachedBrick1Id, QStringLiteral("brick-a"));
@@ -352,7 +354,7 @@ TEST(RoundTrip, MapWithLayerRuler) {
     EXPECT_TRUE(parsed->rulers[0].linear.displayDistance);
     EXPECT_FALSE(parsed->rulers[0].linear.displayUnit);
     ASSERT_EQ(parsed->rulers[1].kind, core::RulerKind::Circular);
-    EXPECT_EQ(parsed->rulers[1].circular.guid, QStringLiteral("ruler-2"));
+    EXPECT_EQ(parsed->rulers[1].circular.guid, QString());
     EXPECT_EQ(parsed->rulers[1].circular.center, QPointF(0, 0));
     EXPECT_FLOAT_EQ(parsed->rulers[1].circular.radius, 20.0f);
     EXPECT_EQ(parsed->rulers[1].circular.attachedBrickId, QStringLiteral("brick-b"));
@@ -370,7 +372,8 @@ TEST(RoundTrip, UnknownLayerTypeWarnsNotFails) {
         w.writeStartElement(QStringLiteral("Map"));
         saveload::xml::writeIntElement(w, QStringLiteral("Version"), 9);
         saveload::xml::writeIntElement(w, QStringLiteral("nbItems"), 0);
-        saveload::xml::writeColor(w, QStringLiteral("BackgroundColor"), Qt::white);
+        saveload::xml::writeColor(w, QStringLiteral("BackgroundColor"),
+            core::ColorSpec::fromKnown(QColor(Qt::white), QStringLiteral("White")));
         saveload::xml::writeTextElement(w, QStringLiteral("Author"), QString());
         saveload::xml::writeTextElement(w, QStringLiteral("LUG"), QString());
         saveload::xml::writeTextElement(w, QStringLiteral("Event"), QString());

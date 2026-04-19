@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../core/ColorSpec.h"
 #include "../core/FontSpec.h"
 
 #include <QColor>
@@ -9,6 +10,8 @@
 #include <QString>
 #include <QXmlStreamReader>
 #include <QXmlStreamWriter>
+
+#include <vector>
 
 // Culture-invariant primitive formatters and XML readers matching BlueBrick's
 // System.Xml.Serialization.XmlSerializer + BlueBrick.MapData.XmlReadWrite behavior.
@@ -33,11 +36,12 @@ float   readFloatElement(QXmlStreamReader& r);
 double  readDoubleElement(QXmlStreamReader& r);
 
 // Structured primitives. Reader must be at the wrapping element's StartElement.
-QColor  readColor(QXmlStreamReader& r);
+core::ColorSpec readColor(QXmlStreamReader& r);
 QPoint  readPoint(QXmlStreamReader& r);
 QPointF readPointF(QXmlStreamReader& r);
 QRectF  readRectF(QXmlStreamReader& r);
 core::FontSpec readFont(QXmlStreamReader& r, int dataVersion);
+std::vector<float> readFloatArray(QXmlStreamReader& r);
 
 // ---------- writers ----------
 
@@ -47,10 +51,11 @@ void writeFloatElement(QXmlStreamWriter& w, const QString& name, float v);
 void writeDoubleElement(QXmlStreamWriter& w, const QString& name, double v);
 void writeTextElement(QXmlStreamWriter& w, const QString& name, const QString& v);
 
-void writeColor(QXmlStreamWriter& w, const QString& name, const QColor& c);
+void writeColor(QXmlStreamWriter& w, const QString& name, const core::ColorSpec& c);
 void writePoint(QXmlStreamWriter& w, const QString& name, QPoint p);
 void writePointF(QXmlStreamWriter& w, const QString& name, QPointF p);
 void writeRectF(QXmlStreamWriter& w, const QString& name, const QRectF& r);
 void writeFont(QXmlStreamWriter& w, const QString& name, const core::FontSpec& f);
+void writeFloatArray(QXmlStreamWriter& w, const QString& name, const std::vector<float>& values);
 
 }

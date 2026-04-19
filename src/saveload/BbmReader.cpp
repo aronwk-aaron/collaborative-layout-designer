@@ -76,7 +76,7 @@ LoadResult readMapElement(QXmlStreamReader& r) {
                         .arg(map->dataVersion).arg(core::Map::kCurrentDataVersion) };
             }
         } else if (n == QStringLiteral("nbItems")) {
-            (void)xml::readIntElement(r); // recomputed on save
+            map->nbItems = xml::readIntElement(r);
         } else if (n == QStringLiteral("BackgroundColor")) {
             map->backgroundColor = xml::readColor(r);
         } else if (n == QStringLiteral("Author")) {
