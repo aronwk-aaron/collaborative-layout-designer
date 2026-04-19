@@ -2,6 +2,7 @@
 
 #include "../core/Brick.h"
 
+#include <QHash>
 #include <QPointF>
 #include <QUndoCommand>
 
@@ -95,6 +96,30 @@ private:
     int         layerIndex_;
     core::Brick brick_;
     int         insertAt_;
+};
+
+// Move a set of bricks to the front / back of the drawing order within their
+// layer (upstream's "Bring to Front" / "Send to Back"). Selected bricks move
+// together, preserving their relative order.
+class ReorderBricksCommand : public QUndoCommand {
+public:
+    enum Direction { ToFront, ToBack };
+
+    struct Target { int layerIndex = -1; QString guid; };
+
+    ReorderBricksCommand(core::Map& map, std::vector<Target> targets, Direction dir,
+                         QUndoCommand* parent = nullptr);
+
+    void undo() override;
+    void redo() override;
+
+private:
+    core::Map& map_;
+    std::vector<Target> targets_;
+    Direction dir_;
+    // Per-layer snapshot of brick order taken on first redo; restored by undo.
+    QHash<int, std::vector<QString>> originalOrder_;
+    bool haveSnapshot_ = false;
 };
 
 // Append a batch of bricks to the given layer as a single undoable step. Used

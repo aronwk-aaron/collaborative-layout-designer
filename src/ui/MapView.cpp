@@ -345,14 +345,35 @@ void MapView::contextMenuEvent(QContextMenuEvent* e) {
     const bool hasSel = !scene()->selectedItems().isEmpty();
 
     if (hasSel) {
-        auto* ccw = menu.addAction(tr("Rotate 90° CCW"));
-        connect(ccw, &QAction::triggered, [this]{ rotateSelected(-90.0f); });
-        auto* cw = menu.addAction(tr("Rotate 90° CW"));
-        connect(cw, &QAction::triggered, [this]{ rotateSelected(90.0f); });
+        auto* ccw = menu.addAction(tr("Rotate CCW"));
+        connect(ccw, &QAction::triggered,
+                [this]{ rotateSelected(static_cast<float>(-rotationStepDegrees_)); });
+        auto* cw = menu.addAction(tr("Rotate CW"));
+        connect(cw, &QAction::triggered,
+                [this]{ rotateSelected(static_cast<float>(rotationStepDegrees_)); });
         menu.addSeparator();
+
+        auto* bringFront = menu.addAction(tr("Bring to Front"));
+        connect(bringFront, &QAction::triggered, [this]{ bringSelectionToFront(); });
+        auto* sendBack = menu.addAction(tr("Send to Back"));
+        connect(sendBack, &QAction::triggered, [this]{ sendSelectionToBack(); });
+        menu.addSeparator();
+
+        auto* cut = menu.addAction(tr("Cut"));
+        connect(cut, &QAction::triggered, [this]{ cutSelection(); });
+        auto* copy = menu.addAction(tr("Copy"));
+        connect(copy, &QAction::triggered, [this]{ copySelection(); });
+        auto* dup = menu.addAction(tr("Duplicate"));
+        connect(dup, &QAction::triggered, [this]{ duplicateSelection(); });
+        menu.addSeparator();
+
         auto* del = menu.addAction(tr("Delete"));
         del->setShortcut(Qt::Key_Delete);
         connect(del, &QAction::triggered, [this]{ deleteSelected(); });
+        menu.addSeparator();
+    } else if (!clipboard_.empty()) {
+        auto* paste = menu.addAction(tr("Paste"));
+        connect(paste, &QAction::triggered, [this]{ pasteClipboard(); });
         menu.addSeparator();
     }
 
@@ -427,6 +448,34 @@ void MapView::selectAll() {
 
 void MapView::deselectAll() {
     scene()->clearSelection();
+}
+
+void MapView::bringSelectionToFront() {
+    if (!map_) return;
+    std::vector<edit::ReorderBricksCommand::Target> targets;
+    for (QGraphicsItem* it : scene()->selectedItems()) {
+        if (!isBrickItem(it)) continue;
+        targets.push_back({ it->data(kBrickDataLayerIndex).toInt(),
+                            it->data(kBrickDataGuid).toString() });
+    }
+    if (targets.empty()) return;
+    undoStack_->push(new edit::ReorderBricksCommand(
+        *map_, std::move(targets), edit::ReorderBricksCommand::ToFront));
+    rebuildScene();
+}
+
+void MapView::sendSelectionToBack() {
+    if (!map_) return;
+    std::vector<edit::ReorderBricksCommand::Target> targets;
+    for (QGraphicsItem* it : scene()->selectedItems()) {
+        if (!isBrickItem(it)) continue;
+        targets.push_back({ it->data(kBrickDataLayerIndex).toInt(),
+                            it->data(kBrickDataGuid).toString() });
+    }
+    if (targets.empty()) return;
+    undoStack_->push(new edit::ReorderBricksCommand(
+        *map_, std::move(targets), edit::ReorderBricksCommand::ToBack));
+    rebuildScene();
 }
 
 void MapView::dragEnterEvent(QDragEnterEvent* e) {

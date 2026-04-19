@@ -249,6 +249,15 @@ void MainWindow::setupMenus() {
     connect(selNoneAct, &QAction::triggered, [this]{ mapView_->deselectAll(); });
 
     edit->addSeparator();
+    auto* toFrontAct = edit->addAction(tr("Bring to &Front"));
+    toFrontAct->setShortcut(QKeySequence(tr("Ctrl+Shift+]")));
+    connect(toFrontAct, &QAction::triggered, [this]{ mapView_->bringSelectionToFront(); });
+
+    auto* toBackAct = edit->addAction(tr("Send to &Back"));
+    toBackAct->setShortcut(QKeySequence(tr("Ctrl+Shift+[")));
+    connect(toBackAct, &QAction::triggered, [this]{ mapView_->sendSelectionToBack(); });
+
+    edit->addSeparator();
     auto* addLabel = edit->addAction(tr("Add &Anchored Label..."));
     addLabel->setShortcut(QKeySequence(tr("Ctrl+L")));
     connect(addLabel, &QAction::triggered, this, [this]{

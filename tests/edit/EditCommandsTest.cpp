@@ -111,6 +111,39 @@ TEST(EditCommands, DeleteUndoRestoresIndex) {
     EXPECT_EQ(L->bricks[1].guid, QStringLiteral("b"));
 }
 
+TEST(EditCommands, ReorderBringToFrontSendToBack) {
+    core::Map m = makeMapWithBrickLayer();
+    auto* L = static_cast<core::LayerBrick*>(m.layers()[0].get());
+    for (const auto& g : { "a", "b", "c", "d" }) {
+        L->bricks.push_back(makeBrick(QString::fromUtf8(g), QStringLiteral("x"), QRectF()));
+    }
+
+    QUndoStack stack;
+    // Send "b" and "d" to back → order becomes b, d, a, c.
+    std::vector<edit::ReorderBricksCommand::Target> toBack = {
+        { 0, QStringLiteral("b") }, { 0, QStringLiteral("d") }
+    };
+    stack.push(new edit::ReorderBricksCommand(m, toBack, edit::ReorderBricksCommand::ToBack));
+    ASSERT_EQ(L->bricks.size(), 4u);
+    EXPECT_EQ(L->bricks[0].guid, QStringLiteral("b"));
+    EXPECT_EQ(L->bricks[1].guid, QStringLiteral("d"));
+    EXPECT_EQ(L->bricks[2].guid, QStringLiteral("a"));
+    EXPECT_EQ(L->bricks[3].guid, QStringLiteral("c"));
+
+    stack.undo();
+    EXPECT_EQ(L->bricks[0].guid, QStringLiteral("a"));
+    EXPECT_EQ(L->bricks[3].guid, QStringLiteral("d"));
+
+    // Bring "a" to front → order becomes b, c, d, a.
+    std::vector<edit::ReorderBricksCommand::Target> toFront = {
+        { 0, QStringLiteral("a") }
+    };
+    stack.push(new edit::ReorderBricksCommand(m, toFront, edit::ReorderBricksCommand::ToFront));
+    EXPECT_EQ(L->bricks[3].guid, QStringLiteral("a"));
+    stack.undo();
+    EXPECT_EQ(L->bricks[0].guid, QStringLiteral("a"));
+}
+
 TEST(EditCommands, AddBricksBatchAtomicUndo) {
     core::Map m = makeMapWithBrickLayer();
     auto* L = static_cast<core::LayerBrick*>(m.layers()[0].get());

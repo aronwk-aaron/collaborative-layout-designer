@@ -57,6 +57,9 @@ public:
     void deselectAll();
     bool clipboardEmpty() const { return clipboard_.empty(); }
 
+    void bringSelectionToFront();
+    void sendSelectionToBack();
+
 signals:
     void selectionChanged();
 
