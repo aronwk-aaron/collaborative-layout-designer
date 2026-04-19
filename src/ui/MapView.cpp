@@ -860,8 +860,10 @@ void MapView::nudgeSelected(double dxStuds, double dyStuds) {
         }
     }
     if (entries.empty()) return;
+    // The undoStack's indexChanged handler rebuilds the scene and preserves
+    // the current selection — we don't need to call rebuildScene() ourselves,
+    // and doing so would wipe the selection the handler just restored.
     undoStack_->push(new edit::MoveBricksCommand(*map_, std::move(entries)));
-    rebuildScene();
 }
 
 void MapView::rotateSelected(float degrees) {
@@ -929,7 +931,8 @@ void MapView::rotateSelected(float degrees) {
         undoStack_->push(new edit::RotateBricksCommand(*map_, std::move(rotates)));
         undoStack_->endMacro();
     }
-    rebuildScene();
+    // Selection is preserved automatically by the undoStack indexChanged
+    // handler, which rebuilds the scene + reselects every item by guid.
 }
 
 void MapView::addPartAtViewCenter(const QString& partKey) {
@@ -1227,10 +1230,13 @@ void MapView::pasteClipboard() {
         undoStack_->push(new edit::AddBricksCommand(*map_, li, std::move(bricks)));
     }
     undoStack_->endMacro();
-
-    rebuildScene();
+    // endMacro fires undoStack.indexChanged, which rebuilds the scene AND
+    // restores prior selection by guid. We then clear that and re-select
+    // only the freshly-pasted bricks — the indexChanged handler's
+    // re-selection is a no-op in practice (nothing was selected before)
+    // but we do it explicitly here so "pasted bricks are active" UX
+    // survives any future restore path.
     emit layersChanged();
-    // Auto-select the freshly-pasted bricks.
     scene()->clearSelection();
     for (QGraphicsItem* it : scene()->items()) {
         if (!isBrickItem(it)) continue;
