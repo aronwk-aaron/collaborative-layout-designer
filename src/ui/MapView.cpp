@@ -394,8 +394,29 @@ void MapView::drawBackground(QPainter* painter, const QRectF& rect) {
 void MapView::refreshSelectionOverlay() {
     if (!selectionOverlay_) return;
     QList<QPolygonF> polys;
+
+    // A ruler can render as multiple scene items (two line segments + a
+    // rotated text label when displayDistance is on). Tagging every piece
+    // with the same guid lets us union their scene bounding rects into a
+    // single highlight instead of drawing one box per segment.
+    QSet<QString> rulerGuidsSeen;
     for (QGraphicsItem* it : scene()->selectedItems()) {
         if (!it || it == selectionOverlay_) continue;
+        if (isRulerItem(it)) {
+            const QString guid = it->data(kBrickDataGuid).toString();
+            if (rulerGuidsSeen.contains(guid)) continue;
+            rulerGuidsSeen.insert(guid);
+            QRectF sbr;
+            for (QGraphicsItem* any : scene()->items()) {
+                if (!isRulerItem(any)) continue;
+                if (any->data(kBrickDataGuid).toString() != guid) continue;
+                sbr = sbr.united(any->sceneBoundingRect());
+            }
+            if (sbr.width()  < 2.0) sbr.adjust(-3.0, 0.0, 3.0, 0.0);
+            if (sbr.height() < 2.0) sbr.adjust(0.0, -3.0, 0.0, 3.0);
+            if (!sbr.isEmpty()) polys.append(QPolygonF(sbr));
+            continue;
+        }
         const QRectF local = it->boundingRect();
         const bool localThin = (local.width() < 1.0 || local.height() < 1.0);
         QPolygonF poly;
@@ -404,12 +425,8 @@ void MapView::refreshSelectionOverlay() {
             // preserve rotation for rotated bricks.
             poly = it->mapToScene(local);
         } else {
-            // Thin items (lines, zero-height rect, etc.) — use the
-            // scene-space AABB and inflate it in the thin dimensions so
-            // the highlight actually surrounds the item. scenePos() used
-            // to be our fallback, but for QGraphicsLineItem with pos=0
-            // that put the outline at the scene origin instead of on
-            // the ruler.
+            // Thin items (lines, zero-height rect, etc.): scene-space
+            // AABB inflated in whichever dimension is near zero.
             QRectF sbr = it->sceneBoundingRect();
             if (sbr.width()  < 2.0) sbr.adjust(-3.0, 0.0, 3.0, 0.0);
             if (sbr.height() < 2.0) sbr.adjust(0.0, -3.0, 0.0, 3.0);

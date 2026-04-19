@@ -514,6 +514,14 @@ void addRulerLayer(const core::LayerRuler& L, LayerSink& sink, int layerIndex) {
                 seg2->setPen(mainPen);
                 sink.add(seg1);
                 sink.add(seg2);
+                // Both segments AND the label tag with the same ruler guid
+                // so clicking any piece selects the logical ruler — and
+                // so refreshSelectionOverlay can union all pieces into one
+                // highlight rather than outlining each segment separately.
+                seg2->setFlag(QGraphicsItem::ItemIsSelectable, true);
+                seg2->setData(kBrickDataLayerIndex, layerIndex);
+                seg2->setData(kBrickDataGuid,       r.guid);
+                seg2->setData(kBrickDataKind,       QStringLiteral("ruler"));
                 selectableLine = seg1;
 
                 // Label centred on midPx, rotated to match the (possibly
@@ -527,6 +535,10 @@ void addRulerLayer(const core::LayerRuler& L, LayerSink& sink, int layerIndex) {
                 tr.rotate(angleDeg);
                 tr.translate(-bb.width() / 2.0, -bb.height() / 2.0);
                 t->setTransform(tr);
+                t->setFlag(QGraphicsItem::ItemIsSelectable, true);
+                t->setData(kBrickDataLayerIndex, layerIndex);
+                t->setData(kBrickDataGuid,       r.guid);
+                t->setData(kBrickDataKind,       QStringLiteral("ruler"));
                 sink.add(t);
             } else {
                 // Single solid line from offsetP1 to offsetP2.
