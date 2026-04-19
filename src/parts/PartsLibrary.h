@@ -10,16 +10,16 @@
 
 namespace cld::parts {
 
-// Connection types from BlueBrick's palette (see part XML comments):
-//   0 = none, 1 = rail, 2 = road, 3 = monorail standard, 4 = monorail short
-//   curve, ...and a growing long tail of domain-specific types (rollercoaster
-//   tracks, Trixbrix, etc.). Only same-type points may connect.
+// Connection types are STRING ids in BlueBrick's part XMLs — e.g.
+// "rail", "road", "coaster", "monorail", plus a growing long tail of
+// domain-specific types (4DBrix, TrixBrix, etc.). Only same-type points
+// may connect. An empty string means "no type" / never connects.
 //
 // Connection points are stored in each part's LOCAL coord system (in studs,
 // with (0,0) at the part's centre). angleDegrees points "outward" — two
 // connected points should face 180° apart.
 struct PartConnectionPoint {
-    int     type = 0;
+    QString type;
     QPointF position;
     double  angleDegrees = 0.0;
 };

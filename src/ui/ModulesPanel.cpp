@@ -98,6 +98,10 @@ ModulesPanel::ModulesPanel(QWidget* parent)
         }
 
         menu.addSeparator();
+        auto* saveLib = menu.addAction(tr("Save to Module Library"));
+        connect(saveLib, &QAction::triggered, [this, id]{ emit saveToLibraryRequested(id); });
+
+        menu.addSeparator();
         auto* flatAct = menu.addAction(tr("Flatten (dissolve module)"));
         connect(flatAct, &QAction::triggered, [this, id]{ emit flattenRequested(id); });
         auto* rescan = menu.addAction(tr("Re-scan from source"));

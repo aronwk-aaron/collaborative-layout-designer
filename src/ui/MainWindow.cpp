@@ -36,6 +36,7 @@
 #include <QDateEdit>
 #include <QDialog>
 #include <QDialogButtonBox>
+#include <QDateTime>
 #include <QDir>
 #include <QDockWidget>
 #include <QFile>
@@ -268,6 +269,81 @@ MainWindow::MainWindow(parts::PartsLibrary& parts, QWidget* parent)
         if (!mapView_->currentMap()) return;
         mapView_->undoStack()->push(new edit::FlattenModuleCommand(*mapView_->currentMap(), id));
         modulesPanel_->setMap(mapView_->currentMap());
+    });
+
+    // Save module to the configured module library folder as its own .bbm.
+    // Matches "Save Selection as Module" but auto-targets the library folder
+    // and doesn't require re-picking members.
+    connect(modulesPanel_, &ModulesPanel::saveToLibraryRequested, this,
+            [this](const QString& id){
+        auto* map = mapView_->currentMap();
+        if (!map) return;
+        const core::Module* mod = nullptr;
+        for (const auto& m : map->sidecar.modules) if (m.id == id) { mod = &m; break; }
+        if (!mod) return;
+
+        // Build a standalone map with just this module's member bricks.
+        core::Map out;
+        out.author = map->author;
+        out.lug    = map->lug;
+        out.event  = mod->name.isEmpty() ? QStringLiteral("Module") : mod->name;
+        auto layer = std::make_unique<core::LayerBrick>();
+        layer->guid = core::newBbmId();
+        layer->name = QStringLiteral("Module");
+        for (const auto& L : map->layers()) {
+            if (!L || L->kind() != core::LayerKind::Brick) continue;
+            for (const auto& b : static_cast<const core::LayerBrick&>(*L).bricks) {
+                if (mod->memberIds.contains(b.guid)) layer->bricks.push_back(b);
+            }
+        }
+        if (layer->bricks.empty()) {
+            QMessageBox::information(this, tr("Save to library"),
+                tr("This module currently has no brick members."));
+            return;
+        }
+        out.nbItems = static_cast<int>(layer->bricks.size());
+        out.layers().push_back(std::move(layer));
+
+        QString dir = moduleLibraryPanel_->libraryPath();
+        if (dir.isEmpty()) {
+            QMessageBox::warning(this, tr("Save to library"),
+                tr("Set the module library folder first in Preferences → Library."));
+            return;
+        }
+        QDir().mkpath(dir);
+
+        bool ok = false;
+        const QString defaultName = mod->name.isEmpty() ? tr("Module") : mod->name;
+        const QString name = QInputDialog::getText(
+            this, tr("Save to library"), tr("Module name (filename):"),
+            QLineEdit::Normal, defaultName, &ok);
+        if (!ok || name.isEmpty()) return;
+        const QString target = QDir(dir).filePath(name + QStringLiteral(".bbm"));
+        if (QFile::exists(target)) {
+            const auto btn = QMessageBox::question(this, tr("Save to library"),
+                tr("%1 already exists. Overwrite?").arg(target));
+            if (btn != QMessageBox::Yes) return;
+        }
+
+        auto r = saveload::writeBbm(out, target);
+        if (!r.ok) {
+            QMessageBox::warning(this, tr("Save to library"), r.error);
+            return;
+        }
+
+        // Update the in-memory module so Re-scan from source works from here on.
+        for (auto& m : map->sidecar.modules) {
+            if (m.id == id) {
+                m.sourceFile = target;
+                m.importedAt = QDateTime::currentDateTimeUtc();
+                break;
+            }
+        }
+        moduleLibraryPanel_->refresh();
+        modulesPanel_->setMap(map);
+        statusBar()->showMessage(
+            tr("Saved module '%1' to library (%2 bricks)")
+                .arg(name).arg(out.nbItems), 4000);
     });
 
     // Re-scan: reload the module's sourceFile, replace its member bricks

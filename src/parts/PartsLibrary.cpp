@@ -45,7 +45,7 @@ void readConnexionList(QXmlStreamReader& r, QList<PartConnectionPoint>& out) {
         PartConnectionPoint c;
         while (r.readNextStartElement()) {
             const auto n = r.name();
-            if      (n == QStringLiteral("type"))     c.type = r.readElementText().toInt();
+            if      (n == QStringLiteral("type"))     c.type = r.readElementText().trimmed();
             else if (n == QStringLiteral("position")) c.position = readPositionBlock(r);
             else if (n == QStringLiteral("angle"))    c.angleDegrees = r.readElementText().toDouble();
             else r.skipCurrentElement();

@@ -438,7 +438,7 @@ ConnectionSnapResult computeConnectionSnap(
                 // lands near an existing connection — we don't pull a brick
                 // from the far side of the layout.
                 for (const auto& dc : meta->connections) {
-                    if (dc.type != tc.type || dc.type == 0) continue;
+                    if (dc.type != tc.type || dc.type.isEmpty()) continue;
                     const QPointF dWorldPos =
                         draggedCenter + rotatePoint(dc.position, draggedOrientation);
                     const QPointF diff = dWorldPos - tWorldPos;

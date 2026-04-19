@@ -88,14 +88,16 @@ SceneBuilder::LiveSnapHook gLiveSnapHook;
 // Palette matching BlueBrick's ConnectionType.Color-ish defaults: rail (cyan),
 // road (orange), monorail (purple), and a fallback green. Type 0 means "no
 // type" and never rendered.
-QColor colorForConnectionType(int type) {
-    switch (type) {
-        case 1:  return QColor(0, 180, 220);   // rail
-        case 2:  return QColor(220, 140, 0);   // road
-        case 3:  return QColor(160, 0, 200);   // monorail std
-        case 4:  return QColor(200, 0, 160);   // monorail short curve
-        default: return QColor(30, 200, 60);   // all other types
-    }
+QColor colorForConnectionType(const QString& type) {
+    // BlueBrick connection types are strings ("rail", "road", "coaster",
+    // "monorail", …). Pick sensible colors for the common ones; everything
+    // else gets the fallback green so you can see where a connection lives.
+    if (type == QStringLiteral("rail"))      return QColor(0, 180, 220);
+    if (type == QStringLiteral("road"))      return QColor(220, 140, 0);
+    if (type == QStringLiteral("monorail"))  return QColor(160, 0, 200);
+    if (type == QStringLiteral("coaster"))   return QColor(200, 100, 30);
+    if (type == QStringLiteral("duplo"))     return QColor(220, 50, 50);
+    return QColor(30, 200, 60);
 }
 
 // Toggles visibility of every connection-point marker child so they only
@@ -240,7 +242,7 @@ void addBrickLayer(const core::LayerBrick& L, LayerSink& sink, parts::PartsLibra
         if (meta && !meta->connections.isEmpty()) {
             constexpr double kDotRadiusPx = 3.0;
             for (const auto& c : meta->connections) {
-                if (c.type == 0) continue;
+                if (c.type.isEmpty()) continue;
                 const QPointF localPx(c.position.x() * kPx, c.position.y() * kPx);
                 auto* dot = new QGraphicsEllipseItem(
                     localPx.x() - kDotRadiusPx, localPx.y() - kDotRadiusPx,

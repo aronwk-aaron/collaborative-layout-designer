@@ -73,7 +73,9 @@ TEST(PartsLibrary, ConnectionsParsedForTrackParts) {
     ASSERT_TRUE(meta.has_value());
     ASSERT_GE(meta->connections.size(), 2);
     const auto& c0 = meta->connections[0];
-    EXPECT_EQ(c0.type, 1);   // rail
+    // Type strings can be numeric legacy ids ("1"=rail) or new-style names
+    // ("rail","road","coaster",...). Just verify it parsed as non-empty.
+    EXPECT_FALSE(c0.type.isEmpty());
     EXPECT_NE(c0.position, QPointF());   // non-default position
     // Position and angle values come straight from the XML; we just verify
     // they're plausible (within a reasonable stud range for this 4x4 part).

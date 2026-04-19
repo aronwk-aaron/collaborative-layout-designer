@@ -26,6 +26,7 @@ signals:
     void rescanRequested(const QString& moduleId);
     void moveRequested(const QString& moduleId, double dxStuds, double dyStuds);
     void rotateRequested(const QString& moduleId, double degrees);
+    void saveToLibraryRequested(const QString& moduleId);
 
 private:
     QListWidget* list_ = nullptr;
