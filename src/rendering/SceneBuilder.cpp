@@ -368,10 +368,19 @@ void addTextLayer(const core::LayerText& L, LayerSink& sink, int layerIndex) {
 
 void addAreaLayer(const core::LayerArea& L, LayerSink& sink) {
     const double sizePx = studToPx(L.areaCellSizeInStud);
+    // Vanilla BlueBrick applies the area layer's transparency on top of
+    // each cell's own colour. When the .bbm doesn't specify a transparency
+    // (field defaults to 100), users still expect the cells to be
+    // semi-transparent so underlying bricks show through. Match BlueBrick's
+    // typical default by dropping our rendered alpha to 50% when the file
+    // provides a "fully opaque" area layer.
+    const double alpha = (L.transparency >= 100) ? 0.5 : L.transparency / 100.0;
     for (const auto& cell : L.cells) {
         auto* r = new QGraphicsRectItem(cell.x * sizePx, cell.y * sizePx, sizePx, sizePx);
         r->setPen(Qt::NoPen);
-        r->setBrush(QBrush(cell.color));
+        QColor c = cell.color;
+        c.setAlpha(static_cast<int>(c.alpha() * alpha));
+        r->setBrush(QBrush(c));
         sink.add(r);
     }
 }
@@ -417,86 +426,113 @@ void addRulerLayer(const core::LayerRuler& L, LayerSink& sink, int layerIndex) {
     for (const auto& any : L.rulers) {
         if (any.kind == core::RulerKind::Linear) {
             const auto& r = any.linear;
-            const QPointF p1px(studToPx(r.point1.x()), studToPx(r.point1.y()));
-            const QPointF p2px(studToPx(r.point2.x()), studToPx(r.point2.y()));
+            // Anchor points (where the ruler attaches conceptually).
+            const QPointF anchor1(studToPx(r.point1.x()), studToPx(r.point1.y()));
+            const QPointF anchor2(studToPx(r.point2.x()), studToPx(r.point2.y()));
 
-            // Guideline dash pattern: the stored list is in LDraw-style length
-            // pairs (dash, gap, dash, gap, ...). Qt uses the same convention,
-            // but expects multiples of pen width on non-cosmetic pens — we
-            // keep them cosmetic for a stable on-screen look.
-            if (r.guidelineThickness > 0 && !r.guidelineDashPattern.empty()) {
-                // Perpendicular tick marks at each endpoint (upstream convention).
-                const QPointF dir = p2px - p1px;
-                const double len = std::hypot(dir.x(), dir.y());
-                if (len > 0.001) {
-                    const QPointF nrm(-dir.y() / len, dir.x() / len);  // perpendicular unit
-                    constexpr double kTickStuds = 4.0;
-                    const double t = studToPx(kTickStuds);
-                    QPen gpen(r.guidelineColor.color);
-                    gpen.setWidthF(r.guidelineThickness);
-                    gpen.setCosmetic(true);
-                    QList<qreal> dashes;
-                    for (float d : r.guidelineDashPattern) dashes.append(d);
-                    if (dashes.size() < 2) { dashes = { 4.0, 4.0 }; }
-                    gpen.setDashPattern(dashes);
-
-                    for (const QPointF& end : { p1px, p2px }) {
-                        auto* g = new QGraphicsLineItem(
-                            end.x() - nrm.x() * t, end.y() - nrm.y() * t,
-                            end.x() + nrm.x() * t, end.y() + nrm.y() * t);
-                        g->setPen(gpen);
-                        sink.add(g);
-                    }
-                }
+            // The MAIN drawn line is between the *offsetted* points when
+            // AllowOffset is on — vanilla moves the visible measure line
+            // away from the anchors. When AllowOffset is off, offsetP == anchor.
+            QPointF offsetP1 = anchor1, offsetP2 = anchor2;
+            const QPointF dir = anchor2 - anchor1;
+            const double  len = std::hypot(dir.x(), dir.y());
+            QPointF nrm;
+            if (len > 0.001) nrm = QPointF(-dir.y() / len, dir.x() / len);
+            const bool needOffset = r.allowOffset && std::abs(r.offsetDistance) > 0.001f && len > 0.001;
+            if (needOffset) {
+                const double off = studToPx(r.offsetDistance);
+                offsetP1 += nrm * off;
+                offsetP2 += nrm * off;
             }
 
-            // Main line — selectable so the user can Edit Ruler...
-            auto* line = new QGraphicsLineItem(p1px.x(), p1px.y(), p2px.x(), p2px.y());
-            QPen pen(r.color.color);
-            pen.setWidthF(r.lineThickness);
-            line->setPen(pen);
-            line->setFlag(QGraphicsItem::ItemIsSelectable, true);
-            line->setData(kBrickDataLayerIndex, layerIndex);
-            line->setData(kBrickDataGuid,       r.guid);
-            line->setData(kBrickDataKind,       QStringLiteral("ruler"));
-            sink.add(line);
+            QPen mainPen(r.color.color);
+            mainPen.setWidthF(r.lineThickness);
+            mainPen.setCapStyle(Qt::FlatCap);
 
-            // Offset line + connector ticks. Vanilla BlueBrick draws an
-            // auxiliary parallel line at `offsetDistance` studs from the main
-            // line when AllowOffset is true. The sign of offsetDistance
-            // controls which side the offset sits on.
-            if (r.allowOffset && std::abs(r.offsetDistance) > 0.001f) {
-                const QPointF dir = p2px - p1px;
-                const double len = std::hypot(dir.x(), dir.y());
-                if (len > 0.001) {
-                    const QPointF nrm(-dir.y() / len, dir.x() / len);
-                    const double off = studToPx(r.offsetDistance);
-                    const QPointF o1 = p1px + nrm * off;
-                    const QPointF o2 = p2px + nrm * off;
-                    auto* off1 = new QGraphicsLineItem(p1px.x(), p1px.y(), o1.x(), o1.y());
-                    auto* off2 = new QGraphicsLineItem(p2px.x(), p2px.y(), o2.x(), o2.y());
-                    auto* mid  = new QGraphicsLineItem(o1.x(), o1.y(), o2.x(), o2.y());
-                    QPen opn(r.color.color);
-                    opn.setWidthF(r.lineThickness);
-                    opn.setStyle(Qt::DashLine);
-                    off1->setPen(opn); off2->setPen(opn); mid->setPen(opn);
-                    sink.add(off1);
-                    sink.add(off2);
-                    sink.add(mid);
-                }
-            }
-
-            // Distance label at the line midpoint.
+            // Measurement label + segmented main line (split around the text)
+            // when displayDistance is on; otherwise one solid line.
+            QGraphicsLineItem* selectableLine = nullptr;
             if (r.displayDistance) {
                 const QPointF delta = r.point2 - r.point1;
                 const double distStuds = std::hypot(delta.x(), delta.y());
                 const QString text = r.displayUnit
                     ? formatDistance(distStuds, r.unit)
                     : QString::number(distStuds, 'f', 2);
-                const QPointF mid = (p1px + p2px) / 2.0;
-                const double angle = std::atan2(p2px.y() - p1px.y(), p2px.x() - p1px.x())
-                                     * 180.0 / M_PI;
-                addRulerLabel(sink, text, mid, angle, r.measureFont, r.measureFontColor);
+                const QPointF midPx = (offsetP1 + offsetP2) / 2.0;
+                const double angleDeg = std::atan2(offsetP2.y() - offsetP1.y(),
+                                                    offsetP2.x() - offsetP1.x()) * 180.0 / M_PI;
+
+                // Build label to measure its width, then split the line around it.
+                QFont f(r.measureFont.familyName);
+                f.setBold(r.measureFont.styleString.contains(QStringLiteral("Bold")));
+                f.setItalic(r.measureFont.styleString.contains(QStringLiteral("Italic")));
+                // Upstream's measurement font is pt-sized but scales with
+                // zoom. We scale per scene pixel so the label stays readable.
+                const int pxSize = std::max(12, static_cast<int>(r.measureFont.sizePt * 2.2));
+                f.setPixelSize(pxSize);
+                QFontMetricsF fm(f);
+                const double halfText = fm.horizontalAdvance(text) / 2.0 + 4.0;
+
+                // Unit vector along the ruler line (in offset-line coords).
+                QPointF unit(dir.x() / len, dir.y() / len);
+                const QPointF mid1 = midPx - unit * halfText;
+                const QPointF mid2 = midPx + unit * halfText;
+
+                auto* seg1 = new QGraphicsLineItem(offsetP1.x(), offsetP1.y(), mid1.x(), mid1.y());
+                auto* seg2 = new QGraphicsLineItem(offsetP2.x(), offsetP2.y(), mid2.x(), mid2.y());
+                seg1->setPen(mainPen);
+                seg2->setPen(mainPen);
+                sink.add(seg1);
+                sink.add(seg2);
+                selectableLine = seg1;
+
+                // Label centred on midPx, rotated to match the line.
+                auto* t = new QGraphicsSimpleTextItem(text);
+                t->setFont(f);
+                t->setBrush(QBrush(r.measureFontColor.color));
+                const QRectF bb = t->boundingRect();
+                QTransform tr;
+                tr.translate(midPx.x(), midPx.y());
+                tr.rotate(angleDeg);
+                tr.translate(-bb.width() / 2.0, -bb.height() / 2.0);
+                t->setTransform(tr);
+                sink.add(t);
+            } else {
+                // Single solid line from offsetP1 to offsetP2.
+                auto* line = new QGraphicsLineItem(offsetP1.x(), offsetP1.y(),
+                                                    offsetP2.x(), offsetP2.y());
+                line->setPen(mainPen);
+                sink.add(line);
+                selectableLine = line;
+            }
+
+            // Tag the first main-line segment as the ruler's selectable
+            // proxy so right-click / double-click → Properties works.
+            if (selectableLine) {
+                selectableLine->setFlag(QGraphicsItem::ItemIsSelectable, true);
+                selectableLine->setData(kBrickDataLayerIndex, layerIndex);
+                selectableLine->setData(kBrickDataGuid,       r.guid);
+                selectableLine->setData(kBrickDataKind,       QStringLiteral("ruler"));
+            }
+
+            // Dashed guidelines from the anchor points to the offset line's
+            // matching endpoints — only when allowOffset actually moves the
+            // line away from the anchors. Matches vanilla's penForGuideline.
+            if (needOffset) {
+                QPen gpen(r.guidelineColor.color);
+                gpen.setWidthF(std::max(0.5f, r.guidelineThickness));
+                gpen.setCosmetic(true);
+                QList<qreal> dashes;
+                for (float d : r.guidelineDashPattern) if (d > 0) dashes.append(d);
+                if (dashes.size() >= 2) gpen.setDashPattern(dashes);
+                else                     gpen.setStyle(Qt::DashLine);
+
+                auto* g1 = new QGraphicsLineItem(anchor1.x(), anchor1.y(), offsetP1.x(), offsetP1.y());
+                auto* g2 = new QGraphicsLineItem(anchor2.x(), anchor2.y(), offsetP2.x(), offsetP2.y());
+                g1->setPen(gpen);
+                g2->setPen(gpen);
+                sink.add(g1);
+                sink.add(g2);
             }
         } else {
             const auto& r = any.circular;
