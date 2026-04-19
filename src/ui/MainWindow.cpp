@@ -6,6 +6,7 @@
 #include "LibraryPathsDialog.h"
 #include "PreferencesDialog.h"
 #include "VenueDialog.h"
+#include "VenueDimensionsDialog.h"
 #include "../edit/VenueCommands.h"
 #include "MapView.h"
 #include "ModuleLibraryPanel.h"
@@ -1139,6 +1140,31 @@ void MainWindow::setupMenus() {
             tr("Click points to outline the venue. Right-click / Enter to finish, Escape to cancel."),
             8000);
     });
+    auto* drawByDimsAct = venueMenu->addAction(tr("Draw Outline by &Dimensions..."));
+    drawByDimsAct->setToolTip(tr("Build the venue outline by entering lengths + angles "
+                                   "instead of clicking points on the map."));
+    connect(drawByDimsAct, &QAction::triggered, this, [this]{
+        auto* m = mapView_->currentMap();
+        if (!m) return;
+        VenueDimensionsDialog dlg(this);
+        if (dlg.exec() != QDialog::Accepted) return;
+        const auto poly = dlg.polygon();
+        if (poly.size() < 3) return;
+        core::Venue v = m->sidecar.venue.value_or(core::Venue{});
+        v.enabled = true;
+        v.edges.clear();
+        for (int i = 0; i < poly.size(); ++i) {
+            core::VenueEdge e;
+            e.polyline = { poly[i], poly[(i + 1) % poly.size()] };
+            e.kind = core::EdgeKind::Wall;
+            v.edges.push_back(e);
+        }
+        mapView_->undoStack()->push(new edit::SetVenueCommand(*m, std::make_optional(v)));
+        mapView_->rebuildScene();
+        statusBar()->showMessage(
+            tr("Venue outline built from %1 segments").arg(poly.size()), 3000);
+    });
+
     auto* drawObstacleAct = venueMenu->addAction(tr("Add &Obstacle..."));
     drawObstacleAct->setToolTip(tr("Click points to add an obstacle polygon (pillar, column)."));
     connect(drawObstacleAct, &QAction::triggered, this, [this]{

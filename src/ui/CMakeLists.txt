@@ -23,6 +23,8 @@ add_library(cld_ui STATIC
     BudgetDialog.h
     VenueDialog.cpp
     VenueDialog.h
+    VenueDimensionsDialog.cpp
+    VenueDimensionsDialog.h
 )
 
 target_link_libraries(cld_ui
