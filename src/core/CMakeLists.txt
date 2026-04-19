@@ -16,6 +16,10 @@ add_library(cld_core STATIC
     Group.h
     TextCell.h
     RulerItem.h
+    AnchoredLabel.h
+    Module.h
+    Venue.h
+    Sidecar.h
 )
 
 target_include_directories(cld_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)

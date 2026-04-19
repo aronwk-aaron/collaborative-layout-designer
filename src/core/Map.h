@@ -2,6 +2,7 @@
 
 #include "ColorSpec.h"
 #include "Ids.h"
+#include "Sidecar.h"
 
 #include <QDate>
 #include <QRectF>
@@ -65,6 +66,10 @@ public:
 
     const std::vector<std::unique_ptr<Layer>>& layers() const { return layers_; }
     std::vector<std::unique_ptr<Layer>>&       layers()       { return layers_; }
+
+    // Fork-only metadata (anchored labels, modules, venue). Lives alongside the
+    // .bbm in a .bbm.cld sidecar so vanilla BlueBrick still opens the .bbm.
+    Sidecar sidecar;
 
 private:
     std::vector<std::unique_ptr<Layer>> layers_;

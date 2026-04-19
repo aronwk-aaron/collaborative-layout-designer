@@ -1,6 +1,7 @@
 add_executable(cld_saveload_tests
     RoundTripTest.cpp
     RealFixtureTest.cpp
+    SidecarTest.cpp
 )
 
 target_compile_definitions(cld_saveload_tests PRIVATE

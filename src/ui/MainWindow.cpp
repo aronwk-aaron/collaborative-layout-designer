@@ -2,16 +2,19 @@
 
 #include "LayerPanel.h"
 #include "MapView.h"
+#include "ModulesPanel.h"
 #include "PartsBrowser.h"
 
 #include "../core/Map.h"
 #include "../parts/PartsLibrary.h"
 #include "../saveload/BbmReader.h"
 #include "../saveload/BbmWriter.h"
+#include "../saveload/SidecarIO.h"
 
 #include <QAction>
 #include <QApplication>
 #include <QCloseEvent>
+#include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QMenuBar>
@@ -35,6 +38,9 @@ MainWindow::MainWindow(parts::PartsLibrary& parts, QWidget* parent)
     addDockWidget(Qt::LeftDockWidgetArea, partsBrowser_);
     connect(partsBrowser_, &PartsBrowser::partActivated,
             mapView_, &MapView::addPartAtViewCenter);
+
+    modulesPanel_ = new ModulesPanel(this);
+    addDockWidget(Qt::RightDockWidgetArea, modulesPanel_);
 
     setupMenus();
     updateTitle();
@@ -125,10 +131,27 @@ bool MainWindow::openFile(const QString& path) {
     if (!result.error.isEmpty()) {
         statusBar()->showMessage(tr("Loaded with warnings: %1").arg(result.error), 5000);
     }
+
+    // Sidecar: optional. Hash-check the .bbm bytes to flag drift (user edited
+    // the .bbm in vanilla BlueBrick between our writes).
+    const QString sidecarPath = saveload::sidecarPathFor(path);
+    if (QFile::exists(sidecarPath)) {
+        QFile bf(path); bf.open(QIODevice::ReadOnly);
+        const QByteArray bbmBytes = bf.readAll();
+        auto sres = saveload::readSidecar(sidecarPath, bbmBytes, result.map->sidecar);
+        if (sres.ok && sres.hashMismatch) {
+            statusBar()->showMessage(
+                tr("Sidecar hash mismatch — .bbm was modified externally. Fork-only metadata preserved but may drift."), 8000);
+        } else if (!sres.ok) {
+            statusBar()->showMessage(tr("Sidecar load failed: %1").arg(sres.error), 5000);
+        }
+    }
+
     const int layerCount = static_cast<int>(result.map->layers().size());
     const int nbItems = result.map->nbItems;
     mapView_->loadMap(std::move(result.map));
     layerPanel_->setMap(mapView_->currentMap(), mapView_->builder());
+    modulesPanel_->setMap(mapView_->currentMap());
     currentFilePath_ = path;
     mapView_->undoStack()->setClean();
     cleanUndoIndex_ = 0;
@@ -146,12 +169,29 @@ void MainWindow::onOpen() {
 }
 
 bool MainWindow::writeMapTo(const QString& path) {
-    if (!mapView_->currentMap()) return false;
-    auto res = saveload::writeBbm(*mapView_->currentMap(), path);
+    auto* map = mapView_->currentMap();
+    if (!map) return false;
+    auto res = saveload::writeBbm(*map, path);
     if (!res.ok) {
         QMessageBox::warning(this, tr("Save failed"), res.error);
         return false;
     }
+
+    // Sidecar: always write when the map carries fork-only metadata. Clean up
+    // any stale sidecar if the map no longer has any.
+    const QString sidecarPath = saveload::sidecarPathFor(path);
+    if (!map->sidecar.isEmpty()) {
+        QFile bf(path); bf.open(QIODevice::ReadOnly);
+        const QByteArray bbmBytes = bf.readAll();
+        QString err;
+        if (!saveload::writeSidecar(sidecarPath, bbmBytes, map->sidecar, &err)) {
+            QMessageBox::warning(this, tr("Sidecar save failed"),
+                tr("The .bbm saved successfully but the sidecar failed:\n%1").arg(err));
+        }
+    } else if (QFile::exists(sidecarPath)) {
+        QFile::remove(sidecarPath);
+    }
+
     currentFilePath_ = path;
     mapView_->undoStack()->setClean();
     updateTitle();

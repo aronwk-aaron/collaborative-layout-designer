@@ -7,6 +7,8 @@ add_library(cld_ui STATIC
     LayerPanel.h
     PartsBrowser.cpp
     PartsBrowser.h
+    ModulesPanel.cpp
+    ModulesPanel.h
 )
 
 target_link_libraries(cld_ui

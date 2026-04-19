@@ -28,10 +28,16 @@ public:
 
 private:
     void addLayer(const core::Layer& layer, int layerIndex);
+    void addSidecarContent(const core::Map& map);
+    void addVenue(const core::Map& map);
+    void addAnchoredLabels(const core::Map& map);
 
     QGraphicsScene& scene_;
     parts::PartsLibrary& parts_;
-    QHash<int, QGraphicsItem*> layerGroups_;  // layer index -> item group root
+    QHash<int, QGraphicsItem*> layerGroups_;     // layer index -> item group root
+    QHash<QString, QGraphicsItem*> brickByGuid_; // brick.guid -> QGraphicsItem*
+    QGraphicsItem* venueGroup_ = nullptr;
+    QGraphicsItem* worldLabelGroup_ = nullptr;
 };
 
 }

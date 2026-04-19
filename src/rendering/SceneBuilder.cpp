@@ -1,5 +1,6 @@
 #include "SceneBuilder.h"
 
+#include "../core/AnchoredLabel.h"
 #include "../core/Layer.h"
 #include "../core/LayerArea.h"
 #include "../core/LayerBrick.h"
@@ -7,6 +8,8 @@
 #include "../core/LayerRuler.h"
 #include "../core/LayerText.h"
 #include "../core/Map.h"
+#include "../core/Sidecar.h"
+#include "../core/Venue.h"
 #include "../parts/PartsLibrary.h"
 
 #include <QBrush>
@@ -14,12 +17,16 @@
 #include <QGraphicsEllipseItem>
 #include <QGraphicsItemGroup>
 #include <QGraphicsLineItem>
+#include <QGraphicsPathItem>
 #include <QGraphicsPixmapItem>
+#include <QGraphicsPolygonItem>
 #include <QGraphicsRectItem>
 #include <QGraphicsScene>
 #include <QGraphicsSimpleTextItem>
+#include <QPainterPath>
 #include <QPen>
 #include <QPixmap>
+#include <QPolygonF>
 
 namespace cld::rendering {
 
@@ -43,7 +50,7 @@ constexpr int kBrickDataGuid       = 1;
 constexpr int kBrickDataKind       = 2;  // value: "brick" to distinguish from other items
 
 void addBrickLayer(const core::LayerBrick& L, QGraphicsItemGroup* group, parts::PartsLibrary& lib,
-                   int layerIndex) {
+                   int layerIndex, QHash<QString, QGraphicsItem*>& brickByGuid) {
     for (const auto& brick : L.bricks) {
         // BlueBrick bakes the color suffix into the PartNumber string itself
         // (e.g. "3811.1" for a blue 32x32 baseplate, or just "TABLE96X190"
@@ -99,6 +106,7 @@ void addBrickLayer(const core::LayerBrick& L, QGraphicsItemGroup* group, parts::
         item->setData(kBrickDataLayerIndex, layerIndex);
         item->setData(kBrickDataGuid,       brick.guid);
         item->setData(kBrickDataKind,       QStringLiteral("brick"));
+        brickByGuid.insert(brick.guid, item);
         group->addToGroup(item);
     }
 }
@@ -165,13 +173,18 @@ SceneBuilder::SceneBuilder(QGraphicsScene& scene, parts::PartsLibrary& parts)
 void SceneBuilder::clear() {
     for (auto* g : std::as_const(layerGroups_)) scene_.removeItem(g), delete g;
     layerGroups_.clear();
+    brickByGuid_.clear();
+    if (venueGroup_)     { scene_.removeItem(venueGroup_); delete venueGroup_; venueGroup_ = nullptr; }
+    if (worldLabelGroup_){ scene_.removeItem(worldLabelGroup_); delete worldLabelGroup_; worldLabelGroup_ = nullptr; }
 }
 
 void SceneBuilder::build(const core::Map& map) {
     clear();
+    addVenue(map);  // z = -100 so it sits beneath every layer
     for (size_t i = 0; i < map.layers().size(); ++i) {
         addLayer(*map.layers()[i], static_cast<int>(i));
     }
+    addAnchoredLabels(map);
 }
 
 void SceneBuilder::addLayer(const core::Layer& L, int layerIndex) {
@@ -187,7 +200,7 @@ void SceneBuilder::addLayer(const core::Layer& L, int layerIndex) {
             // surface a visibility toggle later — no-op if nothing to render.
             break;
         case core::LayerKind::Brick:
-            addBrickLayer(static_cast<const core::LayerBrick&>(L), group, parts_, layerIndex);
+            addBrickLayer(static_cast<const core::LayerBrick&>(L), group, parts_, layerIndex, brickByGuid_);
             break;
         case core::LayerKind::Text:
             addTextLayer(static_cast<const core::LayerText&>(L), group);
@@ -205,6 +218,94 @@ void SceneBuilder::addLayer(const core::Layer& L, int layerIndex) {
     // Apply transparency (0..100 percent in upstream convention).
     if (L.transparency < 100) {
         group->setOpacity(L.transparency / 100.0);
+    }
+}
+
+void SceneBuilder::addVenue(const core::Map& map) {
+    if (!map.sidecar.venue || !map.sidecar.venue->enabled) return;
+    const auto& v = *map.sidecar.venue;
+
+    auto* group = new QGraphicsItemGroup();
+    group->setHandlesChildEvents(false);
+    group->setZValue(-100.0);
+    scene_.addItem(group);
+    venueGroup_ = group;
+
+    for (const auto& edge : v.edges) {
+        if (edge.polyline.size() < 2) continue;
+        QPainterPath path;
+        path.moveTo(edge.polyline[0] * kPx);
+        for (int i = 1; i < edge.polyline.size(); ++i) {
+            path.lineTo(edge.polyline[i] * kPx);
+        }
+        auto* item = new QGraphicsPathItem(path);
+        QPen pen;
+        pen.setCosmetic(true);
+        switch (edge.kind) {
+            case core::EdgeKind::Wall:
+                pen.setColor(QColor(40, 40, 40));
+                pen.setWidthF(3.0);
+                break;
+            case core::EdgeKind::Door:
+                pen.setColor(QColor(0, 150, 0));
+                pen.setStyle(Qt::DashLine);
+                pen.setWidthF(2.0);
+                break;
+            case core::EdgeKind::Open:
+                pen.setColor(QColor(0, 0, 180));
+                pen.setStyle(Qt::DotLine);
+                pen.setWidthF(1.5);
+                break;
+        }
+        item->setPen(pen);
+        group->addToGroup(item);
+    }
+    for (const auto& ob : v.obstacles) {
+        if (ob.polygon.size() < 3) continue;
+        QPolygonF poly;
+        for (const auto& p : ob.polygon) poly << p * kPx;
+        auto* item = new QGraphicsPolygonItem(poly);
+        QPen pen(QColor(90, 90, 90));
+        pen.setWidthF(1.0);
+        item->setPen(pen);
+        item->setBrush(QBrush(QColor(120, 120, 120, 100), Qt::BDiagPattern));
+        group->addToGroup(item);
+    }
+}
+
+void SceneBuilder::addAnchoredLabels(const core::Map& map) {
+    if (map.sidecar.anchoredLabels.empty()) return;
+
+    // World-anchored labels live on their own top-level group; brick/group/
+    // module anchors become children of their target so Qt transform
+    // inheritance moves them for free.
+    auto* worldGroup = new QGraphicsItemGroup();
+    worldGroup->setZValue(100.0);
+    worldGroup->setHandlesChildEvents(false);
+    scene_.addItem(worldGroup);
+    worldLabelGroup_ = worldGroup;
+
+    for (const auto& lbl : map.sidecar.anchoredLabels) {
+        auto* t = new QGraphicsSimpleTextItem(lbl.text);
+        QFont f(lbl.font.familyName, static_cast<int>(lbl.font.sizePt));
+        f.setBold(lbl.font.styleString.contains(QStringLiteral("Bold")));
+        f.setItalic(lbl.font.styleString.contains(QStringLiteral("Italic")));
+        t->setFont(f);
+        t->setBrush(QBrush(lbl.color.color));
+        t->setRotation(lbl.offsetRotation);
+
+        if (lbl.kind == core::AnchorKind::Brick) {
+            auto it = brickByGuid_.constFind(lbl.targetId);
+            if (it != brickByGuid_.constEnd()) {
+                t->setParentItem(*it);
+                t->setPos(lbl.offset * kPx);
+                continue;
+            }
+            // fall through to world-positioned if anchor not found
+        }
+        // World (or unresolved): position in scene coords.
+        t->setPos(lbl.offset * kPx);
+        worldGroup->addToGroup(t);
     }
 }
 

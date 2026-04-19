@@ -44,6 +44,7 @@ private:
     MapView*      mapView_     = nullptr;
     LayerPanel*   layerPanel_  = nullptr;
     PartsBrowser* partsBrowser_ = nullptr;
+    class ModulesPanel* modulesPanel_ = nullptr;
 
     QString currentFilePath_;
     int     cleanUndoIndex_ = 0;   // index at which the stack is "clean"

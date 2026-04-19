@@ -1,0 +1,157 @@
+#include "saveload/SidecarIO.h"
+
+#include "core/Sidecar.h"
+
+#include <gtest/gtest.h>
+
+#include <QByteArray>
+#include <QDir>
+#include <QString>
+#include <QTemporaryDir>
+#include <QUuid>
+
+using namespace cld;
+
+TEST(Sidecar, RoundTripEmptyReports) {
+    core::Sidecar sc;
+    QTemporaryDir dir;
+    const QString path = dir.filePath("t.bbm.cld");
+    const QByteArray bbm = "<dummy bbm>";
+    QString err;
+    ASSERT_TRUE(saveload::writeSidecar(path, bbm, sc, &err)) << err.toStdString();
+
+    core::Sidecar back;
+    auto r = saveload::readSidecar(path, bbm, back);
+    ASSERT_TRUE(r.ok) << r.error.toStdString();
+    EXPECT_FALSE(r.hashMismatch);
+    EXPECT_TRUE(back.isEmpty());
+}
+
+TEST(Sidecar, RoundTripAnchoredLabels) {
+    core::Sidecar sc;
+    core::AnchoredLabel a;
+    a.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    a.text = QStringLiteral("Station A");
+    a.font.familyName = QStringLiteral("Arial");
+    a.font.sizePt = 12.0f;
+    a.font.styleString = QStringLiteral("Bold");
+    a.color = core::ColorSpec::fromArgb(QColor(200, 100, 50));
+    a.kind = core::AnchorKind::Brick;
+    a.targetId = QStringLiteral("brick-guid-123");
+    a.offset = QPointF(5.5, -3.25);
+    a.offsetRotation = 45.0f;
+    a.minZoom = 0.5;
+    sc.anchoredLabels.push_back(a);
+
+    QTemporaryDir dir;
+    const QString path = dir.filePath("a.bbm.cld");
+    const QByteArray bbm = "bbm-bytes";
+    ASSERT_TRUE(saveload::writeSidecar(path, bbm, sc));
+
+    core::Sidecar back;
+    auto r = saveload::readSidecar(path, bbm, back);
+    ASSERT_TRUE(r.ok);
+    ASSERT_EQ(back.anchoredLabels.size(), 1u);
+    const auto& b = back.anchoredLabels[0];
+    EXPECT_EQ(b.id, a.id);
+    EXPECT_EQ(b.text, a.text);
+    EXPECT_EQ(b.font.familyName, a.font.familyName);
+    EXPECT_FLOAT_EQ(b.font.sizePt, a.font.sizePt);
+    EXPECT_EQ(b.font.styleString, a.font.styleString);
+    EXPECT_EQ(b.color.color.rgba(), a.color.color.rgba());
+    EXPECT_EQ(b.kind, a.kind);
+    EXPECT_EQ(b.targetId, a.targetId);
+    EXPECT_EQ(b.offset, a.offset);
+    EXPECT_FLOAT_EQ(b.offsetRotation, a.offsetRotation);
+    EXPECT_DOUBLE_EQ(b.minZoom, a.minZoom);
+}
+
+TEST(Sidecar, RoundTripModules) {
+    core::Sidecar sc;
+    core::Module m;
+    m.id = QStringLiteral("mod-1");
+    m.name = QStringLiteral("Main station");
+    m.memberIds.insert(QStringLiteral("brick-a"));
+    m.memberIds.insert(QStringLiteral("brick-b"));
+    m.transform = QTransform().translate(100, 50).rotate(30);
+    m.sourceFile = QStringLiteral("/path/to/station.bbm");
+    m.importedAt = QDateTime::currentDateTimeUtc();
+    sc.modules.push_back(m);
+
+    QTemporaryDir dir;
+    const QString path = dir.filePath("m.bbm.cld");
+    const QByteArray bbm = "x";
+    ASSERT_TRUE(saveload::writeSidecar(path, bbm, sc));
+
+    core::Sidecar back;
+    ASSERT_TRUE(saveload::readSidecar(path, bbm, back).ok);
+    ASSERT_EQ(back.modules.size(), 1u);
+    const auto& bm = back.modules[0];
+    EXPECT_EQ(bm.id, m.id);
+    EXPECT_EQ(bm.name, m.name);
+    EXPECT_EQ(bm.memberIds, m.memberIds);
+    EXPECT_EQ(bm.transform, m.transform);
+    EXPECT_EQ(bm.sourceFile, m.sourceFile);
+    // importedAt is stored at second-level precision via ISODate.
+    EXPECT_EQ(bm.importedAt.toString(Qt::ISODate), m.importedAt.toString(Qt::ISODate));
+}
+
+TEST(Sidecar, RoundTripVenue) {
+    core::Sidecar sc;
+    core::Venue v;
+    v.name = QStringLiteral("Spring Show Hall A");
+    v.minWalkwayStuds = 96.0;
+    v.layoutBoundsStuds = QRectF(-100, -50, 400, 200);
+
+    core::VenueEdge e1;
+    e1.kind = core::EdgeKind::Wall;
+    e1.polyline = { QPointF(0, 0), QPointF(300, 0) };
+    e1.label = QStringLiteral("North wall");
+    v.edges.append(e1);
+
+    core::VenueEdge e2;
+    e2.kind = core::EdgeKind::Door;
+    e2.polyline = { QPointF(300, 0), QPointF(300, 15) };
+    e2.doorWidthStuds = 15.0;
+    e2.label = QStringLiteral("Main entrance");
+    v.edges.append(e2);
+
+    core::VenueObstacle ob;
+    ob.polygon = { QPointF(150, 100), QPointF(170, 100), QPointF(170, 120), QPointF(150, 120) };
+    ob.label = QStringLiteral("Pillar A");
+    v.obstacles.append(ob);
+
+    sc.venue = v;
+
+    QTemporaryDir dir;
+    const QString path = dir.filePath("v.bbm.cld");
+    const QByteArray bbm = "y";
+    ASSERT_TRUE(saveload::writeSidecar(path, bbm, sc));
+
+    core::Sidecar back;
+    ASSERT_TRUE(saveload::readSidecar(path, bbm, back).ok);
+    ASSERT_TRUE(back.venue.has_value());
+    EXPECT_EQ(back.venue->name, v.name);
+    EXPECT_DOUBLE_EQ(back.venue->minWalkwayStuds, v.minWalkwayStuds);
+    EXPECT_EQ(back.venue->layoutBoundsStuds, v.layoutBoundsStuds);
+    ASSERT_EQ(back.venue->edges.size(), 2);
+    EXPECT_EQ(back.venue->edges[0].kind, core::EdgeKind::Wall);
+    EXPECT_EQ(back.venue->edges[1].kind, core::EdgeKind::Door);
+    EXPECT_DOUBLE_EQ(back.venue->edges[1].doorWidthStuds, 15.0);
+    ASSERT_EQ(back.venue->obstacles.size(), 1);
+    EXPECT_EQ(back.venue->obstacles[0].label, QStringLiteral("Pillar A"));
+}
+
+TEST(Sidecar, HashMismatchDetected) {
+    core::Sidecar sc;
+    sc.anchoredLabels.push_back({ .id = QStringLiteral("x"), .text = QStringLiteral("hi") });
+
+    QTemporaryDir dir;
+    const QString path = dir.filePath("h.bbm.cld");
+    ASSERT_TRUE(saveload::writeSidecar(path, "original bbm bytes", sc));
+
+    core::Sidecar back;
+    auto r = saveload::readSidecar(path, "modified bbm bytes", back);
+    ASSERT_TRUE(r.ok);
+    EXPECT_TRUE(r.hashMismatch);
+}
