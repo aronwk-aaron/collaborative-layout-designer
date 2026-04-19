@@ -99,12 +99,12 @@ std::unique_ptr<core::Map> toBlueBrickMap(const LDrawReadResult& src) {
     if (!src.title.isEmpty()) map->comment = src.title;
 
     auto layer = std::make_unique<core::LayerBrick>();
-    layer->guid = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    layer->guid = core::newBbmId();
     layer->name = QStringLiteral("Imported");
 
     for (const auto& ref : src.parts) {
         core::Brick b;
-        b.guid = QUuid::createUuid().toString(QUuid::WithoutBraces);
+        b.guid = core::newBbmId();
         const QString pn = partNumberFromFilename(ref.filename);
         // BlueBrick format bakes color into PartNumber as "<part>.<color>".
         b.partNumber = QStringLiteral("%1.%2").arg(pn).arg(ref.colorCode);

@@ -95,7 +95,9 @@ TEST(RoundTrip, MapWithLayerGrid) {
     core::Map original = makeSampleMap();
 
     auto grid = std::make_unique<core::LayerGrid>();
-    grid->guid = QStringLiteral("12345678-1234-5678-1234-567812345678");
+    // Numeric guid — vanilla BlueBrick requires ulong-parsable ids; round-trip
+    // tests mirror real .bbm content by using decimal numeric strings.
+    grid->guid = QStringLiteral("100");
     grid->name = QStringLiteral("My Grid");
     grid->visible = false;
     grid->transparency = 75;
@@ -167,7 +169,7 @@ TEST(RoundTrip, MapWithLayerBrick) {
     core::Map original = makeSampleMap();
 
     auto layer = std::make_unique<core::LayerBrick>();
-    layer->guid = QStringLiteral("layer-brick-1");
+    layer->guid = QStringLiteral("200");
     layer->name = QStringLiteral("Track");
     layer->visible = true;
     layer->transparency = 90;
@@ -176,20 +178,20 @@ TEST(RoundTrip, MapWithLayerBrick) {
     layer->displayBrickElevation = true;
 
     core::Brick b;
-    b.guid = QStringLiteral("brick-1");
+    b.guid = QStringLiteral("201");
     b.displayArea = QRectF(10.0, 20.0, 32.0, 16.0);
-    b.myGroupId = QStringLiteral("group-1");
+    b.myGroupId = QStringLiteral("202");
     b.partNumber = QStringLiteral("2875");
     b.orientation = 90.5f;
     b.activeConnectionPointIndex = 1;
     b.altitude = 0.5f;
-    core::ConnectionPoint cp0; cp0.guid = QStringLiteral("cp-0"); cp0.linkedToId = QStringLiteral("cp-other");
-    core::ConnectionPoint cp1; cp1.guid = QStringLiteral("cp-1");
+    core::ConnectionPoint cp0; cp0.guid = QStringLiteral("203"); cp0.linkedToId = QStringLiteral("204");
+    core::ConnectionPoint cp1; cp1.guid = QStringLiteral("205");
     b.connections = { cp0, cp1 };
     layer->bricks.push_back(b);
 
     core::Group g;
-    g.guid = QStringLiteral("group-1");
+    g.guid = QStringLiteral("202");
     g.partNumber = QStringLiteral("CrossingGate");
     layer->groups.push_back(g);
 
@@ -210,34 +212,34 @@ TEST(RoundTrip, MapWithLayerBrick) {
 
     const auto* parsed = dynamic_cast<const core::LayerBrick*>(result.map->layers()[0].get());
     ASSERT_NE(parsed, nullptr);
-    EXPECT_EQ(parsed->guid, QStringLiteral("layer-brick-1"));
+    EXPECT_EQ(parsed->guid, QStringLiteral("200"));
     EXPECT_TRUE(parsed->displayBrickElevation);
     ASSERT_EQ(parsed->bricks.size(), 1u);
-    EXPECT_EQ(parsed->bricks[0].guid, QStringLiteral("brick-1"));
+    EXPECT_EQ(parsed->bricks[0].guid, QStringLiteral("201"));
     EXPECT_EQ(parsed->bricks[0].partNumber, QStringLiteral("2875"));
     EXPECT_FLOAT_EQ(parsed->bricks[0].orientation, 90.5f);
     EXPECT_EQ(parsed->bricks[0].activeConnectionPointIndex, 1);
     EXPECT_FLOAT_EQ(parsed->bricks[0].altitude, 0.5f);
-    EXPECT_EQ(parsed->bricks[0].myGroupId, QStringLiteral("group-1"));
+    EXPECT_EQ(parsed->bricks[0].myGroupId, QStringLiteral("202"));
     EXPECT_EQ(parsed->bricks[0].displayArea, QRectF(10.0, 20.0, 32.0, 16.0));
     ASSERT_EQ(parsed->bricks[0].connections.size(), 2u);
-    EXPECT_EQ(parsed->bricks[0].connections[0].guid, QStringLiteral("cp-0"));
-    EXPECT_EQ(parsed->bricks[0].connections[0].linkedToId, QStringLiteral("cp-other"));
-    EXPECT_EQ(parsed->bricks[0].connections[1].guid, QStringLiteral("cp-1"));
+    EXPECT_EQ(parsed->bricks[0].connections[0].guid, QStringLiteral("203"));
+    EXPECT_EQ(parsed->bricks[0].connections[0].linkedToId, QStringLiteral("204"));
+    EXPECT_EQ(parsed->bricks[0].connections[1].guid, QStringLiteral("205"));
     EXPECT_EQ(parsed->bricks[0].connections[1].linkedToId, QString());
     ASSERT_EQ(parsed->groups.size(), 1u);
-    EXPECT_EQ(parsed->groups[0].guid, QStringLiteral("group-1"));
+    EXPECT_EQ(parsed->groups[0].guid, QStringLiteral("202"));
     EXPECT_EQ(parsed->groups[0].partNumber, QStringLiteral("CrossingGate"));
 }
 
 TEST(RoundTrip, MapWithLayerText) {
     core::Map original = makeSampleMap();
     auto layer = std::make_unique<core::LayerText>();
-    layer->guid = QStringLiteral("text-layer");
+    layer->guid = QStringLiteral("300");
     layer->name = QStringLiteral("Labels");
 
     core::TextCell c;
-    c.guid = QStringLiteral("cell-1");
+    c.guid = QStringLiteral("301");
     c.displayArea = QRectF(0, 0, 100, 20);
     c.text = QStringLiteral("Hello\nworld");
     c.orientation = 45.0f;
@@ -300,7 +302,7 @@ TEST(RoundTrip, MapWithLayerArea) {
 TEST(RoundTrip, MapWithLayerRuler) {
     core::Map original = makeSampleMap();
     auto layer = std::make_unique<core::LayerRuler>();
-    layer->guid = QStringLiteral("ruler-layer");
+    layer->guid = QStringLiteral("400");
     layer->name = QStringLiteral("Measurements");
 
     core::LayerRuler::AnyRuler lin;
@@ -313,7 +315,7 @@ TEST(RoundTrip, MapWithLayerRuler) {
     lin.linear.displayUnit = false;
     lin.linear.point1 = QPointF(10, 20);
     lin.linear.point2 = QPointF(110, 20);
-    lin.linear.attachedBrick1Id = QStringLiteral("brick-a");
+    lin.linear.attachedBrick1Id = QStringLiteral("500");
     lin.linear.attachedBrick2Id = QString();
     lin.linear.offsetDistance = 5.0f;
     lin.linear.allowOffset = true;
@@ -329,7 +331,7 @@ TEST(RoundTrip, MapWithLayerRuler) {
     cir.circular.displayUnit = true;
     cir.circular.center = QPointF(0, 0);
     cir.circular.radius = 20.0f;
-    cir.circular.attachedBrickId = QStringLiteral("brick-b");
+    cir.circular.attachedBrickId = QStringLiteral("501");
     layer->rulers.push_back(cir);
     original.layers().push_back(std::move(layer));
 
@@ -348,7 +350,7 @@ TEST(RoundTrip, MapWithLayerRuler) {
     EXPECT_EQ(parsed->rulers[0].linear.guid, QString());
     EXPECT_EQ(parsed->rulers[0].linear.point1, QPointF(10, 20));
     EXPECT_EQ(parsed->rulers[0].linear.point2, QPointF(110, 20));
-    EXPECT_EQ(parsed->rulers[0].linear.attachedBrick1Id, QStringLiteral("brick-a"));
+    EXPECT_EQ(parsed->rulers[0].linear.attachedBrick1Id, QStringLiteral("500"));
     EXPECT_FLOAT_EQ(parsed->rulers[0].linear.offsetDistance, 5.0f);
     EXPECT_TRUE(parsed->rulers[0].linear.allowOffset);
     EXPECT_TRUE(parsed->rulers[0].linear.displayDistance);
@@ -357,7 +359,7 @@ TEST(RoundTrip, MapWithLayerRuler) {
     EXPECT_EQ(parsed->rulers[1].circular.guid, QString());
     EXPECT_EQ(parsed->rulers[1].circular.center, QPointF(0, 0));
     EXPECT_FLOAT_EQ(parsed->rulers[1].circular.radius, 20.0f);
-    EXPECT_EQ(parsed->rulers[1].circular.attachedBrickId, QStringLiteral("brick-b"));
+    EXPECT_EQ(parsed->rulers[1].circular.attachedBrickId, QStringLiteral("501"));
 }
 
 TEST(RoundTrip, UnknownLayerTypeWarnsNotFails) {

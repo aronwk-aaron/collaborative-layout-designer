@@ -444,7 +444,7 @@ void MainWindow::setupMenus() {
         if (!ok || text.isEmpty()) return;
 
         core::AnchoredLabel L;
-        L.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+        L.id = core::newBbmId();
         L.text = text;
         L.color = core::ColorSpec::fromKnown(QColor(Qt::black), QStringLiteral("Black"));
         L.kind = kind;
@@ -583,7 +583,7 @@ void MainWindow::onSaveSelectionAsModule() {
     module.lug = map->lug;
     module.event = QObject::tr("Module");
     auto layer = std::make_unique<core::LayerBrick>();
-    layer->guid = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    layer->guid = core::newBbmId();
     layer->name = QStringLiteral("Module");
     for (const auto& p : picks) layer->bricks.push_back(p.brick);
     module.nbItems = static_cast<int>(layer->bricks.size());

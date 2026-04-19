@@ -3,10 +3,17 @@
 #include "LayerIO.h"
 #include "XmlPrimitives.h"
 
+#include "../core/Brick.h"
+#include "../core/Group.h"
+#include "../core/Ids.h"
 #include "../core/Layer.h"
+#include "../core/LayerBrick.h"
+#include "../core/LayerRuler.h"
+#include "../core/LayerText.h"
 #include "../core/Map.h"
 
 #include <QFile>
+#include <QHash>
 #include <QXmlStreamReader>
 
 #include <vector>
@@ -109,11 +116,90 @@ LoadResult readMapElement(QXmlStreamReader& r) {
 
 }
 
+namespace {
+
+// Vanilla BlueBrick requires every id to parse as a decimal ulong. Earlier
+// drafts of our fork used QUuid strings for newly-minted ids, which vanilla
+// refuses to load. This pass walks every id in the freshly-loaded map and
+// remaps anything non-numeric to a fresh numeric id via core::newBbmId(),
+// keeping cross-references (MyGroup, connection links) internally consistent
+// so the next save produces a vanilla-compatible .bbm. Re-reading a
+// vanilla-clean file is a no-op (all ids already numeric).
+bool isNumericId(const QString& s) {
+    if (s.isEmpty()) return true;              // empty means "no group"
+    for (QChar c : s) if (!c.isDigit()) return false;
+    return true;
+}
+
+void migrateNonNumericIds(core::Map& map) {
+    QHash<QString, QString> remap;  // old -> new
+    auto ensure = [&](QString& id) {
+        if (isNumericId(id)) return;
+        auto it = remap.find(id);
+        if (it == remap.end()) it = remap.insert(id, core::newBbmId());
+        id = it.value();
+    };
+
+    for (auto& layerPtr : map.layers()) {
+        if (!layerPtr) continue;
+        ensure(layerPtr->guid);
+
+        if (layerPtr->kind() == core::LayerKind::Brick) {
+            auto& L = static_cast<core::LayerBrick&>(*layerPtr);
+            for (auto& b : L.bricks) {
+                ensure(b.guid);
+                ensure(b.myGroupId);
+                for (auto& cp : b.connections) {
+                    ensure(cp.guid);
+                    ensure(cp.linkedToId);
+                }
+            }
+            for (auto& g : L.groups) {
+                ensure(g.guid);
+                ensure(g.myGroupId);
+            }
+        } else if (layerPtr->kind() == core::LayerKind::Text) {
+            auto& L = static_cast<core::LayerText&>(*layerPtr);
+            for (auto& c : L.textCells) {
+                ensure(c.guid);
+                ensure(c.myGroupId);
+            }
+            for (auto& g : L.groups) {
+                ensure(g.guid);
+                ensure(g.myGroupId);
+            }
+        } else if (layerPtr->kind() == core::LayerKind::Ruler) {
+            auto& L = static_cast<core::LayerRuler&>(*layerPtr);
+            for (auto& any : L.rulers) {
+                auto& base = (any.kind == core::RulerKind::Linear)
+                                 ? static_cast<core::RulerItemBase&>(any.linear)
+                                 : static_cast<core::RulerItemBase&>(any.circular);
+                ensure(base.guid);
+                ensure(base.myGroupId);
+                if (any.kind == core::RulerKind::Linear) {
+                    ensure(any.linear.attachedBrick1Id);
+                    ensure(any.linear.attachedBrick2Id);
+                } else {
+                    ensure(any.circular.attachedBrickId);
+                }
+            }
+            for (auto& g : L.groups) {
+                ensure(g.guid);
+                ensure(g.myGroupId);
+            }
+        }
+    }
+}
+
+}
+
 LoadResult readBbm(QIODevice& input) {
     QXmlStreamReader r(&input);
     while (r.readNextStartElement()) {
         if (r.name() == QStringLiteral("Map")) {
-            return readMapElement(r);
+            LoadResult result = readMapElement(r);
+            if (result.map) migrateNonNumericIds(*result.map);
+            return result;
         }
         r.skipCurrentElement();
     }

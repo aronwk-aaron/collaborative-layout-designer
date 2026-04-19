@@ -37,7 +37,7 @@ CreateModuleCommand::CreateModuleCommand(core::Map& map, QString name,
                                          std::vector<Member> members,
                                          QUndoCommand* parent)
     : QUndoCommand(parent), map_(map),
-      moduleId_(QUuid::createUuid().toString(QUuid::WithoutBraces)),
+      moduleId_(core::newBbmId()),
       name_(std::move(name)), members_(std::move(members)) {
     setText(QObject::tr("Create module %1 (%2 members)").arg(name_).arg(members_.size()));
 }
@@ -120,7 +120,7 @@ ImportBbmAsModuleCommand::ImportBbmAsModuleCommand(core::Map& map, int targetLay
                                                    QUndoCommand* parent)
     : QUndoCommand(parent), map_(map), layerIndex_(targetLayerIndex),
       sourcePath_(std::move(sourcePath)),
-      moduleId_(QUuid::createUuid().toString(QUuid::WithoutBraces)),
+      moduleId_(core::newBbmId()),
       name_(std::move(moduleName)), bricks_(std::move(bricks)) {
     setText(QObject::tr("Import module from %1").arg(sourcePath_));
 }
@@ -137,7 +137,7 @@ void ImportBbmAsModuleCommand::redo() {
     mod.sourceFile = sourcePath_;
     mod.importedAt = QDateTime::currentDateTimeUtc();
     for (auto& b : bricks_) {
-        if (b.guid.isEmpty()) b.guid = QUuid::createUuid().toString(QUuid::WithoutBraces);
+        if (b.guid.isEmpty()) b.guid = core::newBbmId();
         mod.memberIds.insert(b.guid);
         L->bricks.push_back(b);
     }

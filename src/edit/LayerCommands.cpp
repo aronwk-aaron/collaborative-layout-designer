@@ -25,7 +25,7 @@ std::unique_ptr<core::Layer> makeLayer(core::LayerKind kind, const QString& name
         case core::LayerKind::Ruler: layer = std::make_unique<core::LayerRuler>(); break;
         default: return nullptr;
     }
-    layer->guid = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    layer->guid = core::newBbmId();
     layer->name = name;
     return layer;
 }

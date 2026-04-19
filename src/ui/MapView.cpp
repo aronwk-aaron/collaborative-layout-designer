@@ -68,17 +68,16 @@ MapView::MapView(parts::PartsLibrary& parts, QWidget* parent)
     : QGraphicsView(parent), parts_(parts) {
     setRenderHints(QPainter::Antialiasing | QPainter::SmoothPixmapTransform);
     setAcceptDrops(true);   // accept part drags from the PartsBrowser panel
-    // Full-viewport repaints avoid the "trails" behind rotated bricks that
-    // SmartViewportUpdate leaves when the item's bounding rect in scene
-    // coords changes more than its local rect signals.
-    setViewportUpdateMode(QGraphicsView::FullViewportUpdate);
     // Left-button drag: rubber-band select (item drag is still available via
     // ItemIsMovable on individual brick items). Middle-button drag: pan the
     // view (handled manually in mousePress/Move/Release).
     setDragMode(QGraphicsView::RubberBandDrag);
     setTransformationAnchor(QGraphicsView::AnchorUnderMouse);
     setResizeAnchor(QGraphicsView::AnchorUnderMouse);
-    setViewportUpdateMode(QGraphicsView::SmartViewportUpdate);
+    // Full-viewport repaints avoid the "trails" behind rotated bricks that
+    // SmartViewportUpdate leaves when the item's bounding rect in scene
+    // coords changes more than its local rect signals.
+    setViewportUpdateMode(QGraphicsView::FullViewportUpdate);
 
     auto* scene = new QGraphicsScene(this);
     scene->setBackgroundBrush(QColor(100, 149, 237));
@@ -500,7 +499,7 @@ void MapView::mouseReleaseEvent(QMouseEvent* e) {
         }
         if (targetLayer < 0) {
             auto L = std::make_unique<core::LayerRuler>();
-            L->guid = QUuid::createUuid().toString(QUuid::WithoutBraces);
+            L->guid = core::newBbmId();
             L->name = tr("Rulers");
             map_->layers().push_back(std::move(L));
             targetLayer = static_cast<int>(map_->layers().size()) - 1;
@@ -611,7 +610,7 @@ void MapView::addPartAtScenePos(const QString& partKey, QPointF sceneCenterPx) {
     const QPointF centreStuds(sceneCenterPx.x() / pxPerStud, sceneCenterPx.y() / pxPerStud);
 
     core::Brick b;
-    b.guid = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    b.guid = core::newBbmId();
     b.partNumber = partKey;
     b.displayArea = QRectF(centreStuds.x() - widthStuds / 2.0,
                             centreStuds.y() - heightStuds / 2.0,
@@ -756,7 +755,7 @@ void MapView::pasteClipboard() {
     pasted.reserve(clipboard_.size());
     for (const auto& src : clipboard_) {
         core::Brick b = src;
-        b.guid = QUuid::createUuid().toString(QUuid::WithoutBraces);
+        b.guid = core::newBbmId();
         b.displayArea.translate(kPasteOffsetStuds, kPasteOffsetStuds);
         // Pasted brick keeps no previous group membership — modules are
         // tracked separately in the sidecar.
@@ -859,7 +858,7 @@ void MapView::addTextAtScenePos(const QString& text, QPointF sceneCenterPx) {
     }
     if (targetLayer < 0) {
         auto L = std::make_unique<core::LayerText>();
-        L->guid = QUuid::createUuid().toString(QUuid::WithoutBraces);
+        L->guid = core::newBbmId();
         L->name = tr("Labels");
         map_->layers().push_back(std::move(L));
         targetLayer = static_cast<int>(map_->layers().size()) - 1;
@@ -873,7 +872,7 @@ void MapView::addTextAtScenePos(const QString& text, QPointF sceneCenterPx) {
     const double widthStuds  = std::max(heightStuds * 0.6 * text.size(), heightStuds * 2.0);
 
     core::TextCell c;
-    c.guid = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    c.guid = core::newBbmId();
     c.text = text;
     c.orientation = 0.0f;
     c.fontColor = core::ColorSpec::fromKnown(QColor(Qt::black), QStringLiteral("Black"));
