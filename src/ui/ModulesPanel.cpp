@@ -57,8 +57,11 @@ ModulesPanel::ModulesPanel(QWidget* parent)
         if (!id.isEmpty()) emit moduleDeleteRequested(id);
     });
     // Delete button enables only when a valid module row is selected.
-    connect(list_, &QListWidget::currentItemChanged, this, [deleteBtn](QListWidgetItem* cur, QListWidgetItem*){
+    // Also auto-select the module's members on the map when the user
+    // clicks a row, so the module is ready to move / rotate / delete.
+    connect(list_, &QListWidget::currentItemChanged, this, [this, deleteBtn](QListWidgetItem* cur, QListWidgetItem*){
         deleteBtn->setEnabled(cur && !cur->toolTip().isEmpty());
+        if (cur && !cur->toolTip().isEmpty()) emit selectMembersRequested(cur->toolTip());
     });
 
     connect(list_, &QWidget::customContextMenuRequested, this, [this](const QPoint& pos) {
