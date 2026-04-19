@@ -5,10 +5,14 @@
 #include "../rendering/SceneBuilder.h"
 
 #include <QContextMenuEvent>
+#include <QHBoxLayout>
 #include <QInputDialog>
 #include <QListWidget>
 #include <QListWidgetItem>
 #include <QMenu>
+#include <QPushButton>
+#include <QVBoxLayout>
+#include <QWidget>
 
 namespace cld::ui {
 
@@ -29,9 +33,37 @@ const char* layerKindName(core::LayerKind k) {
 }
 
 LayerPanel::LayerPanel(QWidget* parent) : QDockWidget(tr("Layers"), parent) {
-    list_ = new QListWidget(this);
+    auto* host = new QWidget(this);
+    auto* col = new QVBoxLayout(host);
+    col->setContentsMargins(2, 2, 2, 2);
+    col->setSpacing(2);
+
+    auto* row = new QHBoxLayout();
+    row->setSpacing(2);
+    auto* showAll = new QPushButton(tr("Show all"), host);
+    auto* hideOthers = new QPushButton(tr("Solo"), host);
+    hideOthers->setToolTip(tr("Show only the selected layer"));
+    row->addWidget(showAll);
+    row->addWidget(hideOthers);
+    row->addStretch();
+    col->addLayout(row);
+
+    list_ = new QListWidget(host);
     list_->setContextMenuPolicy(Qt::CustomContextMenu);
-    setWidget(list_);
+    col->addWidget(list_);
+
+    setWidget(host);
+
+    connect(showAll, &QPushButton::clicked, this, [this]{
+        for (int i = 0; i < list_->count(); ++i) list_->item(i)->setCheckState(Qt::Checked);
+    });
+    connect(hideOthers, &QPushButton::clicked, this, [this]{
+        auto* sel = list_->currentItem();
+        if (!sel) return;
+        for (int i = 0; i < list_->count(); ++i) {
+            list_->item(i)->setCheckState(list_->item(i) == sel ? Qt::Checked : Qt::Unchecked);
+        }
+    });
     connect(list_, &QListWidget::itemChanged, this, [this](QListWidgetItem* item) {
         if (!builder_) return;
         const int idx = list_->row(item);

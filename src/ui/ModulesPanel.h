@@ -19,6 +19,8 @@ public:
 
 signals:
     void moduleDeleteRequested(const QString& moduleId);
+    void createModuleRequested();     // toolbar "Create from selection"
+    void importBbmRequested();        // toolbar "Import .bbm..."
 
 private:
     QListWidget* list_ = nullptr;

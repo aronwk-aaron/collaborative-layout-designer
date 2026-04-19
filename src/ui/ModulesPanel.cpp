@@ -6,17 +6,56 @@
 
 #include <QContextMenuEvent>
 #include <QFileInfo>
+#include <QHBoxLayout>
 #include <QListWidget>
 #include <QListWidgetItem>
 #include <QMenu>
+#include <QPushButton>
+#include <QVBoxLayout>
+#include <QWidget>
 
 namespace cld::ui {
 
 ModulesPanel::ModulesPanel(QWidget* parent)
     : QDockWidget(tr("Modules"), parent) {
-    list_ = new QListWidget(this);
+    auto* host = new QWidget(this);
+    auto* col = new QVBoxLayout(host);
+    col->setContentsMargins(2, 2, 2, 2);
+    col->setSpacing(2);
+
+    auto* row = new QHBoxLayout();
+    row->setSpacing(2);
+    auto* createBtn = new QPushButton(tr("Create"), host);
+    createBtn->setToolTip(tr("Create a module from the current selection"));
+    auto* importBtn = new QPushButton(tr("Import…"), host);
+    importBtn->setToolTip(tr("Import a .bbm file as a module"));
+    auto* deleteBtn = new QPushButton(tr("Delete"), host);
+    deleteBtn->setToolTip(tr("Delete the selected module"));
+    deleteBtn->setEnabled(false);
+    row->addWidget(createBtn);
+    row->addWidget(importBtn);
+    row->addWidget(deleteBtn);
+    row->addStretch();
+    col->addLayout(row);
+
+    list_ = new QListWidget(host);
     list_->setContextMenuPolicy(Qt::CustomContextMenu);
-    setWidget(list_);
+    col->addWidget(list_);
+
+    setWidget(host);
+
+    connect(createBtn, &QPushButton::clicked, this, &ModulesPanel::createModuleRequested);
+    connect(importBtn, &QPushButton::clicked, this, &ModulesPanel::importBbmRequested);
+    connect(deleteBtn, &QPushButton::clicked, this, [this]{
+        auto* sel = list_->currentItem();
+        if (!sel) return;
+        const QString id = sel->toolTip();
+        if (!id.isEmpty()) emit moduleDeleteRequested(id);
+    });
+    // Delete button enables only when a valid module row is selected.
+    connect(list_, &QListWidget::currentItemChanged, this, [deleteBtn](QListWidgetItem* cur, QListWidgetItem*){
+        deleteBtn->setEnabled(cur && !cur->toolTip().isEmpty());
+    });
 
     connect(list_, &QWidget::customContextMenuRequested, this, [this](const QPoint& pos) {
         auto* item = list_->itemAt(pos);

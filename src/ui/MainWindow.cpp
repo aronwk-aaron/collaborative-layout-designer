@@ -72,6 +72,10 @@ MainWindow::MainWindow(parts::PartsLibrary& parts, QWidget* parent)
             new edit::DeleteModuleCommand(*mapView_->currentMap(), id));
         modulesPanel_->setMap(mapView_->currentMap());
     });
+    connect(modulesPanel_, &ModulesPanel::createModuleRequested,
+            this, &MainWindow::onCreateModuleFromSelection);
+    connect(modulesPanel_, &ModulesPanel::importBbmRequested,
+            this, &MainWindow::onImportBbmAsModule);
 
     setupMenus();
     updateTitle();
@@ -195,75 +199,79 @@ void MainWindow::setupMenus() {
 
     auto* modules = menuBar()->addMenu(tr("&Modules"));
     auto* createModAct = modules->addAction(tr("Create from &Selection..."));
-    connect(createModAct, &QAction::triggered, this, [this]{
-        auto* map = mapView_->currentMap();
-        if (!map) return;
-        std::vector<edit::CreateModuleCommand::Member> members;
-        for (QGraphicsItem* it : mapView_->scene()->selectedItems()) {
-            if (it->data(2).toString() != QStringLiteral("brick")) continue;
-            members.push_back({ it->data(0).toInt(), it->data(1).toString() });
-        }
-        if (members.empty()) {
-            QMessageBox::information(this, tr("Create module"),
-                tr("Select one or more bricks first."));
-            return;
-        }
-        bool ok = false;
-        const QString name = QInputDialog::getText(
-            this, tr("Create module"), tr("Module name:"),
-            QLineEdit::Normal, tr("New Module"), &ok);
-        if (!ok || name.isEmpty()) return;
-        mapView_->undoStack()->push(new edit::CreateModuleCommand(*map, name, std::move(members)));
-        modulesPanel_->setMap(map);
-        statusBar()->showMessage(tr("Module created"), 3000);
-    });
-
+    connect(createModAct, &QAction::triggered, this, &MainWindow::onCreateModuleFromSelection);
     auto* importModAct = modules->addAction(tr("&Import .bbm as Module..."));
-    connect(importModAct, &QAction::triggered, this, [this]{
-        auto* map = mapView_->currentMap();
-        if (!map) return;
-        int targetLayer = -1;
-        for (int i = 0; i < static_cast<int>(map->layers().size()); ++i) {
-            if (map->layers()[i]->kind() == core::LayerKind::Brick) { targetLayer = i; break; }
-        }
-        if (targetLayer < 0) {
-            QMessageBox::warning(this, tr("Import module"), tr("No brick layer in the current map."));
-            return;
-        }
-        const QString path = QFileDialog::getOpenFileName(
-            this, tr("Import .bbm as module"), {},
-            tr("BlueBrick map (*.bbm)"));
-        if (path.isEmpty()) return;
-        auto loaded = saveload::readBbm(path);
-        if (!loaded.ok()) {
-            QMessageBox::warning(this, tr("Import failed"), loaded.error);
-            return;
-        }
-        std::vector<core::Brick> bricks;
-        for (const auto& L : loaded.map->layers()) {
-            if (L->kind() != core::LayerKind::Brick) continue;
-            const auto& BL = static_cast<const core::LayerBrick&>(*L);
-            for (const auto& b : BL.bricks) {
-                core::Brick copy = b;
-                copy.guid.clear();  // will be regenerated inside the command
-                bricks.push_back(std::move(copy));
-            }
-        }
-        if (bricks.empty()) {
-            QMessageBox::information(this, tr("Import module"),
-                tr("The selected file has no brick layers to import."));
-            return;
-        }
-        const QString name = QFileInfo(path).baseName();
-        mapView_->undoStack()->push(new edit::ImportBbmAsModuleCommand(
-            *map, targetLayer, path, name, std::move(bricks)));
-        mapView_->rebuildScene();
-        modulesPanel_->setMap(map);
-        statusBar()->showMessage(
-            tr("Imported %1 bricks as module '%2'").arg(bricks.size()).arg(name), 4000);
-    });
+    connect(importModAct, &QAction::triggered, this, &MainWindow::onImportBbmAsModule);
 
     menuBar()->addMenu(tr("&Help"));
+}
+
+void MainWindow::onCreateModuleFromSelection() {
+    auto* map = mapView_->currentMap();
+    if (!map) return;
+    std::vector<edit::CreateModuleCommand::Member> members;
+    for (QGraphicsItem* it : mapView_->scene()->selectedItems()) {
+        if (it->data(2).toString() != QStringLiteral("brick")) continue;
+        members.push_back({ it->data(0).toInt(), it->data(1).toString() });
+    }
+    if (members.empty()) {
+        QMessageBox::information(this, tr("Create module"),
+            tr("Select one or more bricks first."));
+        return;
+    }
+    bool ok = false;
+    const QString name = QInputDialog::getText(
+        this, tr("Create module"), tr("Module name:"),
+        QLineEdit::Normal, tr("New Module"), &ok);
+    if (!ok || name.isEmpty()) return;
+    mapView_->undoStack()->push(new edit::CreateModuleCommand(*map, name, std::move(members)));
+    modulesPanel_->setMap(map);
+    statusBar()->showMessage(tr("Module created"), 3000);
+}
+
+void MainWindow::onImportBbmAsModule() {
+    auto* map = mapView_->currentMap();
+    if (!map) return;
+    int targetLayer = -1;
+    for (int i = 0; i < static_cast<int>(map->layers().size()); ++i) {
+        if (map->layers()[i]->kind() == core::LayerKind::Brick) { targetLayer = i; break; }
+    }
+    if (targetLayer < 0) {
+        QMessageBox::warning(this, tr("Import module"), tr("No brick layer in the current map."));
+        return;
+    }
+    const QString path = QFileDialog::getOpenFileName(
+        this, tr("Import .bbm as module"), {},
+        tr("BlueBrick map (*.bbm)"));
+    if (path.isEmpty()) return;
+    auto loaded = saveload::readBbm(path);
+    if (!loaded.ok()) {
+        QMessageBox::warning(this, tr("Import failed"), loaded.error);
+        return;
+    }
+    std::vector<core::Brick> bricks;
+    for (const auto& L : loaded.map->layers()) {
+        if (L->kind() != core::LayerKind::Brick) continue;
+        const auto& BL = static_cast<const core::LayerBrick&>(*L);
+        for (const auto& b : BL.bricks) {
+            core::Brick copy = b;
+            copy.guid.clear();  // will be regenerated inside the command
+            bricks.push_back(std::move(copy));
+        }
+    }
+    if (bricks.empty()) {
+        QMessageBox::information(this, tr("Import module"),
+            tr("The selected file has no brick layers to import."));
+        return;
+    }
+    const QString name = QFileInfo(path).baseName();
+    const int imported = static_cast<int>(bricks.size());
+    mapView_->undoStack()->push(new edit::ImportBbmAsModuleCommand(
+        *map, targetLayer, path, name, std::move(bricks)));
+    mapView_->rebuildScene();
+    modulesPanel_->setMap(map);
+    statusBar()->showMessage(
+        tr("Imported %1 bricks as module '%2'").arg(imported).arg(name), 4000);
 }
 
 void MainWindow::updateTitle() {

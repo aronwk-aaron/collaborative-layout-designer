@@ -114,17 +114,55 @@ void addBrickLayer(const core::LayerBrick& L, QGraphicsItemGroup* group, parts::
 void addTextLayer(const core::LayerText& L, QGraphicsItemGroup* group) {
     for (const auto& cell : L.textCells) {
         auto* t = new QGraphicsSimpleTextItem(cell.text);
-        QFont f(cell.font.familyName, static_cast<int>(cell.font.sizePt));
+        QFont f(cell.font.familyName);
         f.setBold(cell.font.styleString.contains(QStringLiteral("Bold")));
         f.setItalic(cell.font.styleString.contains(QStringLiteral("Italic")));
+
+        // Upstream BlueBrick stores the text's *pixel* bounding box (converted
+        // to studs) in displayArea. The nominal Font.Size field is the
+        // typographic size used to render that pixmap, not the scene-scale
+        // size. We ignore font.sizePt and instead pick a pixel font size so
+        // the rendered text fills the displayArea's short axis. For rotated
+        // text (orientation != 0/180) the short axis is displayArea.width.
+        const float orient = std::fmod(cell.orientation, 360.0f);
+        const bool rot90 = (std::abs(std::abs(orient) - 90.0f)  < 1.0f ||
+                            std::abs(std::abs(orient) - 270.0f) < 1.0f);
+        // Unrotated target box in pixels. For 90° rotations the displayArea
+        // AABB's width is the rendered height and vice versa.
+        const double boxWpx = (rot90 ? cell.displayArea.height()
+                                     : cell.displayArea.width()) * kPx;
+        const double boxHpx = (rot90 ? cell.displayArea.width()
+                                     : cell.displayArea.height()) * kPx;
+
+        // Probe at a reference size, measure, then pick the pixel size that
+        // makes the rendered bounding box fit entirely inside (boxWpx, boxHpx).
+        // This preserves vanilla's per-label aspect without letting text
+        // overflow into neighbours when labels are tightly packed.
+        constexpr int kProbe = 100;
+        f.setPixelSize(kProbe);
         t->setFont(f);
+        const QRectF probeRect = t->boundingRect();
+        if (probeRect.width() > 0 && probeRect.height() > 0) {
+            const double scaleW = boxWpx / probeRect.width();
+            const double scaleH = boxHpx / probeRect.height();
+            const double scale  = std::min(scaleW, scaleH);
+            const int finalPx = std::max(1, static_cast<int>(kProbe * scale));
+            f.setPixelSize(finalPx);
+            t->setFont(f);
+        }
         t->setBrush(QBrush(cell.fontColor.color));
-        const QRectF areaPx(studToPx(cell.displayArea.x()),
-                            studToPx(cell.displayArea.y()),
-                            studToPx(cell.displayArea.width()),
-                            studToPx(cell.displayArea.height()));
-        t->setPos(areaPx.topLeft());
-        t->setRotation(cell.orientation);
+
+        // Centre the text on the displayArea centre, rotated in place. We
+        // translate by centre, rotate, then offset by -bbox.center so the
+        // item's local centre lands on the scene centre.
+        const QRectF localBbox = t->boundingRect();
+        const QPointF centerPx(studToPx(cell.displayArea.center().x()),
+                                studToPx(cell.displayArea.center().y()));
+        QTransform tr;
+        tr.translate(centerPx.x(), centerPx.y());
+        tr.rotate(cell.orientation);
+        tr.translate(-localBbox.width() / 2.0, -localBbox.height() / 2.0);
+        t->setTransform(tr);
         group->addToGroup(t);
     }
 }

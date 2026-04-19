@@ -45,6 +45,8 @@ private slots:
     void onZoomOut();
     void onFitToView();
     void onManageLibraries();
+    void onCreateModuleFromSelection();
+    void onImportBbmAsModule();
 
 private:
     void setupMenus();
