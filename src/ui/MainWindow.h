@@ -48,6 +48,8 @@ private slots:
     void onManageLibraries();
     void onCreateModuleFromSelection();
     void onImportBbmAsModule();
+    void onSaveSelectionAsModule();
+    void onImportModuleFromLibraryPath(const QString& bbmPath);
 
 private:
     void setupMenus();
@@ -60,6 +62,7 @@ private:
     LayerPanel*   layerPanel_  = nullptr;
     PartsBrowser* partsBrowser_ = nullptr;
     class ModulesPanel* modulesPanel_ = nullptr;
+    class ModuleLibraryPanel* moduleLibraryPanel_ = nullptr;
 
     QString currentFilePath_;
     int     cleanUndoIndex_ = 0;   // index at which the stack is "clean"
