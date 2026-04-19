@@ -671,6 +671,40 @@ void SceneBuilder::addVenue(const core::Map& map) {
     // render beneath every layer. Tracked in venueItems_ for cleanup.
     LayerSink sink{ scene_, venueItems_, -100000.0, true };
 
+    // Walkway buffer: draw a translucent band on the INSIDE of every
+    // non-Wall edge (Door + Open). Walls are solid barriers so bricks
+    // can butt right up against them — no buffer needed. The band is
+    // `minWalkwayStuds` thick, on the left-hand side of each segment
+    // (the inside of a counter-clockwise polygon). Drawn BEFORE the
+    // edges so edge strokes render on top.
+    const double walkPx = v.minWalkwayStuds * kPx;
+    if (walkPx > 0.001) {
+        for (const auto& edge : v.edges) {
+            if (edge.kind == core::EdgeKind::Wall) continue;
+            if (edge.polyline.size() < 2) continue;
+            QPainterPath band;
+            // For each pair of consecutive points, add a thin parallel
+            // rectangle (segment + perpendicular offset into the venue).
+            for (int i = 1; i < edge.polyline.size(); ++i) {
+                const QPointF a = edge.polyline[i - 1] * kPx;
+                const QPointF b = edge.polyline[i]     * kPx;
+                const QPointF d = b - a;
+                const double len = std::hypot(d.x(), d.y());
+                if (len < 0.001) continue;
+                const QPointF nIn(-d.y() / len, d.x() / len);  // left-hand normal
+                const QPointF aIn = a + nIn * walkPx;
+                const QPointF bIn = b + nIn * walkPx;
+                QPolygonF quad; quad << a << b << bIn << aIn;
+                band.addPolygon(quad);
+            }
+            auto* bandItem = new QGraphicsPathItem(band);
+            bandItem->setPen(Qt::NoPen);
+            bandItem->setBrush(QBrush(QColor(255, 170, 0, 60),
+                                       Qt::BDiagPattern));
+            sink.add(bandItem);
+        }
+    }
+
     for (const auto& edge : v.edges) {
         if (edge.polyline.size() < 2) continue;
         QPainterPath path;
@@ -681,20 +715,22 @@ void SceneBuilder::addVenue(const core::Map& map) {
         auto* item = new QGraphicsPathItem(path);
         QPen pen;
         pen.setCosmetic(true);
+        // Beefier venue outline strokes — walls especially need to read as
+        // a bold border against bricks / grid, not a hairline.
         switch (edge.kind) {
             case core::EdgeKind::Wall:
-                pen.setColor(QColor(40, 40, 40));
-                pen.setWidthF(3.0);
+                pen.setColor(QColor(30, 30, 30));
+                pen.setWidthF(7.0);
                 break;
             case core::EdgeKind::Door:
-                pen.setColor(QColor(0, 150, 0));
+                pen.setColor(QColor(0, 160, 0));
                 pen.setStyle(Qt::DashLine);
-                pen.setWidthF(2.0);
+                pen.setWidthF(5.0);
                 break;
             case core::EdgeKind::Open:
-                pen.setColor(QColor(0, 0, 180));
+                pen.setColor(QColor(0, 0, 200));
                 pen.setStyle(Qt::DotLine);
-                pen.setWidthF(1.5);
+                pen.setWidthF(4.0);
                 break;
         }
         item->setPen(pen);
@@ -729,6 +765,13 @@ void SceneBuilder::addAnchoredLabels(const core::Map& map) {
         t->setFont(f);
         t->setBrush(QBrush(lbl.color.color));
         t->setRotation(lbl.offsetRotation);
+        // Tag the label so MapView can select / edit / delete it. layer
+        // index is always -1 for anchored labels (they live in the
+        // sidecar, not in a Layer).
+        t->setFlag(QGraphicsItem::ItemIsSelectable, true);
+        t->setData(kBrickDataLayerIndex, -1);
+        t->setData(kBrickDataGuid,       lbl.id);
+        t->setData(kBrickDataKind,       QStringLiteral("label"));
 
         if (lbl.kind == core::AnchorKind::Brick) {
             auto it = brickByGuid_.constFind(lbl.targetId);

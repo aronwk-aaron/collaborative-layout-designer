@@ -97,11 +97,21 @@ VenueDimensionsDialog::VenueDimensionsDialog(QWidget* parent) : QDialog(parent) 
         "Angle: 0° east, 90° south, 180° west, 270° north. The polygon is "
         "closed automatically.")));
 
-    auto* table = new QTableWidget(0, 2, this);
-    table->setHorizontalHeaderLabels({ tr("Length (ft)"), tr("Angle (°)") });
+    auto* table = new QTableWidget(0, 4, this);
+    table->setHorizontalHeaderLabels({ tr("Length (ft)"), tr("Angle (°)"),
+                                        tr("Kind"), tr("Label") });
     table->horizontalHeader()->setStretchLastSection(true);
     table->verticalHeader()->setVisible(true);
     vbox->addWidget(table, 1);
+
+    auto makeKindCombo = [](core::EdgeKind initial){
+        auto* c = new QComboBox();
+        c->addItem(QObject::tr("Wall"), int(core::EdgeKind::Wall));
+        c->addItem(QObject::tr("Door"), int(core::EdgeKind::Door));
+        c->addItem(QObject::tr("Open"), int(core::EdgeKind::Open));
+        c->setCurrentIndex(static_cast<int>(initial));
+        return c;
+    };
 
     auto* btnRow = new QHBoxLayout();
     auto* addBtn = new QPushButton(tr("Add segment"), this);
@@ -119,15 +129,21 @@ VenueDimensionsDialog::VenueDimensionsDialog(QWidget* parent) : QDialog(parent) 
 
     // Convenient default: one row ready for editing. Default length 10 ft
     // is a reasonable starter for typical venue walls.
-    auto addRow = [table](double lengthFt = 10.0, double angle = 0.0) {
+    auto addRow = [table, makeKindCombo](double lengthFt = 10.0, double angle = 0.0,
+                                          core::EdgeKind kind = core::EdgeKind::Wall,
+                                          const QString& label = QString()) {
         const int r = table->rowCount();
         table->insertRow(r);
         auto* lenItem = new QTableWidgetItem(QString::number(lengthFt, 'f', 2));
         table->setItem(r, 0, lenItem);
-        // Angle column uses an editable combobox seeded with compass
-        // presets so the user can click the most common directions or
-        // type a custom angle (e.g. 37.5).
+        // Angle column: editable combobox with compass presets.
         table->setCellWidget(r, 1, makeAngleCombo(angle));
+        // Kind column: Wall / Door / Open dropdown — set per-segment at
+        // draw time so the user doesn't have to reopen Edit Venue
+        // Properties to reclassify.
+        table->setCellWidget(r, 2, makeKindCombo(kind));
+        // Label column: free-form text (e.g. "Main entrance").
+        table->setCellWidget(r, 3, new QLineEdit(label));
     };
     addRow();
 
@@ -135,7 +151,7 @@ VenueDimensionsDialog::VenueDimensionsDialog(QWidget* parent) : QDialog(parent) 
     connect(remBtn, &QPushButton::clicked, this, [table]{
         if (table->rowCount() > 0) table->removeRow(table->rowCount() - 1);
     });
-    connect(preset, &QPushButton::clicked, this, [this, table]{
+    connect(preset, &QPushButton::clicked, this, [this, table, makeKindCombo]{
         // Ask for width + depth (in feet) and replace the segment list
         // with a 4-row rectangle going east, south, west, north.
         QDialog dlg(this);
@@ -155,11 +171,13 @@ VenueDimensionsDialog::VenueDimensionsDialog(QWidget* parent) : QDialog(parent) 
         table->setRowCount(0);
         const double widthFt = w->value();
         const double depthFt = d->value();
-        auto append = [table](double lenFt, double ang) {
+        auto append = [table, makeKindCombo](double lenFt, double ang) {
             const int r = table->rowCount();
             table->insertRow(r);
             table->setItem(r, 0, new QTableWidgetItem(QString::number(lenFt, 'f', 2)));
             table->setCellWidget(r, 1, makeAngleCombo(ang));
+            table->setCellWidget(r, 2, makeKindCombo(core::EdgeKind::Wall));
+            table->setCellWidget(r, 3, new QLineEdit());
         };
         append(widthFt, 0.0);
         append(depthFt, 90.0);
@@ -169,14 +187,17 @@ VenueDimensionsDialog::VenueDimensionsDialog(QWidget* parent) : QDialog(parent) 
 
     connect(bb, &QDialogButtonBox::rejected, this, &QDialog::reject);
     connect(bb, &QDialogButtonBox::accepted, this, [this, table, originX, originY, kStudsPerFoot]{
-        QVector<QPointF> pts;
+        QVector<QPointF>     pts;
+        QVector<SegmentMeta> metas;
         // Convert origin from feet to studs for the internal data model.
         QPointF cur(originX->value() * kStudsPerFoot,
                     originY->value() * kStudsPerFoot);
         pts.push_back(cur);
         for (int r = 0; r < table->rowCount(); ++r) {
-            auto* lenItem = table->item(r, 0);
+            auto* lenItem  = table->item(r, 0);
             auto* angCombo = qobject_cast<QComboBox*>(table->cellWidget(r, 1));
+            auto* kindCombo = qobject_cast<QComboBox*>(table->cellWidget(r, 2));
+            auto* labelEdit = qobject_cast<QLineEdit*>(table->cellWidget(r, 3));
             if (!lenItem || !angCombo) continue;
             const double lengthFt = lenItem->text().toDouble();
             const double angDeg   = readAngleFromCombo(angCombo);
@@ -185,6 +206,13 @@ VenueDimensionsDialog::VenueDimensionsDialog(QWidget* parent) : QDialog(parent) 
             const double rad = angDeg * M_PI / 180.0;
             cur += QPointF(std::cos(rad) * lengthStuds, std::sin(rad) * lengthStuds);
             pts.push_back(cur);
+
+            SegmentMeta meta;
+            meta.kind = kindCombo
+                ? static_cast<core::EdgeKind>(kindCombo->currentData().toInt())
+                : core::EdgeKind::Wall;
+            meta.label = labelEdit ? labelEdit->text() : QString();
+            metas.push_back(meta);
         }
         if (pts.size() < 3) {
             QMessageBox::information(this, tr("Venue outline"),
@@ -192,10 +220,12 @@ VenueDimensionsDialog::VenueDimensionsDialog(QWidget* parent) : QDialog(parent) 
             return;
         }
         // Drop the closing vertex if it duplicates the origin (common when
-        // the user manually entered the full loop).
+        // the user manually entered the full loop). metas is indexed by
+        // segment (not vertex) so no adjustment needed there.
         const QPointF delta = pts.last() - pts.first();
         if (std::hypot(delta.x(), delta.y()) < 0.5) pts.removeLast();
         polygon_ = std::move(pts);
+        segments_ = std::move(metas);
         accept();
     });
 }

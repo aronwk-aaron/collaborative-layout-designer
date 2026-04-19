@@ -12,6 +12,7 @@
 #include "../edit/AreaCommands.h"
 #include "../edit/EditCommands.h"
 #include "../edit/RulerCommands.h"
+#include "../edit/LabelCommands.h"
 #include "../edit/TextCommands.h"
 #include "../edit/VenueCommands.h"
 #include "../core/Venue.h"
@@ -70,6 +71,10 @@ bool isTextItem(const QGraphicsItem* it) {
 
 bool isRulerItem(const QGraphicsItem* it) {
     return it && it->data(kBrickDataKind).toString() == QStringLiteral("ruler");
+}
+
+bool isLabelItem(const QGraphicsItem* it) {
+    return it && it->data(kBrickDataKind).toString() == QStringLiteral("label");
 }
 
 double studToPx() { return rendering::SceneBuilder::kPixelsPerStud; }
@@ -391,12 +396,26 @@ void MapView::refreshSelectionOverlay() {
     QList<QPolygonF> polys;
     for (QGraphicsItem* it : scene()->selectedItems()) {
         if (!it || it == selectionOverlay_) continue;
-        QRectF r = it->boundingRect();
-        if (r.isEmpty()) r = it->sceneBoundingRect();
-        QPolygonF poly = it->mapToScene(r);
-        if (r.width() < 1.0 || r.height() < 1.0) {
-            r = QRectF(it->scenePos(), QSizeF(0, 0)).adjusted(-6, -6, 6, 6);
-            poly = QPolygonF(r);
+        const QRectF local = it->boundingRect();
+        const bool localThin = (local.width() < 1.0 || local.height() < 1.0);
+        QPolygonF poly;
+        if (!localThin && !local.isEmpty()) {
+            // Solid rect / pixmap: map the local rect to scene to
+            // preserve rotation for rotated bricks.
+            poly = it->mapToScene(local);
+        } else {
+            // Thin items (lines, zero-height rect, etc.) — use the
+            // scene-space AABB and inflate it in the thin dimensions so
+            // the highlight actually surrounds the item. scenePos() used
+            // to be our fallback, but for QGraphicsLineItem with pos=0
+            // that put the outline at the scene origin instead of on
+            // the ruler.
+            QRectF sbr = it->sceneBoundingRect();
+            if (sbr.width()  < 2.0) sbr.adjust(-3.0, 0.0, 3.0, 0.0);
+            if (sbr.height() < 2.0) sbr.adjust(0.0, -3.0, 0.0, 3.0);
+            if (sbr.isEmpty()) sbr = QRectF(it->mapToScene(QPointF()) - QPointF(6, 6),
+                                             QSizeF(12, 12));
+            poly = QPolygonF(sbr);
         }
         polys.append(poly);
     }
@@ -1518,9 +1537,27 @@ void MapView::mouseDoubleClickEvent(QMouseEvent* e) {
             handled = editRulerDialog(this, *map_, li, guid, *undoStack_);
         } else if (isTextItem(under)) {
             handled = editTextDialog(this, *map_, li, guid, *undoStack_);
+        } else if (isLabelItem(under)) {
+            // Anchored labels: quick text edit via input dialog — the
+            // full font/colour editor is the "Edit Label..." context menu
+            // action (future work). Undoable via
+            // EditAnchoredLabelTextCommand.
+            QString current;
+            for (const auto& lbl : map_->sidecar.anchoredLabels) {
+                if (lbl.id == guid) { current = lbl.text; break; }
+            }
+            bool ok = false;
+            const QString next = QInputDialog::getText(
+                this, tr("Edit label"), tr("Label text:"),
+                QLineEdit::Normal, current, &ok);
+            if (ok && next != current) {
+                undoStack_->push(new edit::EditAnchoredLabelTextCommand(
+                    *map_, guid, next));
+                handled = true;
+            }
         }
-        if (handled) rebuildScene();
-        if (handled || isBrickItem(under) || isRulerItem(under) || isTextItem(under)) {
+        if (handled || isBrickItem(under) || isRulerItem(under)
+            || isTextItem(under) || isLabelItem(under)) {
             e->accept();
             return;
         }
@@ -1645,10 +1682,12 @@ void MapView::dropEvent(QDropEvent* e) {
 void MapView::deleteSelected() {
     if (!map_) return;
     std::vector<edit::DeleteBricksCommand::Entry> brickEntries;
-    // (layerIndex, text guid) hits for text cells — deleted with one command
-    // each inside a single macro so undo collapses the whole deletion.
-    struct TextHit { int li; QString guid; };
-    std::vector<TextHit> textHits;
+    // Keyed hits for other types — bundled into one undo macro.
+    struct TextHit  { int li; QString guid; };
+    struct RulerHit { int li; QString guid; };
+    std::vector<TextHit>  textHits;
+    std::vector<RulerHit> rulerHits;
+    QStringList labelIds;
 
     for (QGraphicsItem* it : scene()->selectedItems()) {
         if (isBrickItem(it)) {
@@ -1671,9 +1710,15 @@ void MapView::deleteSelected() {
         } else if (isTextItem(it)) {
             textHits.push_back({ it->data(kBrickDataLayerIndex).toInt(),
                                   it->data(kBrickDataGuid).toString() });
+        } else if (isRulerItem(it)) {
+            rulerHits.push_back({ it->data(kBrickDataLayerIndex).toInt(),
+                                    it->data(kBrickDataGuid).toString() });
+        } else if (isLabelItem(it)) {
+            labelIds.append(it->data(kBrickDataGuid).toString());
         }
     }
-    if (brickEntries.empty() && textHits.empty()) return;
+    if (brickEntries.empty() && textHits.empty() &&
+        rulerHits.empty() && labelIds.isEmpty()) return;
 
     undoStack_->beginMacro(tr("Delete selection"));
     if (!brickEntries.empty()) {
@@ -1682,8 +1727,14 @@ void MapView::deleteSelected() {
     for (const auto& h : textHits) {
         undoStack_->push(new edit::DeleteTextCellCommand(*map_, h.li, h.guid));
     }
+    for (const auto& h : rulerHits) {
+        undoStack_->push(new edit::DeleteRulerItemCommand(*map_, h.li, h.guid));
+    }
+    for (const QString& id : labelIds) {
+        undoStack_->push(new edit::DeleteAnchoredLabelCommand(*map_, id));
+    }
     undoStack_->endMacro();
-    rebuildScene();
+    // The undo-stack indexChanged handler rebuilds + preserves selection.
 }
 
 }

@@ -1148,7 +1148,8 @@ void MainWindow::setupMenus() {
         if (!m) return;
         VenueDimensionsDialog dlg(this);
         if (dlg.exec() != QDialog::Accepted) return;
-        const auto poly = dlg.polygon();
+        const auto poly  = dlg.polygon();
+        const auto metas = dlg.segments();
         if (poly.size() < 3) return;
         core::Venue v = m->sidecar.venue.value_or(core::Venue{});
         v.enabled = true;
@@ -1156,7 +1157,15 @@ void MainWindow::setupMenus() {
         for (int i = 0; i < poly.size(); ++i) {
             core::VenueEdge e;
             e.polyline = { poly[i], poly[(i + 1) % poly.size()] };
-            e.kind = core::EdgeKind::Wall;
+            // Use the per-segment kind + label chosen in the dialog;
+            // fall back to Wall if the metas list is shorter than the
+            // polygon (shouldn't happen, defensive).
+            if (i < metas.size()) {
+                e.kind  = metas[i].kind;
+                e.label = metas[i].label;
+            } else {
+                e.kind  = core::EdgeKind::Wall;
+            }
             v.edges.push_back(e);
         }
         mapView_->undoStack()->push(new edit::SetVenueCommand(*m, std::make_optional(v)));
