@@ -1,11 +1,15 @@
 #include "BbmReader.h"
 
+#include "LayerIO.h"
 #include "XmlPrimitives.h"
 
+#include "../core/Layer.h"
 #include "../core/Map.h"
 
 #include <QFile>
 #include <QXmlStreamReader>
+
+#include <vector>
 
 namespace cld::saveload {
 
@@ -40,20 +44,22 @@ void readExportInfo(QXmlStreamReader& r, core::ExportInfo& info, int dataVersion
     (void)dataVersion;
 }
 
-QString skipLayersReturnUnhandled(QXmlStreamReader& r) {
-    // Phase 1 only ports the Map header. Layer dispatch lands in a follow-up.
-    // Skip every <Layer> child so the stream reaches </Layers> cleanly.
+QString readLayersInto(QXmlStreamReader& r, core::Map& map, int dataVersion) {
     int skipped = 0;
     while (r.readNextStartElement()) {
-        if (r.name() == QStringLiteral("Layer")) {
+        if (r.name() != QStringLiteral("Layer")) {
             r.skipCurrentElement();
-            ++skipped;
+            continue;
+        }
+        auto outcome = readLayer(r, dataVersion);
+        if (outcome.layer) {
+            map.layers().push_back(std::move(outcome.layer));
         } else {
-            r.skipCurrentElement();
+            ++skipped;
         }
     }
     if (skipped == 0) return {};
-    return QStringLiteral("%1 layers skipped (layer port not yet implemented)").arg(skipped);
+    return QStringLiteral("%1 layer(s) skipped (unsupported type)").arg(skipped);
 }
 
 LoadResult readMapElement(QXmlStreamReader& r) {
@@ -88,7 +94,7 @@ LoadResult readMapElement(QXmlStreamReader& r) {
         } else if (n == QStringLiteral("SelectedLayerIndex")) {
             map->selectedLayerIndex = xml::readIntElement(r);
         } else if (n == QStringLiteral("Layers")) {
-            const auto w = skipLayersReturnUnhandled(r);
+            const auto w = readLayersInto(r, *map, map->dataVersion);
             if (!w.isEmpty()) warning = w;
         } else {
             r.skipCurrentElement();

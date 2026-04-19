@@ -1,5 +1,6 @@
 #include "BbmWriter.h"
 
+#include "LayerIO.h"
 #include "XmlPrimitives.h"
 
 #include "../core/Layer.h"
@@ -59,7 +60,9 @@ void writeMapBody(QXmlStreamWriter& w, const core::Map& m) {
     xml::writeIntElement(w, QStringLiteral("SelectedLayerIndex"), m.selectedLayerIndex);
 
     w.writeStartElement(QStringLiteral("Layers"));
-    // Phase 2+: iterate m.layers() and emit each via a LayerWriter dispatch.
+    for (const auto& layer : m.layers()) {
+        if (layer) writeLayer(w, *layer);
+    }
     w.writeEndElement();
 }
 

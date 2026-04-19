@@ -4,6 +4,8 @@ add_library(cld_core STATIC
     Geometry.h
     Map.h
     Layer.h
+    LayerGrid.h
+    FontSpec.h
     Brick.h
     Group.h
 )

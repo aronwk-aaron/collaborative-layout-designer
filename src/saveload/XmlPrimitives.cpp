@@ -112,6 +112,21 @@ QRectF readRectF(QXmlStreamReader& r) {
     return { x, y, w, h };
 }
 
+core::FontSpec readFont(QXmlStreamReader& r, int dataVersion) {
+    // <Wrapper><FontFamily>...</FontFamily><Size>float</Size><Style>string</Style>? </Wrapper>
+    // Style element is v6+ in upstream data.
+    core::FontSpec f;
+    while (r.readNextStartElement()) {
+        const auto n = r.name();
+        if      (n == QStringLiteral("FontFamily")) f.familyName  = readTextElement(r);
+        else if (n == QStringLiteral("Size"))       f.sizePt      = readFloatElement(r);
+        else if (n == QStringLiteral("Style"))      f.styleString = readTextElement(r);
+        else r.skipCurrentElement();
+    }
+    if (dataVersion < 6) f.styleString = QStringLiteral("Regular");
+    return f;
+}
+
 // ---------- writers ----------
 
 void writeBoolElement(QXmlStreamWriter& w, const QString& name, bool v) {
@@ -169,6 +184,14 @@ void writeRectF(QXmlStreamWriter& w, const QString& name, const QRectF& r) {
     writeFloatElement(w, QStringLiteral("Y"), static_cast<float>(r.y()));
     writeFloatElement(w, QStringLiteral("Width"),  static_cast<float>(r.width()));
     writeFloatElement(w, QStringLiteral("Height"), static_cast<float>(r.height()));
+    w.writeEndElement();
+}
+
+void writeFont(QXmlStreamWriter& w, const QString& name, const core::FontSpec& f) {
+    w.writeStartElement(name);
+    writeTextElement (w, QStringLiteral("FontFamily"), f.familyName);
+    writeFloatElement(w, QStringLiteral("Size"),       f.sizePt);
+    writeTextElement (w, QStringLiteral("Style"),      f.styleString);
     w.writeEndElement();
 }
 

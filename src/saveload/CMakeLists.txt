@@ -3,6 +3,8 @@ add_library(cld_saveload STATIC
     XmlPrimitives.h
     XmlCanonicalWriter.cpp
     XmlCanonicalWriter.h
+    LayerIO.cpp
+    LayerIO.h
     BbmReader.cpp
     BbmReader.h
     BbmWriter.cpp

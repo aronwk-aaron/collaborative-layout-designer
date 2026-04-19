@@ -1,5 +1,7 @@
 #pragma once
 
+#include "../core/FontSpec.h"
+
 #include <QColor>
 #include <QPoint>
 #include <QPointF>
@@ -35,6 +37,7 @@ QColor  readColor(QXmlStreamReader& r);
 QPoint  readPoint(QXmlStreamReader& r);
 QPointF readPointF(QXmlStreamReader& r);
 QRectF  readRectF(QXmlStreamReader& r);
+core::FontSpec readFont(QXmlStreamReader& r, int dataVersion);
 
 // ---------- writers ----------
 
@@ -48,5 +51,6 @@ void writeColor(QXmlStreamWriter& w, const QString& name, const QColor& c);
 void writePoint(QXmlStreamWriter& w, const QString& name, QPoint p);
 void writePointF(QXmlStreamWriter& w, const QString& name, QPointF p);
 void writeRectF(QXmlStreamWriter& w, const QString& name, const QRectF& r);
+void writeFont(QXmlStreamWriter& w, const QString& name, const core::FontSpec& f);
 
 }

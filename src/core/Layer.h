@@ -2,7 +2,8 @@
 
 #include "Ids.h"
 
-#include <string>
+#include <QColor>
+#include <QString>
 
 namespace cld::core {
 
@@ -12,30 +13,30 @@ enum class LayerKind {
     Text,
     Area,
     Ruler,
-    AnchoredText,
+    AnchoredText,  // fork-only, stored in sidecar
+};
+
+struct HullProperties {
+    bool   displayHulls = false;
+    QColor color = Qt::black;
+    int    thickness = 1;
 };
 
 class Layer {
 public:
     virtual ~Layer() = default;
 
-    LayerId     id() const { return id_; }
-    LayerKind   kind() const { return kind_; }
-    const std::string& name() const { return name_; }
-    bool        visible() const { return visible_; }
+    virtual LayerKind kind() const = 0;
 
-    void setName(std::string name) { name_ = std::move(name); }
-    void setVisible(bool v) { visible_ = v; }
+    // Mirrors upstream's <Layer type="..." id="..."> attributes + Name/Visible/Transparency.
+    QString guid;              // upstream SaveLoadManager.UniqueId rendered as string
+    QString name;
+    bool    visible = true;
+    int     transparency = 100;  // percent, v5+ upstream
+    HullProperties hull;         // v9+ upstream
 
 protected:
-    Layer(LayerId id, LayerKind kind, std::string name)
-        : id_(id), kind_(kind), name_(std::move(name)) {}
-
-private:
-    LayerId     id_{};
-    LayerKind   kind_ = LayerKind::Brick;
-    std::string name_;
-    bool        visible_ = true;
+    Layer() = default;
 };
 
 }
