@@ -13,6 +13,7 @@ target_link_libraries(cld_ui
         cld_saveload
         cld_parts
         cld_rendering
+        cld_edit
         Qt6::Core
         Qt6::Gui
         Qt6::Widgets

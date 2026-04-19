@@ -36,7 +36,14 @@ QGraphicsItemGroup* makeGroup(QGraphicsScene& scene) {
     return g;
 }
 
-void addBrickLayer(const core::LayerBrick& L, QGraphicsItemGroup* group, parts::PartsLibrary& lib) {
+// Metadata keys attached to each brick QGraphicsItem via setData(). Used by
+// the edit pipeline to look up the mutated brick on mouse release / key press.
+constexpr int kBrickDataLayerIndex = 0;
+constexpr int kBrickDataGuid       = 1;
+constexpr int kBrickDataKind       = 2;  // value: "brick" to distinguish from other items
+
+void addBrickLayer(const core::LayerBrick& L, QGraphicsItemGroup* group, parts::PartsLibrary& lib,
+                   int layerIndex) {
     for (const auto& brick : L.bricks) {
         // BlueBrick bakes the color suffix into the PartNumber string itself
         // (e.g. "3811.1" for a blue 32x32 baseplate, or just "TABLE96X190"
@@ -62,32 +69,37 @@ void addBrickLayer(const core::LayerBrick& L, QGraphicsItemGroup* group, parts::
                             studToPx(brick.displayArea.height()));
         const QPointF centerPx = areaPx.center();
 
+        QGraphicsItem* item = nullptr;
         if (meta && !meta->gifFilePath.isEmpty()) {
             QPixmap pm(meta->gifFilePath);
             if (!pm.isNull()) {
-                auto* item = new QGraphicsPixmapItem(pm);
-                item->setTransformationMode(Qt::SmoothTransformation);
-                // Pixmap natural size is already 8 px/stud; rotate around its
-                // center, then translate so its center lands on the brick's
-                // world-center.
-                item->setOffset(-pm.width() / 2.0, -pm.height() / 2.0);
-                item->setTransformOriginPoint(0, 0);
-                item->setRotation(brick.orientation);
-                item->setPos(centerPx);
-                item->setZValue(brick.altitude);
-                group->addToGroup(item);
-                continue;
+                auto* p = new QGraphicsPixmapItem(pm);
+                p->setTransformationMode(Qt::SmoothTransformation);
+                p->setOffset(-pm.width() / 2.0, -pm.height() / 2.0);
+                p->setTransformOriginPoint(0, 0);
+                p->setRotation(brick.orientation);
+                p->setPos(centerPx);
+                p->setZValue(brick.altitude);
+                item = p;
             }
         }
+        if (!item) {
+            // Fallback placeholder: dashed rectangle in the brick's AABB so the
+            // layout shape still shows when a part GIF is missing.
+            auto* r = new QGraphicsRectItem(areaPx);
+            QPen pen(QColor(200, 80, 80));
+            pen.setStyle(Qt::DashLine);
+            r->setPen(pen);
+            r->setBrush(QBrush(QColor(255, 200, 200, 80)));
+            item = r;
+        }
 
-        // Fallback placeholder: dashed rectangle in the brick's AABB so the
-        // layout shape still shows when a part GIF is missing.
-        auto* rect = new QGraphicsRectItem(areaPx);
-        QPen pen(QColor(200, 80, 80));
-        pen.setStyle(Qt::DashLine);
-        rect->setPen(pen);
-        rect->setBrush(QBrush(QColor(255, 200, 200, 80)));
-        group->addToGroup(rect);
+        item->setFlag(QGraphicsItem::ItemIsSelectable, true);
+        item->setFlag(QGraphicsItem::ItemIsMovable,    true);
+        item->setData(kBrickDataLayerIndex, layerIndex);
+        item->setData(kBrickDataGuid,       brick.guid);
+        item->setData(kBrickDataKind,       QStringLiteral("brick"));
+        group->addToGroup(item);
     }
 }
 
@@ -175,7 +187,7 @@ void SceneBuilder::addLayer(const core::Layer& L, int layerIndex) {
             // surface a visibility toggle later — no-op if nothing to render.
             break;
         case core::LayerKind::Brick:
-            addBrickLayer(static_cast<const core::LayerBrick&>(L), group, parts_);
+            addBrickLayer(static_cast<const core::LayerBrick&>(L), group, parts_, layerIndex);
             break;
         case core::LayerKind::Text:
             addTextLayer(static_cast<const core::LayerText&>(L), group);

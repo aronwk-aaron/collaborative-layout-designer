@@ -1,8 +1,11 @@
 #pragma once
 
 #include <QMainWindow>
+#include <QString>
 
 #include <memory>
+
+class QAction;
 
 namespace cld::parts { class PartsLibrary; }
 
@@ -19,18 +22,31 @@ public:
 
     bool openFile(const QString& path);
 
+protected:
+    void closeEvent(QCloseEvent* e) override;
+
 private slots:
     void onOpen();
+    bool onSave();
+    bool onSaveAs();
     void onZoomIn();
     void onZoomOut();
     void onFitToView();
 
 private:
     void setupMenus();
+    void updateTitle();
+    bool maybeSave();              // prompts on dirty close
+    bool writeMapTo(const QString& path);
 
     parts::PartsLibrary& parts_;
     MapView*    mapView_   = nullptr;
     LayerPanel* layerPanel_ = nullptr;
+
+    QString currentFilePath_;
+    int     cleanUndoIndex_ = 0;   // index at which the stack is "clean"
+    QAction* undoAct_ = nullptr;
+    QAction* redoAct_ = nullptr;
 };
 
 }
