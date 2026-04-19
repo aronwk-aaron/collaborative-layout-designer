@@ -40,7 +40,16 @@ double studToPx(double s) { return s * kPx; }
 
 QGraphicsItemGroup* makeGroup(QGraphicsScene& scene) {
     auto* g = new QGraphicsItemGroup();
+    // QGraphicsItemGroup defaults to handlesChildEvents=true AND is itself
+    // Selectable+Movable+HasContents. All three cause the group to
+    // swallow clicks and/or get selected instead of the child item we
+    // actually care about. Strip all three so clicks pass straight through
+    // to the child pixmap/rect/line items beneath.
     g->setHandlesChildEvents(false);
+    g->setFiltersChildEvents(false);
+    g->setFlag(QGraphicsItem::ItemIsSelectable, false);
+    g->setFlag(QGraphicsItem::ItemIsMovable,    false);
+    g->setFlag(QGraphicsItem::ItemHasNoContents, true);
     scene.addItem(g);
     return g;
 }
