@@ -47,9 +47,11 @@ int main(int argc, char** argv) {
     if (argc > 1) {
         window.openFile(QString::fromLocal8Bit(argv[1]));
     } else {
-        // No file argument: reopen whatever the user had open last session.
+        // No file argument: reopen whatever the user had open last session —
+        // but first check for a crash-recovery autosave.
         const QString last = QSettings().value(QStringLiteral("recent/lastFile")).toString();
-        if (!last.isEmpty() && QFile::exists(last)) {
+        const bool restored = window.restoreAutosaveIfAny(last);
+        if (!restored && !last.isEmpty() && QFile::exists(last)) {
             window.openFile(last);
         }
     }

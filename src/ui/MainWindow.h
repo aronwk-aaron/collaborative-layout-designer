@@ -79,6 +79,21 @@ private:
     QComboBox* rotCombo_  = nullptr;
 
     class QMenu* recentMenu_ = nullptr;
+
+    // Auto-save: flushes the current map to a sidecar file every N seconds if
+    // the undo stack is dirty. On startup, if an autosave file is newer than
+    // the last-opened file, we offer to restore it (see restoreAutosaveIfAny).
+    class QTimer* autosaveTimer_ = nullptr;
+    void performAutosave();
+public:
+    // Returns the path where the autosave file lives for the current session
+    // (AppDataLocation/autosave.bbm). Public so main.cpp can check on startup.
+    static QString autosavePath();
+    // Offers to restore the autosave if it exists and is newer than lastFile.
+    // Called from main.cpp before openFile()ing the recent file. Returns true
+    // if the user accepted the restore (in which case main.cpp should skip
+    // reopening lastFile).
+    bool restoreAutosaveIfAny(const QString& lastFile);
 };
 
 }

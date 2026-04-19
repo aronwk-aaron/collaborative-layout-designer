@@ -52,7 +52,9 @@
 #include <QMenu>
 #include <QPlainTextEdit>
 #include <QSettings>
+#include <QStandardPaths>
 #include <QStatusBar>
+#include <QTime>
 #include <QTimer>
 #include <QHBoxLayout>
 #include <QToolBar>
@@ -297,6 +299,14 @@ MainWindow::MainWindow(parts::PartsLibrary& parts, QWidget* parent)
     };
     connect(mapView_->undoStack(), &QUndoStack::indexChanged, this, [refreshDims](int){ refreshDims(); });
     QTimer::singleShot(0, this, refreshDims);
+
+    // Auto-save: 60s tick, writes to AppDataLocation/autosave.bbm whenever
+    // the undo stack is dirty. Cheap enough to run unconditionally; the
+    // writeMapTo path is the same used for manual saves.
+    autosaveTimer_ = new QTimer(this);
+    autosaveTimer_->setInterval(60 * 1000);
+    connect(autosaveTimer_, &QTimer::timeout, this, &MainWindow::performAutosave);
+    autosaveTimer_->start();
 
     statusBar()->showMessage(
         tr("Parts library: %1 parts indexed").arg(parts_.partCount()));
@@ -877,6 +887,8 @@ bool MainWindow::writeMapTo(const QString& path) {
     statusBar()->showMessage(tr("Saved %1").arg(path), 3000);
     QSettings().setValue(QString::fromLatin1(kLastFileKey), path);
     pushRecentFile(path);
+    // Manual save supersedes any autosave for the session.
+    QFile::remove(autosavePath());
     return true;
 }
 
@@ -1097,6 +1109,47 @@ void MainWindow::pushRecentFile(const QString& path) {
     while (list.size() > kRecentMax) list.removeLast();
     s.setValue(kRecentListKey, list);
     rebuildRecentMenu();
+}
+
+QString MainWindow::autosavePath() {
+    const QString dir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    QDir().mkpath(dir);
+    return dir + QStringLiteral("/autosave.bbm");
+}
+
+void MainWindow::performAutosave() {
+    if (!mapView_->currentMap() || mapView_->undoStack()->isClean()) return;
+    const QString path = autosavePath();
+    auto res = saveload::writeBbm(*mapView_->currentMap(), path);
+    if (res.ok) {
+        // Keep a note of what file the autosave corresponds to so the startup
+        // prompt can mention the original filename.
+        QSettings().setValue(QStringLiteral("autosave/sourceFile"), currentFilePath_);
+        statusBar()->showMessage(tr("Autosaved (%1)").arg(QTime::currentTime().toString("HH:mm:ss")), 2000);
+    }
+}
+
+bool MainWindow::restoreAutosaveIfAny(const QString& lastFile) {
+    const QString path = autosavePath();
+    if (!QFile::exists(path)) return false;
+    const QFileInfo ai(path);
+    if (!lastFile.isEmpty()) {
+        const QFileInfo li(lastFile);
+        if (li.exists() && li.lastModified() >= ai.lastModified()) return false;
+    }
+    const QString source = QSettings().value(QStringLiteral("autosave/sourceFile")).toString();
+    const auto btn = QMessageBox::question(
+        this, tr("Restore autosave?"),
+        tr("An unsaved layout from the last session was recovered:\n%1\n\n"
+           "Original file: %2\n"
+           "Restore it?")
+            .arg(path, source.isEmpty() ? tr("(new file)") : source),
+        QMessageBox::Yes | QMessageBox::No);
+    if (btn != QMessageBox::Yes) return false;
+    openFile(path);
+    currentFilePath_ = source;   // so a subsequent Save overwrites the original
+    updateTitle();
+    return true;
 }
 
 void MainWindow::onZoomIn()  { mapView_->scale(1.2, 1.2); }
