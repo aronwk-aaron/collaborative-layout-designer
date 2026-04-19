@@ -313,14 +313,18 @@ MainWindow::MainWindow(parts::PartsLibrary& parts, QWidget* parent)
         }
         out.nbItems = total;
 
-        QString dir = moduleLibraryPanel_->libraryPath();
+        // Read the current module-library folder from QSettings so we pick
+        // up any change the user just made in Preferences → Library (the
+        // ModuleLibraryPanel caches its path_ from construction time, so
+        // its libraryPath() can lag the live setting). Fall back to the
+        // panel's value, then to <AppData>/modules.
+        QString dir = QSettings().value(QStringLiteral("modules/libraryPath")).toString();
+        if (dir.isEmpty()) dir = moduleLibraryPanel_->libraryPath();
         if (dir.isEmpty()) {
-            // No folder configured yet — default to <AppData>/modules and
-            // persist it so subsequent saves/loads use the same location.
             dir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)
                   + QStringLiteral("/modules");
-            moduleLibraryPanel_->setLibraryPath(dir);
         }
+        moduleLibraryPanel_->setLibraryPath(dir);  // sync panel + persist
         // Ensure the directory exists BEFORE we try to write into it. Show a
         // specific error (instead of the writeBbm "no such file" one) if we
         // can't create it — user can then fix permissions or pick another
@@ -992,6 +996,13 @@ void MainWindow::setupMenus() {
         mapView_->setSnapStepStuds(s.value(QStringLiteral("snapStepStuds"), 0.0).toDouble());
         mapView_->setRotationStepDegrees(s.value(QStringLiteral("rotationStepDegrees"), 90.0).toDouble());
         s.endGroup();
+        // Re-point the Module Library panel at whatever folder the user
+        // just chose, otherwise its cached path_ stays stale and
+        // save-to-library + library listing use the old folder.
+        const QString libDir = QSettings().value(QStringLiteral("modules/libraryPath")).toString();
+        if (!libDir.isEmpty() && libDir != moduleLibraryPanel_->libraryPath()) {
+            moduleLibraryPanel_->setLibraryPath(libDir);
+        }
     });
 
     // ----- Map menu -----
