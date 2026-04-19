@@ -14,3 +14,4 @@ include(GoogleTest)
 
 add_subdirectory(saveload)
 add_subdirectory(parts)
+add_subdirectory(rendering)
