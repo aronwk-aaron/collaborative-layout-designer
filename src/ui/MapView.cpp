@@ -67,7 +67,53 @@ bool isRulerItem(const QGraphicsItem* it) {
 
 double studToPx() { return rendering::SceneBuilder::kPixelsPerStud; }
 
-}
+}  // namespace
+
+// Dedicated overlay item: a single scene item that paints the selection
+// outline around every currently-selected brick/text/ruler. Living in the
+// scene itself guarantees it actually renders — it's just another
+// QGraphicsItem that Qt paints in its normal pass. Huge z-value so it's
+// always on top of everything else. Updated from refreshSelectionOverlay()
+// whenever scene()->selectionChanged fires.
+class SelectionOverlay : public QGraphicsItem {
+public:
+    SelectionOverlay() {
+        setZValue(1e9);
+        setFlag(QGraphicsItem::ItemIsSelectable, false);
+        setFlag(QGraphicsItem::ItemIsMovable,    false);
+    }
+
+    QRectF boundingRect() const override {
+        // Huge rect so Qt always includes us in the paint region.
+        return QRectF(-1e6, -1e6, 2e6, 2e6);
+    }
+
+    void paint(QPainter* p, const QStyleOptionGraphicsItem*, QWidget*) override {
+        if (polys_.isEmpty()) return;
+        p->save();
+        p->setRenderHint(QPainter::Antialiasing, true);
+
+        QPen outer(QColor(0, 0, 0, 230)); outer.setWidthF(5.0); outer.setCosmetic(true);
+        outer.setJoinStyle(Qt::MiterJoin);
+        QPen inner(QColor(255, 215, 0)); inner.setWidthF(2.0); inner.setCosmetic(true);
+        inner.setJoinStyle(Qt::MiterJoin);
+        const QBrush fill(QColor(255, 215, 0, 80));
+
+        for (const QPolygonF& poly : polys_) {
+            p->setPen(outer); p->setBrush(Qt::NoBrush); p->drawPolygon(poly);
+            p->setPen(inner); p->setBrush(fill);        p->drawPolygon(poly);
+        }
+        p->restore();
+    }
+
+    void setOutlines(QList<QPolygonF> polys) {
+        polys_ = std::move(polys);
+        update();
+    }
+
+private:
+    QList<QPolygonF> polys_;
+};
 
 MapView::MapView(parts::PartsLibrary& parts, QWidget* parent)
     : QGraphicsView(parent), parts_(parts) {
@@ -87,11 +133,15 @@ MapView::MapView(parts::PartsLibrary& parts, QWidget* parent)
     auto* scene = new QGraphicsScene(this);
     scene->setBackgroundBrush(QColor(100, 149, 237));
     setScene(scene);
-    // Scene selection changes -> force a viewport repaint so drawForeground
-    // repaints the highlight -> also relay as our own selectionChanged
-    // signal so the MainWindow status bar can update.
+
+    // Selection overlay: a persistent scene item that paints outlines
+    // around every selected brick. Lives with the highest z-value so it's
+    // always on top of bricks/text/rulers.
+    selectionOverlay_ = new SelectionOverlay();
+    scene->addItem(selectionOverlay_);
+
     connect(scene, &QGraphicsScene::selectionChanged, this, [this]{
-        viewport()->update();
+        refreshSelectionOverlay();
         emit selectionChanged();
     });
 
@@ -103,6 +153,7 @@ MapView::MapView(parts::PartsLibrary& parts, QWidget* parent)
     connect(undoStack_.get(), &QUndoStack::indexChanged, this, [this](int){
         if (map_) {
             builder_->build(*map_);
+            refreshSelectionOverlay();
             viewport()->update();
         }
     });
@@ -185,48 +236,22 @@ void MapView::drawBackground(QPainter* painter, const QRectF& rect) {
     }
 }
 
-void MapView::drawForeground(QPainter* painter, const QRectF& rect) {
-    QGraphicsView::drawForeground(painter, rect);
-    const auto sel = scene()->selectedItems();
-    if (sel.isEmpty()) return;
-
-    painter->save();
-    painter->setRenderHint(QPainter::Antialiasing, true);
-
-    // High-contrast double stroke like highway sign highlighters: a fat
-    // dark backer that shows against light bricks, with a thin bright
-    // yellow line on top that shows against dark bricks. Both cosmetic so
-    // width stays constant as the user zooms in and out. Plus a faint
-    // translucent fill to flag the item body itself.
-    QPen outer(QColor(0, 0, 0, 230));
-    outer.setWidthF(5.0);
-    outer.setCosmetic(true);
-    outer.setJoinStyle(Qt::MiterJoin);
-    QPen inner(QColor(255, 215, 0));
-    inner.setWidthF(2.0);
-    inner.setCosmetic(true);
-    inner.setJoinStyle(Qt::MiterJoin);
-
-    for (QGraphicsItem* it : sel) {
-        if (!it) continue;
-        // Use sceneBoundingRect so we always get a visible AABB in scene
-        // coords even if the item's local boundingRect is thin (lines,
-        // ellipses). For rotated bricks this means the outline is the
-        // axis-aligned enclosing box, not the rotated polygon — we trade
-        // that for "always visible" reliability.
-        QRectF r = it->sceneBoundingRect();
+void MapView::refreshSelectionOverlay() {
+    if (!selectionOverlay_) return;
+    QList<QPolygonF> polys;
+    for (QGraphicsItem* it : scene()->selectedItems()) {
+        if (!it || it == selectionOverlay_) continue;
+        QRectF r = it->boundingRect();
+        if (r.isEmpty()) r = it->sceneBoundingRect();   // lines/ellipses
+        QPolygonF poly = it->mapToScene(r);
         if (r.width() < 1.0 || r.height() < 1.0) {
-            // Degenerate (zero-height line etc.) — inflate to a clickable area.
-            r.adjust(-3.0, -3.0, 3.0, 3.0);
+            // Degenerate — inflate into a visible rect.
+            r = QRectF(it->scenePos(), QSizeF(0, 0)).adjusted(-6, -6, 6, 6);
+            poly = QPolygonF(r);
         }
-        painter->setPen(outer);
-        painter->setBrush(Qt::NoBrush);
-        painter->drawRect(r);
-        painter->setPen(inner);
-        painter->setBrush(QColor(255, 215, 0, 70));
-        painter->drawRect(r);
+        polys.append(poly);
     }
-    painter->restore();
+    static_cast<SelectionOverlay*>(selectionOverlay_)->setOutlines(std::move(polys));
 }
 
 std::vector<MapView::BrickOriginSnapshot> MapView::selectedBrickSnapshots() const {
@@ -286,15 +311,15 @@ ConnectionSnapResult computeConnectionSnap(
     const QSet<QString>& movingGuids,
     const QString& draggedPart,
     float   draggedOrientation,
-    QPointF draggedCenter) {
+    QPointF draggedCenter,
+    double  thresholdStuds) {
 
     ConnectionSnapResult out;
 
     auto meta = lib.metadata(draggedPart);
     if (!meta || meta->connections.isEmpty()) return out;
 
-    constexpr double kThresholdStuds = 4.0;
-    double  bestDist = kThresholdStuds;
+    double  bestDist = thresholdStuds;
     QPointF bestTargetWorld;
     double  bestTargetAngle = 0.0;
     QPointF bestDraggedLocal;
@@ -333,7 +358,7 @@ ConnectionSnapResult computeConnectionSnap(
         }
     }
 
-    if (bestDist >= kThresholdStuds) return out;
+    if (bestDist >= thresholdStuds) return out;
 
     // Align angles: dragged.localAngle + newOrient == target.worldAngle + 180.
     double newOrient = bestTargetAngle + 180.0 - bestDraggedLocalAngle;
@@ -371,19 +396,15 @@ void MapView::commitDragIfMoved() {
         entries.push_back(e);
     }
 
-    // Snap each brick's final top-left to the configured stud step.
-    if (snapStepStuds_ > 0.0) {
-        for (auto& e : entries) {
-            e.afterTopLeft.setX(std::round(e.afterTopLeft.x() / snapStepStuds_) * snapStepStuds_);
-            e.afterTopLeft.setY(std::round(e.afterTopLeft.y() / snapStepStuds_) * snapStepStuds_);
-        }
-    }
-
-    // Connection snap (single-brick drag only — ambiguous for multi).
+    // Connection snap runs FIRST and overrides grid snap — the user asked
+    // for this explicitly. We search using the raw (un-grid-snapped) drop
+    // position so nearby connections are discoverable even if the grid
+    // would have pulled the brick away. Only single-brick drags are
+    // supported (multi-select has no natural "primary" brick).
+    bool connectionSnapped = false;
     std::optional<edit::RotateBricksCommand::Entry> connectionRotate;
     if (entries.size() == 1) {
         const auto& e = entries.front();
-        // Locate the brick to pull its part number + current orientation.
         if (auto* L = map_->layers()[e.ref.layerIndex].get();
             L && L->kind() == core::LayerKind::Brick) {
             const auto& BL = static_cast<const core::LayerBrick&>(*L);
@@ -392,8 +413,14 @@ void MapView::commitDragIfMoved() {
                 const QPointF proposedCentre = e.afterTopLeft
                     + QPointF(b.displayArea.width() / 2.0, b.displayArea.height() / 2.0);
                 QSet<QString> moving; moving.insert(e.ref.guid);
+                // Threshold: at least 4 studs, or wider than the current
+                // grid snap step so grid snap can't pull the brick out of
+                // connection range. When live grid snap is off, stay
+                // conservative at 4 studs.
+                const double threshold = std::max(4.0, snapStepStuds_);
                 auto snap = computeConnectionSnap(*map_, parts_, moving,
-                                                   b.partNumber, b.orientation, proposedCentre);
+                                                   b.partNumber, b.orientation,
+                                                   proposedCentre, threshold);
                 if (snap.applied) {
                     entries.front().afterTopLeft = snap.newCenter
                         - QPointF(b.displayArea.width() / 2.0, b.displayArea.height() / 2.0);
@@ -404,9 +431,21 @@ void MapView::commitDragIfMoved() {
                         re.afterOrientation  = snap.newOrientation;
                         connectionRotate = re;
                     }
+                    connectionSnapped = true;
                 }
                 break;
             }
+        }
+    }
+
+    // Grid snap only applies to entries the connection snap didn't claim.
+    // When connectionSnapped is true on a single-brick drag, we leave that
+    // exact connection-aligned position alone. Multi-brick drags still
+    // grid-snap because connection search is skipped above.
+    if (snapStepStuds_ > 0.0 && !connectionSnapped) {
+        for (auto& e : entries) {
+            e.afterTopLeft.setX(std::round(e.afterTopLeft.x() / snapStepStuds_) * snapStepStuds_);
+            e.afterTopLeft.setY(std::round(e.afterTopLeft.y() / snapStepStuds_) * snapStepStuds_);
         }
     }
 

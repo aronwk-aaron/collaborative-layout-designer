@@ -92,7 +92,6 @@ signals:
 protected:
     void wheelEvent(QWheelEvent* e) override;
     void drawBackground(QPainter* painter, const QRectF& rect) override;
-    void drawForeground(QPainter* painter, const QRectF& rect) override;
     void mousePressEvent(QMouseEvent* e) override;
     void mouseMoveEvent(QMouseEvent* e) override;
     void mouseReleaseEvent(QMouseEvent* e) override;
@@ -146,6 +145,12 @@ private:
     // tool is active. Released-position pairs with this to create the ruler.
     bool    drawingRuler_ = false;
     QPointF rulerStart_;
+
+    // Live overlay item that paints outlines around every selected item.
+    // Lives in the scene with a very high z-value so it's always on top.
+    // Redrawn whenever scene()->selectionChanged fires.
+    class SelectionOverlay* selectionOverlay_ = nullptr;
+    void refreshSelectionOverlay();
 };
 
 }
