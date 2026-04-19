@@ -3,34 +3,36 @@
 #include <QDockWidget>
 #include <QString>
 
+class QComboBox;
 class QLineEdit;
-class QTreeWidget;
-class QTreeWidgetItem;
+class QListWidget;
+class QListWidgetItem;
 
 namespace cld::parts { class PartsLibrary; }
 
 namespace cld::ui {
 
-// Dock panel listing all parts in the library, grouped by subfolder category,
-// with a live filter field. Double-clicking a part emits partActivated(key),
-// which MainWindow handles by pushing an AddBrickCommand at the view centre.
+// Dock panel showing parts in a thumbnail grid (QListView::IconMode).
+// Top strip: category dropdown + live text filter. Double-click (or
+// Enter) on a thumbnail activates the part.
 class PartsBrowser : public QDockWidget {
     Q_OBJECT
 public:
     explicit PartsBrowser(parts::PartsLibrary& lib, QWidget* parent = nullptr);
 
-    void rebuild();   // re-read the library and repopulate the tree
+    void rebuild();   // re-read the library and repopulate
 
 signals:
     void partActivated(const QString& key);
 
 private:
-    void applyFilter(const QString& text);
+    void applyFilter();
     QString categoryForPath(const QString& absPath) const;
 
     parts::PartsLibrary& lib_;
-    QLineEdit* filter_ = nullptr;
-    QTreeWidget* tree_ = nullptr;
+    QComboBox*    category_ = nullptr;
+    QLineEdit*    filter_   = nullptr;
+    QListWidget*  grid_     = nullptr;
 };
 
 }

@@ -2,17 +2,32 @@
 
 #include "../parts/PartsLibrary.h"
 
+#include <QComboBox>
 #include <QDir>
 #include <QFileInfo>
-#include <QHash>
-#include <QHeaderView>
+#include <QHBoxLayout>
+#include <QIcon>
 #include <QLineEdit>
-#include <QTreeWidget>
-#include <QTreeWidgetItem>
+#include <QListWidget>
+#include <QListWidgetItem>
+#include <QPixmap>
+#include <QSet>
+#include <QSize>
 #include <QVBoxLayout>
 #include <QWidget>
 
 namespace cld::ui {
+
+namespace {
+
+constexpr int kIconSize = 64;
+
+// Store the part key on each item so we can retrieve it on activation.
+constexpr int kPartKeyRole = Qt::UserRole + 1;
+// Store the category (derived from parent folder) for filtering.
+constexpr int kCategoryRole = Qt::UserRole + 2;
+
+}
 
 PartsBrowser::PartsBrowser(parts::PartsLibrary& lib, QWidget* parent)
     : QDockWidget(tr("Parts"), parent), lib_(lib) {
@@ -20,80 +35,112 @@ PartsBrowser::PartsBrowser(parts::PartsLibrary& lib, QWidget* parent)
     auto* col = new QVBoxLayout(host);
     col->setContentsMargins(4, 4, 4, 4);
 
-    filter_ = new QLineEdit(host);
-    filter_->setPlaceholderText(tr("Filter (part number / description)"));
-    col->addWidget(filter_);
+    auto* row = new QHBoxLayout();
+    category_ = new QComboBox(host);
+    category_->setMinimumContentsLength(12);
+    row->addWidget(category_, 1);
 
-    tree_ = new QTreeWidget(host);
-    tree_->setHeaderLabels({ tr("Part"), tr("Description") });
-    tree_->header()->setStretchLastSection(true);
-    tree_->setRootIsDecorated(true);
-    col->addWidget(tree_);
+    filter_ = new QLineEdit(host);
+    filter_->setPlaceholderText(tr("Filter…"));
+    row->addWidget(filter_, 2);
+    col->addLayout(row);
+
+    grid_ = new QListWidget(host);
+    grid_->setViewMode(QListView::IconMode);
+    grid_->setResizeMode(QListView::Adjust);
+    grid_->setMovement(QListView::Static);
+    grid_->setIconSize(QSize(kIconSize, kIconSize));
+    grid_->setSpacing(6);
+    grid_->setUniformItemSizes(true);
+    grid_->setWordWrap(true);
+    grid_->setTextElideMode(Qt::ElideRight);
+    grid_->setGridSize(QSize(kIconSize + 24, kIconSize + 32));
+    col->addWidget(grid_);
 
     setWidget(host);
 
-    connect(filter_, &QLineEdit::textChanged, this, &PartsBrowser::applyFilter);
-    connect(tree_, &QTreeWidget::itemActivated, this, [this](QTreeWidgetItem* item, int) {
-        const QString key = item->data(0, Qt::UserRole).toString();
-        if (!key.isEmpty()) emit partActivated(key);
+    connect(category_, &QComboBox::currentTextChanged, this, [this](const QString&) { applyFilter(); });
+    connect(filter_,   &QLineEdit::textChanged,        this, [this](const QString&) { applyFilter(); });
+    connect(grid_, &QListWidget::itemActivated, this, [this](QListWidgetItem* it) {
+        if (it) emit partActivated(it->data(kPartKeyRole).toString());
     });
 
     rebuild();
 }
 
 QString PartsBrowser::categoryForPath(const QString& absPath) const {
-    // Infer category from the parent directory name. Matches the BlueBrickParts
-    // layout where each top-level folder (Baseplate, Monorail, 4DBrix, ...) is a
-    // category; nested subfolders fold up to the nearest category folder.
     const QFileInfo f(absPath);
     const QString parent = f.dir().dirName();
     return parent.isEmpty() ? tr("Other") : parent;
 }
 
 void PartsBrowser::rebuild() {
-    tree_->clear();
-    QHash<QString, QTreeWidgetItem*> cats;
+    grid_->clear();
+    const QString previousCat = category_->currentText();
+    category_->blockSignals(true);
+    category_->clear();
+    category_->addItem(tr("All categories"));
+    QSet<QString> cats;
+
     const auto keys = lib_.keys();
     for (const QString& key : keys) {
         auto meta = lib_.metadata(key);
         if (!meta) continue;
         const QString cat = categoryForPath(meta->xmlFilePath);
-        QTreeWidgetItem*& catNode = cats[cat];
-        if (!catNode) {
-            catNode = new QTreeWidgetItem(tree_);
-            catNode->setText(0, cat);
-            catNode->setExpanded(false);
-        }
-        auto* leaf = new QTreeWidgetItem(catNode);
-        leaf->setText(0, key);
-        QString desc;
+        cats.insert(cat);
+
+        auto* item = new QListWidgetItem(key);
+        // Description as tooltip (preferring English).
         for (const auto& d : meta->descriptions) {
-            if (d.language == QStringLiteral("en")) { desc = d.text; break; }
+            if (d.language == QStringLiteral("en")) {
+                item->setToolTip(QStringLiteral("%1\n%2").arg(key, d.text));
+                break;
+            }
         }
-        if (desc.isEmpty() && !meta->descriptions.isEmpty()) {
-            desc = meta->descriptions.front().text;
+        if (item->toolTip().isEmpty() && !meta->descriptions.isEmpty()) {
+            item->setToolTip(QStringLiteral("%1\n%2").arg(key, meta->descriptions.front().text));
         }
-        leaf->setText(1, desc);
-        leaf->setData(0, Qt::UserRole, key);
+
+        // Icon from the part GIF, scaled to kIconSize.
+        if (!meta->gifFilePath.isEmpty()) {
+            QPixmap pm(meta->gifFilePath);
+            if (!pm.isNull()) {
+                item->setIcon(QIcon(pm.scaled(kIconSize, kIconSize,
+                                              Qt::KeepAspectRatio,
+                                              Qt::SmoothTransformation)));
+            }
+        }
+
+        item->setData(kPartKeyRole,  key);
+        item->setData(kCategoryRole, cat);
+        grid_->addItem(item);
     }
-    tree_->sortItems(0, Qt::AscendingOrder);
+
+    // Sort category list and re-select what was active.
+    QStringList sortedCats = cats.values();
+    std::sort(sortedCats.begin(), sortedCats.end());
+    category_->addItems(sortedCats);
+    const int restoreIdx = category_->findText(previousCat);
+    category_->setCurrentIndex(restoreIdx > 0 ? restoreIdx : 0);
+    category_->blockSignals(false);
+
+    grid_->sortItems(Qt::AscendingOrder);
+    applyFilter();
 }
 
-void PartsBrowser::applyFilter(const QString& text) {
-    const QString needle = text.trimmed().toLower();
-    for (int i = 0; i < tree_->topLevelItemCount(); ++i) {
-        QTreeWidgetItem* cat = tree_->topLevelItem(i);
-        bool anyChildVisible = false;
-        for (int j = 0; j < cat->childCount(); ++j) {
-            QTreeWidgetItem* c = cat->child(j);
-            const bool match = needle.isEmpty()
-                || c->text(0).toLower().contains(needle)
-                || c->text(1).toLower().contains(needle);
-            c->setHidden(!match);
-            if (match) anyChildVisible = true;
-        }
-        cat->setHidden(!anyChildVisible);
-        if (!needle.isEmpty() && anyChildVisible) cat->setExpanded(true);
+void PartsBrowser::applyFilter() {
+    const QString needle = filter_->text().trimmed().toLower();
+    const QString cat = category_->currentText();
+    const bool allCats = (category_->currentIndex() <= 0);
+    for (int i = 0; i < grid_->count(); ++i) {
+        auto* it = grid_->item(i);
+        const QString key = it->data(kPartKeyRole).toString();
+        const QString itemCat = it->data(kCategoryRole).toString();
+        const bool catOk  = allCats || (itemCat == cat);
+        const bool textOk = needle.isEmpty()
+            || key.toLower().contains(needle)
+            || it->toolTip().toLower().contains(needle);
+        it->setHidden(!(catOk && textOk));
     }
 }
 

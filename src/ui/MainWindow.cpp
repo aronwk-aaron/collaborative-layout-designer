@@ -136,8 +136,9 @@ bool MainWindow::openFile(const QString& path) {
     // the .bbm in vanilla BlueBrick between our writes).
     const QString sidecarPath = saveload::sidecarPathFor(path);
     if (QFile::exists(sidecarPath)) {
-        QFile bf(path); bf.open(QIODevice::ReadOnly);
-        const QByteArray bbmBytes = bf.readAll();
+        QFile bf(path);
+        QByteArray bbmBytes;
+        if (bf.open(QIODevice::ReadOnly)) bbmBytes = bf.readAll();
         auto sres = saveload::readSidecar(sidecarPath, bbmBytes, result.map->sidecar);
         if (sres.ok && sres.hashMismatch) {
             statusBar()->showMessage(
@@ -181,12 +182,14 @@ bool MainWindow::writeMapTo(const QString& path) {
     // any stale sidecar if the map no longer has any.
     const QString sidecarPath = saveload::sidecarPathFor(path);
     if (!map->sidecar.isEmpty()) {
-        QFile bf(path); bf.open(QIODevice::ReadOnly);
-        const QByteArray bbmBytes = bf.readAll();
-        QString err;
-        if (!saveload::writeSidecar(sidecarPath, bbmBytes, map->sidecar, &err)) {
-            QMessageBox::warning(this, tr("Sidecar save failed"),
-                tr("The .bbm saved successfully but the sidecar failed:\n%1").arg(err));
+        QFile bf(path);
+        if (bf.open(QIODevice::ReadOnly)) {
+            const QByteArray bbmBytes = bf.readAll();
+            QString err;
+            if (!saveload::writeSidecar(sidecarPath, bbmBytes, map->sidecar, &err)) {
+                QMessageBox::warning(this, tr("Sidecar save failed"),
+                    tr("The .bbm saved successfully but the sidecar failed:\n%1").arg(err));
+            }
         }
     } else if (QFile::exists(sidecarPath)) {
         QFile::remove(sidecarPath);
