@@ -55,6 +55,9 @@ Thumbs.db
 .claude/settings.local.json
 local_*.cmake
 
+# Read-only upstream BlueBrick checkout for porting reference
+.reference/
+
 # Packaging artifacts
 *.dmg
 *.msi

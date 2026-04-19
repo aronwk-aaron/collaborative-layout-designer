@@ -27,4 +27,10 @@ else()
     add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
+include(CTest)
+
 add_subdirectory(src)
+
+if(BUILD_TESTING)
+    add_subdirectory(tests)
+endif()

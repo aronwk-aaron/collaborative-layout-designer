@@ -4,6 +4,8 @@
 
 namespace cld::core { class Map; }
 
+class QIODevice;
+
 namespace cld::saveload {
 
 struct WriteResult {
@@ -11,8 +13,9 @@ struct WriteResult {
     QString error;
 };
 
-// Phase 1 target: write a core::Map out as a vanilla-compatible .bbm file.
-// Fork-only metadata goes to a sidecar .bbm.cld (see SidecarIO).
+// Write a core::Map to a vanilla-compatible .bbm file. Phase 1 writes the map
+// header + empty <Layers/>. Layer serialization arrives in subsequent commits.
 WriteResult writeBbm(const core::Map& map, const QString& path);
+WriteResult writeBbm(const core::Map& map, QIODevice& output);
 
 }
