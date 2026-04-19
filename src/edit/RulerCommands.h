@@ -42,6 +42,26 @@ private:
     int index_ = -1;
 };
 
+// Attach or detach a ruler endpoint to a brick. `endpointIndex` is 0 or 1 on
+// linear rulers (point1/point2), ignored on circular rulers (the circle
+// centre is always the attached endpoint). Passing an empty brickGuid
+// detaches. Upstream terminology: Attach / Detach ruler.
+class AttachRulerCommand : public QUndoCommand {
+public:
+    AttachRulerCommand(core::Map& map, int layerIndex, QString rulerGuid,
+                       int endpointIndex, QString brickGuid,
+                       QUndoCommand* parent = nullptr);
+    void undo() override;
+    void redo() override;
+private:
+    core::Map& map_;
+    int layerIndex_;
+    QString rulerGuid_;
+    int endpointIndex_;
+    QString before_;
+    QString after_;
+};
+
 // Edit an existing ruler's base properties (color, line thickness, display
 // toggles, guideline color/thickness/dash, unit, measure font/colour). The
 // ruler's geometry (endpoints / centre / radius / attachments) is not

@@ -148,4 +148,68 @@ void EditRulerItemCommand::undo() {
     if (auto* r = findRuler(map_, layerIndex_, guid_)) apply(*r, before_);
 }
 
+// ----- AttachRulerCommand -----
+
+namespace {
+core::LayerRuler* attachLookup(core::Map& m, int idx) {
+    if (idx < 0 || idx >= static_cast<int>(m.layers().size())) return nullptr;
+    auto* L = m.layers()[idx].get();
+    return (L && L->kind() == core::LayerKind::Ruler)
+        ? static_cast<core::LayerRuler*>(L) : nullptr;
+}
+const QString& attachGuidOf(const core::LayerRuler::AnyRuler& r) {
+    return r.kind == core::RulerKind::Linear ? r.linear.guid : r.circular.guid;
+}
+}
+
+AttachRulerCommand::AttachRulerCommand(core::Map& map, int layerIndex, QString rulerGuid,
+                                       int endpointIndex, QString brickGuid,
+                                       QUndoCommand* parent)
+    : QUndoCommand(parent), map_(map), layerIndex_(layerIndex),
+      rulerGuid_(std::move(rulerGuid)), endpointIndex_(endpointIndex), after_(std::move(brickGuid)) {
+    // Snapshot the pre-existing attachment so undo restores it.
+    if (auto* L = attachLookup(map, layerIndex)) {
+        for (auto& any : L->rulers) {
+            const QString& g = attachGuidOf(any);
+            if (g != rulerGuid_) continue;
+            if (any.kind == core::RulerKind::Linear) {
+                before_ = (endpointIndex_ == 0) ? any.linear.attachedBrick1Id
+                                                : any.linear.attachedBrick2Id;
+            } else {
+                before_ = any.circular.attachedBrickId;
+            }
+            break;
+        }
+    }
+    setText(after_.isEmpty() ? QObject::tr("Detach ruler")
+                             : QObject::tr("Attach ruler"));
+}
+
+namespace {
+void applyAttachment(core::LayerRuler::AnyRuler& any, int endpointIndex,
+                     const QString& brickGuid) {
+    if (any.kind == core::RulerKind::Linear) {
+        if (endpointIndex == 0) any.linear.attachedBrick1Id = brickGuid;
+        else                    any.linear.attachedBrick2Id = brickGuid;
+    } else {
+        any.circular.attachedBrickId = brickGuid;
+    }
+}
+}
+
+void AttachRulerCommand::redo() {
+    if (auto* L = attachLookup(map_, layerIndex_)) {
+        for (auto& any : L->rulers) {
+            if (attachGuidOf(any) == rulerGuid_) { applyAttachment(any, endpointIndex_, after_); break; }
+        }
+    }
+}
+void AttachRulerCommand::undo() {
+    if (auto* L = attachLookup(map_, layerIndex_)) {
+        for (auto& any : L->rulers) {
+            if (attachGuidOf(any) == rulerGuid_) { applyAttachment(any, endpointIndex_, before_); break; }
+        }
+    }
+}
+
 }

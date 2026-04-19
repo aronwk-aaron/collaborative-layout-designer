@@ -1,6 +1,7 @@
 #include "MainWindow.h"
 
 #include "LayerPanel.h"
+#include "FindDialog.h"
 #include "LibraryPathsDialog.h"
 #include "PreferencesDialog.h"
 #include "MapView.h"
@@ -52,6 +53,7 @@
 #include <QPlainTextEdit>
 #include <QSettings>
 #include <QStatusBar>
+#include <QTimer>
 #include <QHBoxLayout>
 #include <QToolBar>
 #include <QToolButton>
@@ -276,6 +278,26 @@ MainWindow::MainWindow(parts::PartsLibrary& parts, QWidget* parent)
     connect(mapView_->undoStack(), &QUndoStack::cleanChanged,
             this, [this](bool){ updateTitle(); });
 
+    // Permanent right-side status label showing map dimensions in studs,
+    // modules (96 studs), and meters (1 stud = 8 mm). Upstream shows the same
+    // trio in its status bar. Refreshed on every undo-stack change so it
+    // stays live while the user edits.
+    auto* dimsLabel = new QLabel(this);
+    statusBar()->addPermanentWidget(dimsLabel);
+    auto refreshDims = [this, dimsLabel]{
+        if (!mapView_->currentMap()) { dimsLabel->clear(); return; }
+        const QRectF bb = mapView_->scene()->itemsBoundingRect();
+        if (bb.isEmpty()) { dimsLabel->setText(tr("empty")); return; }
+        const double studsPerPx = 1.0 / 8.0;
+        const double wStud = bb.width()  * studsPerPx;
+        const double hStud = bb.height() * studsPerPx;
+        dimsLabel->setText(tr("%1 × %2 studs  (%3 × %4 m)")
+            .arg(wStud, 0, 'f', 0).arg(hStud, 0, 'f', 0)
+            .arg(wStud * 0.008, 0, 'f', 2).arg(hStud * 0.008, 0, 'f', 2));
+    };
+    connect(mapView_->undoStack(), &QUndoStack::indexChanged, this, [refreshDims](int){ refreshDims(); });
+    QTimer::singleShot(0, this, refreshDims);
+
     statusBar()->showMessage(
         tr("Parts library: %1 parts indexed").arg(parts_.partCount()));
 
@@ -406,6 +428,16 @@ void MainWindow::setupMenus() {
     auto* selNoneAct = edit->addAction(tr("Deselect All"));
     selNoneAct->setShortcut(QKeySequence(tr("Ctrl+Shift+A")));
     connect(selNoneAct, &QAction::triggered, [this]{ mapView_->deselectAll(); });
+
+    auto* findAct = edit->addAction(tr("&Find && Replace..."));
+    findAct->setShortcut(QKeySequence::Find);
+    connect(findAct, &QAction::triggered, this, [this]{
+        // Modeless: construct, show, let the user close it later. The dialog
+        // deletes itself on close via the WA_DeleteOnClose attribute.
+        auto* dlg = new FindDialog(*mapView_, this);
+        dlg->setAttribute(Qt::WA_DeleteOnClose);
+        dlg->show();
+    });
 
     auto* selPathAct = edit->addAction(tr("Select &Path"));
     selPathAct->setShortcut(QKeySequence(tr("Ctrl+P")));

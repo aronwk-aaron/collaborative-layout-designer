@@ -223,6 +223,50 @@ bool editRulerDialog(QWidget* parent, core::Map& map, int layerIndex,
     measureSize->setValue(base->measureFont.sizePt);
     form->addRow(QObject::tr("Label size (pt):"), measureSize);
 
+    // Attachment section. Linear rulers carry two endpoint attachments
+    // (attachedBrick1Id / attachedBrick2Id), circular rulers a single
+    // attachedBrickId. We display the current attachment brick guid(s) and
+    // provide a Detach button per endpoint so the user can release them.
+    // (Attaching via dialog requires picking a brick — we don't have a mini-
+    // picker yet, so attach is done via the Map context menu.)
+    QString att1 = rulerLayer(map, layerIndex)
+        ? QString() : QString();
+    if (auto* L = rulerLayer(map, layerIndex)) {
+        for (auto& any : L->rulers) {
+            const QString& g = (any.kind == core::RulerKind::Linear) ? any.linear.guid : any.circular.guid;
+            if (g != rulerGuid) continue;
+            if (any.kind == core::RulerKind::Linear) {
+                auto* btn1 = new QPushButton(any.linear.attachedBrick1Id.isEmpty()
+                    ? QObject::tr("Not attached") : QObject::tr("Detach endpoint 1"), &dlg);
+                btn1->setEnabled(!any.linear.attachedBrick1Id.isEmpty());
+                QObject::connect(btn1, &QPushButton::clicked, &dlg, [&map, layerIndex, rulerGuid, &undoStack, &dlg]{
+                    undoStack.push(new edit::AttachRulerCommand(map, layerIndex, rulerGuid, 0, QString()));
+                    dlg.accept();  // close: renderer needs to rebuild
+                });
+                form->addRow(QObject::tr("Endpoint 1:"), btn1);
+                auto* btn2 = new QPushButton(any.linear.attachedBrick2Id.isEmpty()
+                    ? QObject::tr("Not attached") : QObject::tr("Detach endpoint 2"), &dlg);
+                btn2->setEnabled(!any.linear.attachedBrick2Id.isEmpty());
+                QObject::connect(btn2, &QPushButton::clicked, &dlg, [&map, layerIndex, rulerGuid, &undoStack, &dlg]{
+                    undoStack.push(new edit::AttachRulerCommand(map, layerIndex, rulerGuid, 1, QString()));
+                    dlg.accept();
+                });
+                form->addRow(QObject::tr("Endpoint 2:"), btn2);
+            } else {
+                auto* btn = new QPushButton(any.circular.attachedBrickId.isEmpty()
+                    ? QObject::tr("Not attached") : QObject::tr("Detach centre"), &dlg);
+                btn->setEnabled(!any.circular.attachedBrickId.isEmpty());
+                QObject::connect(btn, &QPushButton::clicked, &dlg, [&map, layerIndex, rulerGuid, &undoStack, &dlg]{
+                    undoStack.push(new edit::AttachRulerCommand(map, layerIndex, rulerGuid, 0, QString()));
+                    dlg.accept();
+                });
+                form->addRow(QObject::tr("Attachment:"), btn);
+            }
+            break;
+        }
+    }
+    (void)att1;
+
     auto* bb = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
     form->addRow(bb);
     QObject::connect(bb, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);

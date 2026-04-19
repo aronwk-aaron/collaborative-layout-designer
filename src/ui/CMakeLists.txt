@@ -17,6 +17,8 @@ add_library(cld_ui STATIC
     EditDialogs.h
     PreferencesDialog.cpp
     PreferencesDialog.h
+    FindDialog.cpp
+    FindDialog.h
 )
 
 target_link_libraries(cld_ui
