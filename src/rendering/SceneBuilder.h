@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QHash>
+#include <QList>
 #include <QString>
 
 class QGraphicsItem;
@@ -13,7 +14,11 @@ namespace cld::rendering {
 
 // Populates a QGraphicsScene with items for each layer of a core::Map.
 // Scene units: 1 stud = 8 pixels (matches BlueBrickParts GIF sampling).
-// Keeps a per-layer group of items so visibility can toggle at layer granularity.
+//
+// Items are added directly to the scene (no QGraphicsItemGroup wrapper) so
+// hit-testing / selection never gets intercepted by a parent group. We
+// track per-layer items in a QHash<int, QList<QGraphicsItem*>> for
+// visibility toggling.
 class SceneBuilder {
 public:
     static constexpr int kPixelsPerStud = 8;
@@ -39,10 +44,10 @@ private:
 
     QGraphicsScene& scene_;
     parts::PartsLibrary& parts_;
-    QHash<int, QGraphicsItem*> layerGroups_;     // layer index -> item group root
-    QHash<QString, QGraphicsItem*> brickByGuid_; // brick.guid -> QGraphicsItem*
-    QGraphicsItem* venueGroup_ = nullptr;
-    QGraphicsItem* worldLabelGroup_ = nullptr;
+    QHash<int, QList<QGraphicsItem*>> itemsByLayer_;  // layer index -> direct scene items
+    QHash<QString, QGraphicsItem*>    brickByGuid_;   // brick.guid -> QGraphicsItem*
+    QList<QGraphicsItem*>             venueItems_;
+    QList<QGraphicsItem*>             worldLabelItems_;
 };
 
 }

@@ -41,21 +41,30 @@ constexpr int kPx = SceneBuilder::kPixelsPerStud;
 
 double studToPx(double s) { return s * kPx; }
 
-QGraphicsItemGroup* makeGroup(QGraphicsScene& scene) {
-    auto* g = new QGraphicsItemGroup();
-    // QGraphicsItemGroup defaults to handlesChildEvents=true AND is itself
-    // Selectable+Movable+HasContents. All three cause the group to
-    // swallow clicks and/or get selected instead of the child item we
-    // actually care about. Strip all three so clicks pass straight through
-    // to the child pixmap/rect/line items beneath.
-    g->setHandlesChildEvents(false);
-    g->setFiltersChildEvents(false);
-    g->setFlag(QGraphicsItem::ItemIsSelectable, false);
-    g->setFlag(QGraphicsItem::ItemIsMovable,    false);
-    g->setFlag(QGraphicsItem::ItemHasNoContents, true);
-    scene.addItem(g);
-    return g;
-}
+// Sink passed to each addXxxLayer() helper. We add items directly to the
+// scene here (no QGraphicsItemGroup parent) so hit-testing, selection, and
+// event dispatch can't be intercepted by a container. The sink also
+// remembers every item it spawns so visibility toggles can iterate them,
+// and applies a per-layer baseZ so layer ordering is preserved.
+struct LayerSink {
+    QGraphicsScene& scene;
+    QList<QGraphicsItem*>& items;
+    double baseZ = 0.0;
+    bool   visible = true;
+
+    void add(QGraphicsItem* it) {
+        if (!it) return;
+        // Only set zValue if the caller hasn't already set one (pixmap
+        // items use brick.altitude for z so they self-layer within the
+        // same layer). We bias everything by baseZ so higher layers
+        // outrank lower layers regardless of per-item z.
+        if (it->zValue() == 0.0) it->setZValue(baseZ);
+        else                     it->setZValue(baseZ + it->zValue());
+        it->setVisible(visible);
+        scene.addItem(it);
+        items.append(it);
+    }
+};
 
 // Metadata keys attached to each brick QGraphicsItem via setData(). Used by
 // the edit pipeline to look up the mutated brick on mouse release / key press.
@@ -132,7 +141,7 @@ protected:
     }
 };
 
-void addBrickLayer(const core::LayerBrick& L, QGraphicsItemGroup* group, parts::PartsLibrary& lib,
+void addBrickLayer(const core::LayerBrick& L, LayerSink& sink, parts::PartsLibrary& lib,
                    int layerIndex, QHash<QString, QGraphicsItem*>& brickByGuid) {
     // Read scene-level render toggles once per layer; all bricks in the same
     // layer share these decisions. Stored under view/ in QSettings.
@@ -249,7 +258,7 @@ void addBrickLayer(const core::LayerBrick& L, QGraphicsItemGroup* group, parts::
             hull->setPen(p);
             hull->setBrush(Qt::NoBrush);
             hull->setZValue(brick.altitude + 0.5);
-            group->addToGroup(hull);
+            sink.add(hull);
         }
 
         // Altitude label centered on the brick — matches vanilla's
@@ -264,7 +273,7 @@ void addBrickLayer(const core::LayerBrick& L, QGraphicsItemGroup* group, parts::
             alt->setPos(centerPx.x() - bb.width() / 2.0,
                         centerPx.y() - bb.height() / 2.0);
             alt->setZValue(brick.altitude + 0.6);
-            group->addToGroup(alt);
+            sink.add(alt);
         }
 
         // Electric circuits — draw a thin coloured line between each pair
@@ -293,11 +302,11 @@ void addBrickLayer(const core::LayerBrick& L, QGraphicsItemGroup* group, parts::
         }
 
         brickByGuid.insert(brick.guid, item);
-        group->addToGroup(item);
+        sink.add(item);
     }
 }
 
-void addTextLayer(const core::LayerText& L, QGraphicsItemGroup* group, int layerIndex) {
+void addTextLayer(const core::LayerText& L, LayerSink& sink, int layerIndex) {
     for (const auto& cell : L.textCells) {
         auto* t = new QGraphicsSimpleTextItem(cell.text);
         QFont f(cell.font.familyName);
@@ -353,17 +362,17 @@ void addTextLayer(const core::LayerText& L, QGraphicsItemGroup* group, int layer
         t->setData(kBrickDataLayerIndex, layerIndex);
         t->setData(kBrickDataGuid,       cell.guid);
         t->setData(kBrickDataKind,       QStringLiteral("text"));
-        group->addToGroup(t);
+        sink.add(t);
     }
 }
 
-void addAreaLayer(const core::LayerArea& L, QGraphicsItemGroup* group) {
+void addAreaLayer(const core::LayerArea& L, LayerSink& sink) {
     const double sizePx = studToPx(L.areaCellSizeInStud);
     for (const auto& cell : L.cells) {
         auto* r = new QGraphicsRectItem(cell.x * sizePx, cell.y * sizePx, sizePx, sizePx);
         r->setPen(Qt::NoPen);
         r->setBrush(QBrush(cell.color));
-        group->addToGroup(r);
+        sink.add(r);
     }
 }
 
@@ -384,7 +393,7 @@ QString formatDistance(double studs, int unit) {
 // Add an ephemeral text label (measurement readout) to the ruler group at
 // the given scene-pixel position, rotated to `rotationDeg`, in the chosen
 // font + colour.
-void addRulerLabel(QGraphicsItemGroup* group, const QString& text,
+void addRulerLabel(LayerSink& sink, const QString& text,
                    QPointF scenePosPx, double rotationDeg,
                    const core::FontSpec& fontSpec, const core::ColorSpec& colorSpec) {
     if (text.isEmpty()) return;
@@ -401,10 +410,10 @@ void addRulerLabel(QGraphicsItemGroup* group, const QString& text,
     tr.rotate(rotationDeg);
     tr.translate(-bb.width() / 2.0, -bb.height() - 4.0);  // sit just above the line
     t->setTransform(tr);
-    group->addToGroup(t);
+    sink.add(t);
 }
 
-void addRulerLayer(const core::LayerRuler& L, QGraphicsItemGroup* group, int layerIndex) {
+void addRulerLayer(const core::LayerRuler& L, LayerSink& sink, int layerIndex) {
     for (const auto& any : L.rulers) {
         if (any.kind == core::RulerKind::Linear) {
             const auto& r = any.linear;
@@ -436,7 +445,7 @@ void addRulerLayer(const core::LayerRuler& L, QGraphicsItemGroup* group, int lay
                             end.x() - nrm.x() * t, end.y() - nrm.y() * t,
                             end.x() + nrm.x() * t, end.y() + nrm.y() * t);
                         g->setPen(gpen);
-                        group->addToGroup(g);
+                        sink.add(g);
                     }
                 }
             }
@@ -450,7 +459,7 @@ void addRulerLayer(const core::LayerRuler& L, QGraphicsItemGroup* group, int lay
             line->setData(kBrickDataLayerIndex, layerIndex);
             line->setData(kBrickDataGuid,       r.guid);
             line->setData(kBrickDataKind,       QStringLiteral("ruler"));
-            group->addToGroup(line);
+            sink.add(line);
 
             // Offset line + connector ticks. Vanilla BlueBrick draws an
             // auxiliary parallel line at `offsetDistance` studs from the main
@@ -471,9 +480,9 @@ void addRulerLayer(const core::LayerRuler& L, QGraphicsItemGroup* group, int lay
                     opn.setWidthF(r.lineThickness);
                     opn.setStyle(Qt::DashLine);
                     off1->setPen(opn); off2->setPen(opn); mid->setPen(opn);
-                    group->addToGroup(off1);
-                    group->addToGroup(off2);
-                    group->addToGroup(mid);
+                    sink.add(off1);
+                    sink.add(off2);
+                    sink.add(mid);
                 }
             }
 
@@ -487,7 +496,7 @@ void addRulerLayer(const core::LayerRuler& L, QGraphicsItemGroup* group, int lay
                 const QPointF mid = (p1px + p2px) / 2.0;
                 const double angle = std::atan2(p2px.y() - p1px.y(), p2px.x() - p1px.x())
                                      * 180.0 / M_PI;
-                addRulerLabel(group, text, mid, angle, r.measureFont, r.measureFontColor);
+                addRulerLabel(sink, text, mid, angle, r.measureFont, r.measureFontColor);
             }
         } else {
             const auto& r = any.circular;
@@ -504,14 +513,14 @@ void addRulerLayer(const core::LayerRuler& L, QGraphicsItemGroup* group, int lay
             el->setData(kBrickDataLayerIndex, layerIndex);
             el->setData(kBrickDataGuid,       r.guid);
             el->setData(kBrickDataKind,       QStringLiteral("ruler"));
-            group->addToGroup(el);
+            sink.add(el);
 
             // Radius label to the right of centre.
             if (r.displayDistance) {
                 const QString text = r.displayUnit
                     ? formatDistance(r.radius, r.unit)
                     : QString::number(r.radius, 'f', 2);
-                addRulerLabel(group, text, QPointF(cPx.x() + rPx, cPx.y()), 0.0,
+                addRulerLabel(sink, text, QPointF(cPx.x() + rPx, cPx.y()), 0.0,
                               r.measureFont, r.measureFontColor);
             }
         }
@@ -528,11 +537,15 @@ SceneBuilder::SceneBuilder(QGraphicsScene& scene, parts::PartsLibrary& parts)
     : scene_(scene), parts_(parts) {}
 
 void SceneBuilder::clear() {
-    for (auto* g : std::as_const(layerGroups_)) scene_.removeItem(g), delete g;
-    layerGroups_.clear();
+    for (auto& list : itemsByLayer_) {
+        for (auto* it : list) { scene_.removeItem(it); delete it; }
+    }
+    itemsByLayer_.clear();
     brickByGuid_.clear();
-    if (venueGroup_)     { scene_.removeItem(venueGroup_); delete venueGroup_; venueGroup_ = nullptr; }
-    if (worldLabelGroup_){ scene_.removeItem(worldLabelGroup_); delete worldLabelGroup_; worldLabelGroup_ = nullptr; }
+    for (auto* it : venueItems_)      { scene_.removeItem(it); delete it; }
+    for (auto* it : worldLabelItems_) { scene_.removeItem(it); delete it; }
+    venueItems_.clear();
+    worldLabelItems_.clear();
 }
 
 void SceneBuilder::build(const core::Map& map) {
@@ -545,36 +558,37 @@ void SceneBuilder::build(const core::Map& map) {
 }
 
 void SceneBuilder::addLayer(const core::Layer& L, int layerIndex) {
-    auto* group = makeGroup(scene_);
-    group->setZValue(layerIndex);      // later layers render on top
-    group->setVisible(L.visible);
-    layerGroups_.insert(layerIndex, group);
+    // Each per-layer item goes DIRECTLY into the scene — no parent group —
+    // so hit-testing / selection / mouse events aren't intercepted by any
+    // container. Per-layer ordering is preserved via baseZ in LayerSink.
+    auto& list = itemsByLayer_[layerIndex];
+    LayerSink sink{ scene_, list, static_cast<double>(layerIndex) * 1000.0, L.visible };
+    const double opacity = std::clamp(L.transparency, 0, 100) / 100.0;
 
     switch (L.kind()) {
         case core::LayerKind::Grid:
             // Grid lines are painted by MapView::drawBackground, not as scene
-            // items. We still create an empty group so the layer panel can
-            // surface a visibility toggle later — no-op if nothing to render.
+            // items. Nothing to add here.
             break;
         case core::LayerKind::Brick:
-            addBrickLayer(static_cast<const core::LayerBrick&>(L), group, parts_, layerIndex, brickByGuid_);
+            addBrickLayer(static_cast<const core::LayerBrick&>(L), sink, parts_, layerIndex, brickByGuid_);
             break;
         case core::LayerKind::Text:
-            addTextLayer(static_cast<const core::LayerText&>(L), group, layerIndex);
+            addTextLayer(static_cast<const core::LayerText&>(L), sink, layerIndex);
             break;
         case core::LayerKind::Area:
-            addAreaLayer(static_cast<const core::LayerArea&>(L), group);
+            addAreaLayer(static_cast<const core::LayerArea&>(L), sink);
             break;
         case core::LayerKind::Ruler:
-            addRulerLayer(static_cast<const core::LayerRuler&>(L), group, layerIndex);
+            addRulerLayer(static_cast<const core::LayerRuler&>(L), sink, layerIndex);
             break;
         case core::LayerKind::AnchoredText:
             break;
     }
 
-    // Apply transparency (0..100 percent in upstream convention).
-    if (L.transparency < 100) {
-        group->setOpacity(L.transparency / 100.0);
+    // Apply per-layer transparency by scaling each item's opacity.
+    if (opacity < 1.0) {
+        for (auto* it : list) it->setOpacity(opacity);
     }
 }
 
@@ -582,11 +596,9 @@ void SceneBuilder::addVenue(const core::Map& map) {
     if (!map.sidecar.venue || !map.sidecar.venue->enabled) return;
     const auto& v = *map.sidecar.venue;
 
-    auto* group = new QGraphicsItemGroup();
-    group->setHandlesChildEvents(false);
-    group->setZValue(-100.0);
-    scene_.addItem(group);
-    venueGroup_ = group;
+    // Venue items live directly in the scene with a fixed low z so they
+    // render beneath every layer. Tracked in venueItems_ for cleanup.
+    LayerSink sink{ scene_, venueItems_, -100000.0, true };
 
     for (const auto& edge : v.edges) {
         if (edge.polyline.size() < 2) continue;
@@ -615,7 +627,7 @@ void SceneBuilder::addVenue(const core::Map& map) {
                 break;
         }
         item->setPen(pen);
-        group->addToGroup(item);
+        sink.add(item);
     }
     for (const auto& ob : v.obstacles) {
         if (ob.polygon.size() < 3) continue;
@@ -626,21 +638,17 @@ void SceneBuilder::addVenue(const core::Map& map) {
         pen.setWidthF(1.0);
         item->setPen(pen);
         item->setBrush(QBrush(QColor(120, 120, 120, 100), Qt::BDiagPattern));
-        group->addToGroup(item);
+        sink.add(item);
     }
 }
 
 void SceneBuilder::addAnchoredLabels(const core::Map& map) {
     if (map.sidecar.anchoredLabels.empty()) return;
 
-    // World-anchored labels live on their own top-level group; brick/group/
-    // module anchors become children of their target so Qt transform
-    // inheritance moves them for free.
-    auto* worldGroup = new QGraphicsItemGroup();
-    worldGroup->setZValue(100.0);
-    worldGroup->setHandlesChildEvents(false);
-    scene_.addItem(worldGroup);
-    worldLabelGroup_ = worldGroup;
+    // World-anchored labels go directly to the scene; brick/group/module
+    // anchors become children of their target so Qt transform inheritance
+    // moves them for free.
+    LayerSink sink{ scene_, worldLabelItems_, 100000.0, true };
 
     for (const auto& lbl : map.sidecar.anchoredLabels) {
         auto* t = new QGraphicsSimpleTextItem(lbl.text);
@@ -662,14 +670,14 @@ void SceneBuilder::addAnchoredLabels(const core::Map& map) {
         }
         // World (or unresolved): position in scene coords.
         t->setPos(lbl.offset * kPx);
-        worldGroup->addToGroup(t);
+        sink.add(t);
     }
 }
 
 bool SceneBuilder::setLayerVisible(int layerIndex, bool visible) {
-    auto it = layerGroups_.find(layerIndex);
-    if (it == layerGroups_.end()) return false;
-    (*it)->setVisible(visible);
+    auto it = itemsByLayer_.find(layerIndex);
+    if (it == itemsByLayer_.end()) return false;
+    for (auto* item : *it) item->setVisible(visible);
     return true;
 }
 
