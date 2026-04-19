@@ -61,6 +61,26 @@ TEST(PartsLibrary, LookupKnownPartMetadata) {
     EXPECT_TRUE(foundEn);
 }
 
+TEST(PartsLibrary, ConnectionsParsedForTrackParts) {
+    if (!librarySubmoduleAvailable()) GTEST_SKIP();
+    parts::PartsLibrary lib;
+    lib.addSearchPath(libraryRoot());
+    lib.scan();
+
+    // Any rail track should have at least two <connexion> entries. Pick the
+    // 4DBrix adapter we already use elsewhere — its XML was verified by hand.
+    const auto meta = lib.metadata(QStringLiteral("TS_ADAPTERCONTINUOUSCURVE.8"));
+    ASSERT_TRUE(meta.has_value());
+    ASSERT_GE(meta->connections.size(), 2);
+    const auto& c0 = meta->connections[0];
+    EXPECT_EQ(c0.type, 1);   // rail
+    EXPECT_NE(c0.position, QPointF());   // non-default position
+    // Position and angle values come straight from the XML; we just verify
+    // they're plausible (within a reasonable stud range for this 4x4 part).
+    EXPECT_LT(std::abs(c0.position.x()), 10.0);
+    EXPECT_LT(std::abs(c0.position.y()), 10.0);
+}
+
 TEST(PartsLibrary, GroupPartsDetected) {
     if (!librarySubmoduleAvailable()) GTEST_SKIP();
 

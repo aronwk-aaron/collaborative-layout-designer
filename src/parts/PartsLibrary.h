@@ -2,12 +2,27 @@
 
 #include <QHash>
 #include <QPixmap>
+#include <QPointF>
 #include <QString>
 #include <QStringList>
 
 #include <optional>
 
 namespace cld::parts {
+
+// Connection types from BlueBrick's palette (see part XML comments):
+//   0 = none, 1 = rail, 2 = road, 3 = monorail standard, 4 = monorail short
+//   curve, ...and a growing long tail of domain-specific types (rollercoaster
+//   tracks, Trixbrix, etc.). Only same-type points may connect.
+//
+// Connection points are stored in each part's LOCAL coord system (in studs,
+// with (0,0) at the part's centre). angleDegrees points "outward" — two
+// connected points should face 180° apart.
+struct PartConnectionPoint {
+    int     type = 0;
+    QPointF position;
+    double  angleDegrees = 0.0;
+};
 
 // One entry in the parts library. Matches the BlueBrick file-naming convention:
 // each part is a `<PartNumber>.<ColorCode>.xml` paired with a matching `.gif`.
@@ -31,7 +46,8 @@ struct PartMetadata {
     QString  gifFilePath;   // may be empty if the image is missing
     QString  author;
     QString  sortingKey;
-    QList<PartDescription> descriptions;
+    QList<PartDescription>     descriptions;
+    QList<PartConnectionPoint> connections;  // from <ConnexionList> in part XML
 };
 
 class PartsLibrary {

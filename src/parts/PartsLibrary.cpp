@@ -28,6 +28,32 @@ void readDescriptions(QXmlStreamReader& r, QList<PartDescription>& out) {
     }
 }
 
+QPointF readPositionBlock(QXmlStreamReader& r) {
+    QPointF p;
+    while (r.readNextStartElement()) {
+        const auto n = r.name();
+        if      (n == QStringLiteral("x")) p.setX(r.readElementText().toDouble());
+        else if (n == QStringLiteral("y")) p.setY(r.readElementText().toDouble());
+        else r.skipCurrentElement();
+    }
+    return p;
+}
+
+void readConnexionList(QXmlStreamReader& r, QList<PartConnectionPoint>& out) {
+    while (r.readNextStartElement()) {
+        if (r.name() != QStringLiteral("connexion")) { r.skipCurrentElement(); continue; }
+        PartConnectionPoint c;
+        while (r.readNextStartElement()) {
+            const auto n = r.name();
+            if      (n == QStringLiteral("type"))     c.type = r.readElementText().toInt();
+            else if (n == QStringLiteral("position")) c.position = readPositionBlock(r);
+            else if (n == QStringLiteral("angle"))    c.angleDegrees = r.readElementText().toDouble();
+            else r.skipCurrentElement();
+        }
+        out.push_back(std::move(c));
+    }
+}
+
 bool parsePartXml(const QString& xmlPath, PartMetadata& out) {
     QFile f(xmlPath);
     if (!f.open(QIODevice::ReadOnly)) return false;
@@ -44,6 +70,7 @@ bool parsePartXml(const QString& xmlPath, PartMetadata& out) {
             if      (n == QStringLiteral("Author"))      out.author = r.readElementText().trimmed();
             else if (n == QStringLiteral("SortingKey")) out.sortingKey = r.readElementText().trimmed();
             else if (n == QStringLiteral("Description")) readDescriptions(r, out.descriptions);
+            else if (n == QStringLiteral("ConnexionList")) readConnexionList(r, out.connections);
             else r.skipCurrentElement();
         }
         return !r.hasError();

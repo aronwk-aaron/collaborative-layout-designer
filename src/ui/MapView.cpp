@@ -33,9 +33,12 @@
 #include <QPainter>
 #include <QPen>
 #include <QPixmap>
+#include <QSet>
 #include <QUndoStack>
 #include <QUuid>
 #include <QWheelEvent>
+
+#include <cmath>
 
 namespace cld::ui {
 
@@ -202,6 +205,98 @@ std::vector<MapView::BrickOriginSnapshot> MapView::selectedBrickSnapshots() cons
 
 void MapView::captureDragStart() { dragStart_ = selectedBrickSnapshots(); }
 
+namespace {
+
+// Rotate a 2D point around the origin by `degrees` (clockwise to match Qt
+// convention used by QGraphicsItem::setRotation).
+QPointF rotatePoint(QPointF p, double degrees) {
+    const double r = degrees * M_PI / 180.0;
+    const double c = std::cos(r), s = std::sin(r);
+    return { p.x() * c - p.y() * s, p.x() * s + p.y() * c };
+}
+
+struct ConnectionSnapResult {
+    bool    applied = false;
+    QPointF newCenter;            // in studs
+    float   newOrientation = 0.0f;
+};
+
+// Look for a connection point on any brick OTHER than those in `movingGuids`
+// that's close (in world stud coords) to one of the dragged brick's
+// connection points. If found, compute the orientation + centre that makes
+// the two connections align (angles opposite, positions coincident).
+// Threshold: 4 studs — close enough to feel intentional.
+ConnectionSnapResult computeConnectionSnap(
+    const core::Map& map,
+    parts::PartsLibrary& lib,
+    const QSet<QString>& movingGuids,
+    const QString& draggedPart,
+    float   draggedOrientation,
+    QPointF draggedCenter) {
+
+    ConnectionSnapResult out;
+
+    auto meta = lib.metadata(draggedPart);
+    if (!meta || meta->connections.isEmpty()) return out;
+
+    constexpr double kThresholdStuds = 4.0;
+    double  bestDist = kThresholdStuds;
+    QPointF bestTargetWorld;
+    double  bestTargetAngle = 0.0;
+    QPointF bestDraggedLocal;
+    double  bestDraggedLocalAngle = 0.0;
+
+    // Static side: gather world connection points from all non-dragged bricks.
+    for (const auto& layerPtr : map.layers()) {
+        if (!layerPtr || layerPtr->kind() != core::LayerKind::Brick) continue;
+        const auto& bl = static_cast<const core::LayerBrick&>(*layerPtr);
+        for (const auto& b : bl.bricks) {
+            if (movingGuids.contains(b.guid)) continue;
+            auto tmeta = lib.metadata(b.partNumber);
+            if (!tmeta) continue;
+            const QPointF tCentre = b.displayArea.center();
+            for (const auto& tc : tmeta->connections) {
+                const QPointF tWorldPos = tCentre + rotatePoint(tc.position, b.orientation);
+                // For each dragged connection, measure distance at the
+                // CURRENT dragged orientation so we only snap when the drop
+                // lands near an existing connection — we don't pull a brick
+                // from the far side of the layout.
+                for (const auto& dc : meta->connections) {
+                    if (dc.type != tc.type || dc.type == 0) continue;
+                    const QPointF dWorldPos =
+                        draggedCenter + rotatePoint(dc.position, draggedOrientation);
+                    const QPointF diff = dWorldPos - tWorldPos;
+                    const double dist = std::hypot(diff.x(), diff.y());
+                    if (dist < bestDist) {
+                        bestDist = dist;
+                        bestTargetWorld = tWorldPos;
+                        bestTargetAngle = tc.angleDegrees + b.orientation;
+                        bestDraggedLocal = dc.position;
+                        bestDraggedLocalAngle = dc.angleDegrees;
+                    }
+                }
+            }
+        }
+    }
+
+    if (bestDist >= kThresholdStuds) return out;
+
+    // Align angles: dragged.localAngle + newOrient == target.worldAngle + 180.
+    double newOrient = bestTargetAngle + 180.0 - bestDraggedLocalAngle;
+    // Normalise to (-180, 180] for tidy storage.
+    while (newOrient >  180.0) newOrient -= 360.0;
+    while (newOrient <= -180.0) newOrient += 360.0;
+    // Solve newCentre: (newCentre + rotate(localConn, newOrient)) == targetWorld.
+    const QPointF newCentre = bestTargetWorld - rotatePoint(bestDraggedLocal, newOrient);
+
+    out.applied = true;
+    out.newCenter = newCentre;
+    out.newOrientation = static_cast<float>(newOrient);
+    return out;
+}
+
+}
+
 void MapView::commitDragIfMoved() {
     if (dragStart_.empty() || !map_) return;
 
@@ -230,12 +325,47 @@ void MapView::commitDragIfMoved() {
         }
     }
 
+    // Connection snap (single-brick drag only — ambiguous for multi).
+    std::optional<edit::RotateBricksCommand::Entry> connectionRotate;
+    if (entries.size() == 1) {
+        const auto& e = entries.front();
+        // Locate the brick to pull its part number + current orientation.
+        if (auto* L = map_->layers()[e.ref.layerIndex].get();
+            L && L->kind() == core::LayerKind::Brick) {
+            const auto& BL = static_cast<const core::LayerBrick&>(*L);
+            for (const auto& b : BL.bricks) {
+                if (b.guid != e.ref.guid) continue;
+                const QPointF proposedCentre = e.afterTopLeft
+                    + QPointF(b.displayArea.width() / 2.0, b.displayArea.height() / 2.0);
+                QSet<QString> moving; moving.insert(e.ref.guid);
+                auto snap = computeConnectionSnap(*map_, parts_, moving,
+                                                   b.partNumber, b.orientation, proposedCentre);
+                if (snap.applied) {
+                    entries.front().afterTopLeft = snap.newCenter
+                        - QPointF(b.displayArea.width() / 2.0, b.displayArea.height() / 2.0);
+                    if (std::abs(snap.newOrientation - b.orientation) > 0.01f) {
+                        edit::RotateBricksCommand::Entry re;
+                        re.ref = e.ref;
+                        re.beforeOrientation = b.orientation;
+                        re.afterOrientation  = snap.newOrientation;
+                        connectionRotate = re;
+                    }
+                }
+                break;
+            }
+        }
+    }
+
     dragStart_.clear();
     if (!entries.empty()) {
-        undoStack_->push(new edit::MoveBricksCommand(*map_, std::move(entries)));
-        // If snapping modified positions, visually refresh so the dropped
-        // items align to grid rather than showing their pre-snap scene pos.
-        if (snapStepStuds_ > 0.0) rebuildScene();
+        if (connectionRotate) {
+            undoStack_->beginMacro(tr("Snap to connection"));
+            undoStack_->push(new edit::MoveBricksCommand(*map_, std::move(entries)));
+            undoStack_->push(new edit::RotateBricksCommand(*map_, { *connectionRotate }));
+            undoStack_->endMacro();
+        } else {
+            undoStack_->push(new edit::MoveBricksCommand(*map_, std::move(entries)));
+        }
     }
 }
 
