@@ -252,28 +252,120 @@ void addAreaLayer(const core::LayerArea& L, QGraphicsItemGroup* group) {
     }
 }
 
+QString formatDistance(double studs, int unit) {
+    // Vanilla's Tools.Distance.Unit enum values:
+    //   0 = studs, 1 = cm, 2 = inches, 3 = modules (64 studs), 4 = LDraw LDU.
+    // 1 stud = 8 mm = 0.8 cm ≈ 0.315 in. 1 stud = 20 LDU. Module size per
+    // upstream = 64 studs.
+    switch (unit) {
+        case 1:  return QStringLiteral("%1 cm").arg(studs * 0.8, 0, 'f', 2);
+        case 2:  return QStringLiteral("%1 in").arg(studs * 0.8 / 2.54, 0, 'f', 2);
+        case 3:  return QStringLiteral("%1 mod").arg(studs / 64.0, 0, 'f', 2);
+        case 4:  return QStringLiteral("%1 LDU").arg(studs * 20.0, 0, 'f', 0);
+        default: return QStringLiteral("%1 studs").arg(studs, 0, 'f', 2);
+    }
+}
+
+// Add an ephemeral text label (measurement readout) to the ruler group at
+// the given scene-pixel position, rotated to `rotationDeg`, in the chosen
+// font + colour.
+void addRulerLabel(QGraphicsItemGroup* group, const QString& text,
+                   QPointF scenePosPx, double rotationDeg,
+                   const core::FontSpec& fontSpec, const core::ColorSpec& colorSpec) {
+    if (text.isEmpty()) return;
+    auto* t = new QGraphicsSimpleTextItem(text);
+    QFont f(fontSpec.familyName);
+    f.setBold(fontSpec.styleString.contains(QStringLiteral("Bold")));
+    f.setItalic(fontSpec.styleString.contains(QStringLiteral("Italic")));
+    f.setPixelSize(std::max(6, static_cast<int>(fontSpec.sizePt * 1.6)));
+    t->setFont(f);
+    t->setBrush(QBrush(colorSpec.color));
+    const QRectF bb = t->boundingRect();
+    QTransform tr;
+    tr.translate(scenePosPx.x(), scenePosPx.y());
+    tr.rotate(rotationDeg);
+    tr.translate(-bb.width() / 2.0, -bb.height() - 4.0);  // sit just above the line
+    t->setTransform(tr);
+    group->addToGroup(t);
+}
+
 void addRulerLayer(const core::LayerRuler& L, QGraphicsItemGroup* group) {
     for (const auto& any : L.rulers) {
         if (any.kind == core::RulerKind::Linear) {
             const auto& r = any.linear;
-            auto* line = new QGraphicsLineItem(
-                studToPx(r.point1.x()), studToPx(r.point1.y()),
-                studToPx(r.point2.x()), studToPx(r.point2.y()));
+            const QPointF p1px(studToPx(r.point1.x()), studToPx(r.point1.y()));
+            const QPointF p2px(studToPx(r.point2.x()), studToPx(r.point2.y()));
+
+            // Guideline dash pattern: the stored list is in LDraw-style length
+            // pairs (dash, gap, dash, gap, ...). Qt uses the same convention,
+            // but expects multiples of pen width on non-cosmetic pens — we
+            // keep them cosmetic for a stable on-screen look.
+            if (r.guidelineThickness > 0 && !r.guidelineDashPattern.empty()) {
+                // Perpendicular tick marks at each endpoint (upstream convention).
+                const QPointF dir = p2px - p1px;
+                const double len = std::hypot(dir.x(), dir.y());
+                if (len > 0.001) {
+                    const QPointF nrm(-dir.y() / len, dir.x() / len);  // perpendicular unit
+                    constexpr double kTickStuds = 4.0;
+                    const double t = studToPx(kTickStuds);
+                    QPen gpen(r.guidelineColor.color);
+                    gpen.setWidthF(r.guidelineThickness);
+                    gpen.setCosmetic(true);
+                    QList<qreal> dashes;
+                    for (float d : r.guidelineDashPattern) dashes.append(d);
+                    if (dashes.size() < 2) { dashes = { 4.0, 4.0 }; }
+                    gpen.setDashPattern(dashes);
+
+                    for (const QPointF& end : { p1px, p2px }) {
+                        auto* g = new QGraphicsLineItem(
+                            end.x() - nrm.x() * t, end.y() - nrm.y() * t,
+                            end.x() + nrm.x() * t, end.y() + nrm.y() * t);
+                        g->setPen(gpen);
+                        group->addToGroup(g);
+                    }
+                }
+            }
+
+            // Main line.
+            auto* line = new QGraphicsLineItem(p1px.x(), p1px.y(), p2px.x(), p2px.y());
             QPen pen(r.color.color);
             pen.setWidthF(r.lineThickness);
             line->setPen(pen);
             group->addToGroup(line);
+
+            // Distance label at the line midpoint.
+            if (r.displayDistance) {
+                const QPointF delta = r.point2 - r.point1;
+                const double distStuds = std::hypot(delta.x(), delta.y());
+                const QString text = r.displayUnit
+                    ? formatDistance(distStuds, r.unit)
+                    : QString::number(distStuds, 'f', 2);
+                const QPointF mid = (p1px + p2px) / 2.0;
+                const double angle = std::atan2(p2px.y() - p1px.y(), p2px.x() - p1px.x())
+                                     * 180.0 / M_PI;
+                addRulerLabel(group, text, mid, angle, r.measureFont, r.measureFontColor);
+            }
         } else {
             const auto& r = any.circular;
             const double rPx = studToPx(r.radius);
+            const QPointF cPx(studToPx(r.center.x()), studToPx(r.center.y()));
+
             auto* el = new QGraphicsEllipseItem(
-                studToPx(r.center.x()) - rPx, studToPx(r.center.y()) - rPx,
-                2 * rPx, 2 * rPx);
+                cPx.x() - rPx, cPx.y() - rPx, 2 * rPx, 2 * rPx);
             QPen pen(r.color.color);
             pen.setWidthF(r.lineThickness);
             el->setPen(pen);
             el->setBrush(Qt::NoBrush);
             group->addToGroup(el);
+
+            // Radius label to the right of centre.
+            if (r.displayDistance) {
+                const QString text = r.displayUnit
+                    ? formatDistance(r.radius, r.unit)
+                    : QString::number(r.radius, 'f', 2);
+                addRulerLabel(group, text, QPointF(cPx.x() + rPx, cPx.y()), 0.0,
+                              r.measureFont, r.measureFontColor);
+            }
         }
     }
 }
