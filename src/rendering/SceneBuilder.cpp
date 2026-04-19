@@ -38,24 +38,18 @@ QGraphicsItemGroup* makeGroup(QGraphicsScene& scene) {
 
 void addBrickLayer(const core::LayerBrick& L, QGraphicsItemGroup* group, parts::PartsLibrary& lib) {
     for (const auto& brick : L.bricks) {
-        // Upstream's brick pipeline stores the axis-aligned bounding box after
-        // rotation in brick.displayArea (in studs). We key the parts library
-        // with "<PartNumber>.<ColorCode>" — but the .bbm only carries the part
-        // number (no color split on disk; the color lives in the filename
-        // convention). Look up by iterating available colors until we find
-        // a match, preferring color "1" (white) then falling back to any.
-        // Phase 2 will introduce per-part color tracking.
-        const QString pn = brick.partNumber;
-        std::optional<parts::PartMetadata> meta;
-        // Try common colors in order; if none, scan keys with matching prefix.
-        for (const auto& c : { QStringLiteral("1"), QStringLiteral("8"),
-                               QStringLiteral("15"), QStringLiteral("2"),
-                               QStringLiteral("0"), QStringLiteral("14") }) {
-            if (auto m = lib.metadata(pn + QLatin1Char('.') + c)) { meta = m; break; }
-        }
+        // BlueBrick bakes the color suffix into the PartNumber string itself
+        // (e.g. "3811.1" for a blue 32x32 baseplate, or just "TABLE96X190"
+        // for an uncolored composite). Lookup is case-insensitive because
+        // upstream stores the part number upper-cased in .bbm but the vendored
+        // library uses mixed case on disk.
+        std::optional<parts::PartMetadata> meta = lib.metadata(brick.partNumber);
         if (!meta) {
+            // Fallback: match by prefix so a .bbm referencing "3811" picks up
+            // any color-specific variant.
+            const QString needle = brick.partNumber.toLower() + QLatin1Char('.');
             for (const QString& key : lib.keys()) {
-                if (key.startsWith(pn + QLatin1Char('.'))) {
+                if (key.toLower().startsWith(needle)) {
                     meta = lib.metadata(key);
                     break;
                 }

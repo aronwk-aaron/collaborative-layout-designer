@@ -9,16 +9,14 @@ namespace cld::parts {
 
 namespace {
 
-// Split a filename like "TS_TRACK18S.8.xml" into ("TS_TRACK18S", "8").
-// Returns std::nullopt if the basename doesn't have the expected two dots.
-std::optional<std::pair<QString, QString>> splitPartKey(const QString& baseName) {
-    // Strategy: find the last '.' (separates color code from extension is already
-    // stripped) — the name we get is already "PartNumber.ColorCode". Split on the
-    // *last* '.' to handle part numbers that themselves contain dots (rare but
-    // possible in 4DBrix naming).
+// Split a filename stem like "TS_TRACK18S.8" into ("TS_TRACK18S", "8"),
+// or "table96x190" into ("table96x190", ""). Trailing dot is rejected.
+std::pair<QString, QString> splitPartKey(const QString& baseName) {
     const int dot = baseName.lastIndexOf(QLatin1Char('.'));
-    if (dot <= 0 || dot == baseName.size() - 1) return std::nullopt;
-    return std::make_pair(baseName.left(dot), baseName.mid(dot + 1));
+    if (dot <= 0 || dot == baseName.size() - 1) {
+        return { baseName, QString() };
+    }
+    return { baseName.left(dot), baseName.mid(dot + 1) };
 }
 
 void readDescriptions(QXmlStreamReader& r, QList<PartDescription>& out) {
@@ -75,12 +73,12 @@ int PartsLibrary::scan() {
                 stem.chop(4);
             }
 
-            const auto split = splitPartKey(stem);
-            if (!split) continue;
+            const auto [partNum, colorCode] = splitPartKey(stem);
+            if (partNum.isEmpty()) continue;
 
             PartMetadata meta;
-            meta.partNumber = split->first;
-            meta.colorCode  = split->second;
+            meta.partNumber = partNum;
+            meta.colorCode  = colorCode;
             meta.xmlFilePath = xmlPath;
 
             // Sibling GIF (same basename).
@@ -89,7 +87,12 @@ int PartsLibrary::scan() {
 
             if (!parsePartXml(xmlPath, meta)) continue;
 
-            const QString key = QStringLiteral("%1.%2").arg(meta.partNumber, meta.colorCode);
+            // Library keys are the full stem (case-folded) so lookup matches
+            // both "TABLE96X190" and "3811.1" naturally — the stored key
+            // always includes the color suffix when the filename has one.
+            const QString key = colorCode.isEmpty()
+                ? partNum.toLower()
+                : QStringLiteral("%1.%2").arg(partNum, colorCode).toLower();
             if (!index_.contains(key)) {
                 index_.insert(key, meta);
                 ++added;
@@ -100,7 +103,7 @@ int PartsLibrary::scan() {
 }
 
 std::optional<PartMetadata> PartsLibrary::metadata(const QString& key) const {
-    auto it = index_.constFind(key);
+    auto it = index_.constFind(key.toLower());
     if (it == index_.constEnd()) return std::nullopt;
     return it.value();
 }
@@ -110,13 +113,14 @@ QStringList PartsLibrary::keys() const {
 }
 
 QPixmap PartsLibrary::pixmap(const QString& key) {
-    auto cached = pixmapCache_.constFind(key);
+    const QString lk = key.toLower();
+    auto cached = pixmapCache_.constFind(lk);
     if (cached != pixmapCache_.constEnd()) return cached.value();
-    auto meta = metadata(key);
+    auto meta = metadata(lk);
     if (!meta || meta->gifFilePath.isEmpty()) return {};
     QPixmap pm;
     pm.load(meta->gifFilePath);
-    pixmapCache_.insert(key, pm);
+    pixmapCache_.insert(lk, pm);
     return pm;
 }
 
