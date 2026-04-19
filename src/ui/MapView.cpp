@@ -196,9 +196,20 @@ void MapView::commitDragIfMoved() {
         entries.push_back(e);
     }
 
+    // Snap each brick's final top-left to the configured stud step.
+    if (snapStepStuds_ > 0.0) {
+        for (auto& e : entries) {
+            e.afterTopLeft.setX(std::round(e.afterTopLeft.x() / snapStepStuds_) * snapStepStuds_);
+            e.afterTopLeft.setY(std::round(e.afterTopLeft.y() / snapStepStuds_) * snapStepStuds_);
+        }
+    }
+
     dragStart_.clear();
     if (!entries.empty()) {
         undoStack_->push(new edit::MoveBricksCommand(*map_, std::move(entries)));
+        // If snapping modified positions, visually refresh so the dropped
+        // items align to grid rather than showing their pre-snap scene pos.
+        if (snapStepStuds_ > 0.0) rebuildScene();
     }
 }
 

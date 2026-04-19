@@ -22,6 +22,7 @@
 #include <QAction>
 #include <QApplication>
 #include <QCloseEvent>
+#include <QComboBox>
 #include <QCoreApplication>
 #include <QDir>
 #include <QFile>
@@ -30,14 +31,20 @@
 #include <QGraphicsItem>
 #include <QGraphicsScene>
 #include <QInputDialog>
+#include <QLabel>
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QSettings>
 #include <QStatusBar>
+#include <QToolBar>
 #include <QUndoStack>
 #include <QUuid>
 
 namespace cld::ui {
+
+namespace {
+constexpr const char* kLastFileKey = "recent/lastFile";
+}
 
 MainWindow::MainWindow(parts::PartsLibrary& parts, QWidget* parent)
     : QMainWindow(parent), parts_(parts) {
@@ -78,6 +85,76 @@ MainWindow::MainWindow(parts::PartsLibrary& parts, QWidget* parent)
             this, &MainWindow::onImportBbmAsModule);
 
     setupMenus();
+
+    // ----- Toolbar: snap + rotation step presets -----
+    auto* toolbar = addToolBar(tr("Edit tools"));
+    toolbar->setObjectName(QStringLiteral("toolbar.edit"));
+    toolbar->setMovable(true);
+    toolbar->addWidget(new QLabel(tr("  Snap: "), this));
+    snapCombo_ = new QComboBox(this);
+    // (display text, stud step). 0 = off.
+    const std::vector<std::pair<QString, double>> snapOptions = {
+        { tr("off"),    0.0 },
+        { QStringLiteral("32"), 32.0 },
+        { QStringLiteral("16"), 16.0 },
+        { QStringLiteral("8"),   8.0 },
+        { QStringLiteral("4"),   4.0 },
+        { QStringLiteral("2"),   2.0 },
+        { QStringLiteral("1"),   1.0 },
+        { QStringLiteral("0.5"), 0.5 },
+    };
+    for (const auto& o : snapOptions) snapCombo_->addItem(o.first, o.second);
+    toolbar->addWidget(snapCombo_);
+
+    toolbar->addSeparator();
+    toolbar->addWidget(new QLabel(tr("  Rotate: "), this));
+    rotCombo_ = new QComboBox(this);
+    const std::vector<std::pair<QString, double>> rotOptions = {
+        { QStringLiteral("90°"),    90.0 },
+        { QStringLiteral("45°"),    45.0 },
+        { QStringLiteral("22.5°"),  22.5 },
+        { QStringLiteral("11.25°"), 11.25 },
+        { QStringLiteral("5°"),     5.0 },
+        { QStringLiteral("1°"),     1.0 },
+    };
+    for (const auto& o : rotOptions) rotCombo_->addItem(o.first, o.second);
+    toolbar->addWidget(rotCombo_);
+
+    // Restore from QSettings.
+    {
+        QSettings s;
+        s.beginGroup(QStringLiteral("editing"));
+        const double snap = s.value(QStringLiteral("snapStepStuds"), 0.0).toDouble();
+        const double rot  = s.value(QStringLiteral("rotationStepDegrees"), 90.0).toDouble();
+        s.endGroup();
+        mapView_->setSnapStepStuds(snap);
+        mapView_->setRotationStepDegrees(rot);
+        for (int i = 0; i < snapCombo_->count(); ++i) {
+            if (qFuzzyCompare(snapCombo_->itemData(i).toDouble() + 1.0, snap + 1.0)) {
+                snapCombo_->setCurrentIndex(i); break;
+            }
+        }
+        for (int i = 0; i < rotCombo_->count(); ++i) {
+            if (qFuzzyCompare(rotCombo_->itemData(i).toDouble(), rot)) {
+                rotCombo_->setCurrentIndex(i); break;
+            }
+        }
+    }
+    connect(snapCombo_, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, [this](int){
+        const double v = snapCombo_->currentData().toDouble();
+        mapView_->setSnapStepStuds(v);
+        QSettings s; s.beginGroup(QStringLiteral("editing"));
+        s.setValue(QStringLiteral("snapStepStuds"), v); s.endGroup();
+    });
+    connect(rotCombo_, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, [this](int){
+        const double v = rotCombo_->currentData().toDouble();
+        mapView_->setRotationStepDegrees(v);
+        QSettings s; s.beginGroup(QStringLiteral("editing"));
+        s.setValue(QStringLiteral("rotationStepDegrees"), v); s.endGroup();
+    });
+
     updateTitle();
 
     connect(mapView_->undoStack(), &QUndoStack::indexChanged,
@@ -134,12 +211,16 @@ void MainWindow::setupMenus() {
     auto* del = edit->addAction(tr("&Delete"));
     del->setShortcut(Qt::Key_Delete);
     connect(del, &QAction::triggered, [this]{ mapView_->deleteSelected(); });
-    auto* rotCCW = edit->addAction(tr("Rotate 90° &CCW"));
+    auto* rotCCW = edit->addAction(tr("Rotate &CCW"));
     rotCCW->setShortcut(Qt::Key_R);
-    connect(rotCCW, &QAction::triggered, [this]{ mapView_->rotateSelected(-90.0f); });
-    auto* rotCW = edit->addAction(tr("Rotate 90° C&W"));
+    connect(rotCCW, &QAction::triggered, [this]{
+        mapView_->rotateSelected(static_cast<float>(-mapView_->rotationStepDegrees()));
+    });
+    auto* rotCW = edit->addAction(tr("Rotate C&W"));
     rotCW->setShortcut(QKeySequence(tr("Shift+R")));
-    connect(rotCW, &QAction::triggered, [this]{ mapView_->rotateSelected(90.0f); });
+    connect(rotCW, &QAction::triggered, [this]{
+        mapView_->rotateSelected(static_cast<float>(mapView_->rotationStepDegrees()));
+    });
 
     edit->addSeparator();
     auto* cutAct = edit->addAction(tr("Cu&t"));
@@ -348,6 +429,7 @@ bool MainWindow::openFile(const QString& path) {
     updateTitle();
     statusBar()->showMessage(tr("Opened %1 — %2 layers, %3 items")
                                  .arg(path).arg(layerCount).arg(nbItems));
+    QSettings().setValue(QString::fromLatin1(kLastFileKey), path);
     return true;
 }
 
@@ -388,6 +470,7 @@ bool MainWindow::writeMapTo(const QString& path) {
     mapView_->undoStack()->setClean();
     updateTitle();
     statusBar()->showMessage(tr("Saved %1").arg(path), 3000);
+    QSettings().setValue(QString::fromLatin1(kLastFileKey), path);
     return true;
 }
 

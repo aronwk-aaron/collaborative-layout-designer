@@ -32,6 +32,16 @@ public:
     rendering::SceneBuilder* builder() { return builder_.get(); }
     QUndoStack* undoStack() { return undoStack_.get(); }
 
+    // Snap step applied to brick drag-drop, in studs. 0 disables snapping.
+    void  setSnapStepStuds(double studs) { snapStepStuds_ = studs; }
+    double snapStepStuds() const { return snapStepStuds_; }
+
+    // Default rotation step in degrees — used by the menu Rotate CW/CCW
+    // actions (the explicit rotateSelected(degrees) call still takes a
+    // caller-supplied amount).
+    void  setRotationStepDegrees(double deg) { rotationStepDegrees_ = deg; }
+    double rotationStepDegrees() const { return rotationStepDegrees_; }
+
     // Edit operations (invoked by menu/shortcut actions):
     void rotateSelected(float degrees);
     void deleteSelected();
@@ -90,6 +100,10 @@ private:
     // serialising to QMimeData via the system clipboard; deferred until a user
     // actually needs it.
     std::vector<core::Brick> clipboard_;
+
+    // Snap + rotation step config, updated by MainWindow from toolbar + QSettings.
+    double snapStepStuds_       = 0.0;     // 0 disables snap
+    double rotationStepDegrees_ = 90.0;
 };
 
 }

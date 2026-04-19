@@ -6,6 +6,7 @@
 #include <memory>
 
 class QAction;
+class QComboBox;
 
 namespace cld::parts { class PartsLibrary; }
 
@@ -64,6 +65,9 @@ private:
     int     cleanUndoIndex_ = 0;   // index at which the stack is "clean"
     QAction* undoAct_ = nullptr;
     QAction* redoAct_ = nullptr;
+
+    QComboBox* snapCombo_ = nullptr;
+    QComboBox* rotCombo_  = nullptr;
 };
 
 }
