@@ -866,7 +866,11 @@ void MapView::nudgeSelected(double dxStuds, double dyStuds) {
 
 void MapView::rotateSelected(float degrees) {
     if (!map_) return;
-    std::vector<edit::RotateBricksCommand::Entry> entries;
+    // Collect every selected brick's current state so we can compute the
+    // group centroid. Single-brick rotation is a special case where the
+    // centroid IS the brick's centre, so the position update is a no-op.
+    struct Hit { int li; QString guid; QPointF centre; QSizeF size; float orientation; };
+    std::vector<Hit> hits;
     for (QGraphicsItem* it : scene()->selectedItems()) {
         if (!isBrickItem(it)) continue;
         const int li = it->data(kBrickDataLayerIndex).toInt();
@@ -875,19 +879,56 @@ void MapView::rotateSelected(float degrees) {
         auto* L = map_->layers()[li].get();
         if (!L || L->kind() != core::LayerKind::Brick) continue;
         for (const auto& b : static_cast<core::LayerBrick&>(*L).bricks) {
-            if (b.guid == guid) {
-                edit::RotateBricksCommand::Entry e;
-                e.ref.layerIndex = li;
-                e.ref.guid = guid;
-                e.beforeOrientation = b.orientation;
-                e.afterOrientation  = b.orientation + degrees;
-                entries.push_back(e);
-                break;
-            }
+            if (b.guid != guid) continue;
+            hits.push_back({ li, guid, b.displayArea.center(),
+                             b.displayArea.size(), b.orientation });
+            break;
         }
     }
-    if (entries.empty()) return;
-    undoStack_->push(new edit::RotateBricksCommand(*map_, std::move(entries)));
+    if (hits.empty()) return;
+
+    // Centroid in stud coords. For multi-selection this is the pivot we
+    // rotate around; for single selection it equals the brick's centre
+    // so movement-delta is zero.
+    QPointF pivot(0, 0);
+    for (const auto& h : hits) pivot += h.centre;
+    pivot /= hits.size();
+
+    const double rad = degrees * M_PI / 180.0;
+    const double c = std::cos(rad), s = std::sin(rad);
+
+    std::vector<edit::MoveBricksCommand::Entry>    moves;
+    std::vector<edit::RotateBricksCommand::Entry>  rotates;
+    for (const auto& h : hits) {
+        edit::RotateBricksCommand::Entry r;
+        r.ref.layerIndex = h.li;
+        r.ref.guid = h.guid;
+        r.beforeOrientation = h.orientation;
+        r.afterOrientation  = h.orientation + degrees;
+        rotates.push_back(r);
+
+        const QPointF rel = h.centre - pivot;
+        const QPointF rotated(rel.x() * c - rel.y() * s, rel.x() * s + rel.y() * c);
+        const QPointF newCentre = pivot + rotated;
+        const QPointF delta = newCentre - h.centre;
+        if (std::abs(delta.x()) > 1e-6 || std::abs(delta.y()) > 1e-6) {
+            edit::MoveBricksCommand::Entry m;
+            m.ref.layerIndex = h.li;
+            m.ref.guid = h.guid;
+            m.beforeTopLeft = h.centre - QPointF(h.size.width() / 2.0, h.size.height() / 2.0);
+            m.afterTopLeft  = newCentre - QPointF(h.size.width() / 2.0, h.size.height() / 2.0);
+            moves.push_back(m);
+        }
+    }
+
+    if (moves.empty()) {
+        undoStack_->push(new edit::RotateBricksCommand(*map_, std::move(rotates)));
+    } else {
+        undoStack_->beginMacro(tr("Rotate %1°").arg(degrees, 0, 'f', 1));
+        undoStack_->push(new edit::MoveBricksCommand(*map_, std::move(moves)));
+        undoStack_->push(new edit::RotateBricksCommand(*map_, std::move(rotates)));
+        undoStack_->endMacro();
+    }
     rebuildScene();
 }
 
