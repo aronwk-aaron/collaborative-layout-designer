@@ -24,7 +24,7 @@ namespace cld::ui {
 
 namespace {
 
-constexpr int kIconSize = 64;
+constexpr int kIconSize = 96;
 
 // Store the part key on each item so we can retrieve it on activation.
 constexpr int kPartKeyRole  = Qt::UserRole + 1;
@@ -99,9 +99,13 @@ PartsBrowser::PartsBrowser(parts::PartsLibrary& lib, QWidget* parent)
     grid_->setUniformItemSizes(true);
     grid_->setWordWrap(true);
     grid_->setTextElideMode(Qt::ElideRight);
-    // Extra vertical room for a two-line caption (part key + short description)
-    // underneath each thumbnail.
-    grid_->setGridSize(QSize(kIconSize + 36, kIconSize + 52));
+    // Cell size: full icon footprint plus margin on the sides and a two-line
+    // caption underneath. Uniform sizing is *off* so cells expand to whatever
+    // size an individual thumbnail actually needs — extreme aspect-ratio parts
+    // (e.g. 2x16 bricks) still show their full silhouette rather than getting
+    // squished into a tall/thin letterbox inside a fixed square cell.
+    grid_->setUniformItemSizes(false);
+    grid_->setGridSize(QSize(kIconSize + 32, kIconSize + 52));
     col->addWidget(grid_);
 
     setWidget(host);
