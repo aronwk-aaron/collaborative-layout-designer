@@ -198,34 +198,6 @@ MapView::MapView(parts::PartsLibrary& parts, QWidget* parent)
     scene->addItem(selectionOverlay_);
 
     connect(scene, &QGraphicsScene::selectionChanged, this, [this]{
-        // When the user clicks a single piece of a ruler (one segment or
-        // the midtext label), extend the scene selection to EVERY other
-        // piece of that ruler. Without this, clicking e.g. seg2 only
-        // marks seg2 as selected, and the overlay's union-by-guid runs
-        // but looks like it "only highlights one half" to the user
-        // because the seg1 rect wasn't folded in. A re-entrancy guard
-        // prevents recursion when we trigger selectionChanged from
-        // inside the handler.
-        static bool reentrant = false;
-        if (!reentrant) {
-            reentrant = true;
-            QSet<QString> rulerGuids;
-            for (QGraphicsItem* it : this->scene()->selectedItems()) {
-                if (it && isRulerItem(it)) {
-                    rulerGuids.insert(it->data(kBrickDataGuid).toString());
-                }
-            }
-            if (!rulerGuids.isEmpty()) {
-                for (QGraphicsItem* any : this->scene()->items()) {
-                    if (!isRulerItem(any)) continue;
-                    if (any->isSelected()) continue;
-                    if (rulerGuids.contains(any->data(kBrickDataGuid).toString())) {
-                        any->setSelected(true);
-                    }
-                }
-            }
-            reentrant = false;
-        }
         refreshSelectionOverlay();
         emit selectionChanged();
     });
