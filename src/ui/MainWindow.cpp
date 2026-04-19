@@ -10,6 +10,7 @@
 #include "../core/Map.h"
 #include "../parts/PartsLibrary.h"
 #include "../core/Brick.h"
+#include "../core/Ids.h"
 #include "../core/Layer.h"
 #include "../core/LayerBrick.h"
 #include "../core/AnchoredLabel.h"
@@ -32,6 +33,7 @@
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QDir>
+#include <QDockWidget>
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
@@ -45,6 +47,7 @@
 #include <QLineEdit>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QMenu>
 #include <QPlainTextEdit>
 #include <QSettings>
 #include <QStatusBar>
@@ -294,9 +297,16 @@ MainWindow::~MainWindow() = default;
 
 void MainWindow::setupMenus() {
     auto* file = menuBar()->addMenu(tr("&File"));
+    auto* newAct = file->addAction(tr("&New"));
+    newAct->setShortcut(QKeySequence::New);
+    connect(newAct, &QAction::triggered, this, &MainWindow::onNew);
+
     auto* openAct = file->addAction(tr("&Open..."));
     openAct->setShortcut(QKeySequence::Open);
     connect(openAct, &QAction::triggered, this, &MainWindow::onOpen);
+
+    recentMenu_ = file->addMenu(tr("Open &Recent"));
+    rebuildRecentMenu();
 
     auto* saveAct = file->addAction(tr("&Save"));
     saveAct->setShortcut(QKeySequence::Save);
@@ -480,9 +490,28 @@ void MainWindow::setupMenus() {
     fit->setShortcut(QKeySequence(Qt::Key_F));
     connect(fit, &QAction::triggered, this, &MainWindow::onFitToView);
 
+    view->addSeparator();
+    // Dock / toolbar visibility toggles — upstream View menu parity.
+    auto addDockToggle = [view](QDockWidget* d, const QString& label){
+        auto* act = view->addAction(label);
+        act->setCheckable(true);
+        act->setChecked(d->isVisible());
+        QObject::connect(act, &QAction::toggled, d, &QDockWidget::setVisible);
+        QObject::connect(d, &QDockWidget::visibilityChanged, act, &QAction::setChecked);
+    };
+    addDockToggle(partsBrowser_,       tr("&Parts Panel"));
+    addDockToggle(layerPanel_,         tr("&Layers Panel"));
+    addDockToggle(modulesPanel_,       tr("&Modules Panel"));
+    addDockToggle(moduleLibraryPanel_, tr("Module Li&brary Panel"));
+
     auto* tools = menuBar()->addMenu(tr("&Tools"));
     auto* libAct = tools->addAction(tr("Manage Parts &Libraries..."));
     connect(libAct, &QAction::triggered, this, &MainWindow::onManageLibraries);
+    auto* reloadAct = tools->addAction(tr("&Reload Parts Library"));
+    connect(reloadAct, &QAction::triggered, this, &MainWindow::onReloadLibrary);
+    tools->addSeparator();
+    auto* partListAct = tools->addAction(tr("Export &Part List (CSV)..."));
+    connect(partListAct, &QAction::triggered, this, &MainWindow::onExportPartList);
 
     // ----- Map menu -----
     auto* mapMenu = menuBar()->addMenu(tr("&Map"));
@@ -539,7 +568,11 @@ void MainWindow::setupMenus() {
     auto* saveModAct = modules->addAction(tr("&Save Selection as Module..."));
     connect(saveModAct, &QAction::triggered, this, &MainWindow::onSaveSelectionAsModule);
 
-    menuBar()->addMenu(tr("&Help"));
+    auto* help = menuBar()->addMenu(tr("&Help"));
+    auto* aboutAct = help->addAction(tr("&About CLD..."));
+    connect(aboutAct, &QAction::triggered, this, &MainWindow::onAbout);
+    auto* aboutQtAct = help->addAction(tr("About &Qt..."));
+    connect(aboutQtAct, &QAction::triggered, qApp, &QApplication::aboutQt);
 }
 
 void MainWindow::onCreateModuleFromSelection() {
@@ -756,6 +789,7 @@ bool MainWindow::openFile(const QString& path) {
     statusBar()->showMessage(tr("Opened %1 — %2 layers, %3 items")
                                  .arg(path).arg(layerCount).arg(nbItems));
     QSettings().setValue(QString::fromLatin1(kLastFileKey), path);
+    pushRecentFile(path);
     return true;
 }
 
@@ -797,6 +831,7 @@ bool MainWindow::writeMapTo(const QString& path) {
     updateTitle();
     statusBar()->showMessage(tr("Saved %1").arg(path), 3000);
     QSettings().setValue(QString::fromLatin1(kLastFileKey), path);
+    pushRecentFile(path);
     return true;
 }
 
@@ -890,6 +925,133 @@ QString MainWindow::defaultVendoredPartsRoot() const {
         if (QDir(exeDir + rel).exists()) return QDir(exeDir + rel).absolutePath();
     }
     return {};
+}
+
+void MainWindow::onNew() {
+    if (!maybeSave()) return;
+    auto blank = std::make_unique<core::Map>();
+    // Seed with a single brick layer so drop-onto-map works out of the box.
+    auto layer = std::make_unique<core::LayerBrick>();
+    layer->guid = core::newBbmId();
+    layer->name = tr("Bricks");
+    blank->layers().push_back(std::move(layer));
+    blank->nbItems = 0;
+    mapView_->loadMap(std::move(blank));
+    layerPanel_->setMap(mapView_->currentMap(), mapView_->builder());
+    modulesPanel_->setMap(mapView_->currentMap());
+    currentFilePath_.clear();
+    mapView_->undoStack()->clear();
+    mapView_->undoStack()->setClean();
+    updateTitle();
+    statusBar()->showMessage(tr("New layout"), 3000);
+}
+
+void MainWindow::onReloadLibrary() {
+    QStringList allPaths;
+    const QString vendored = defaultVendoredPartsRoot();
+    if (!vendored.isEmpty() && QDir(vendored).exists()) allPaths << vendored;
+    for (const QString& p : loadUserLibraryPaths()) {
+        if (!allPaths.contains(p) && QDir(p).exists()) allPaths << p;
+    }
+    rescanLibrary(allPaths);
+    partsBrowser_->rebuild();
+    mapView_->rebuildScene();
+    statusBar()->showMessage(
+        tr("Reloaded library: %1 parts across %2 path(s)")
+            .arg(parts_.partCount()).arg(allPaths.size()), 4000);
+}
+
+void MainWindow::onExportPartList() {
+    auto* map = mapView_->currentMap();
+    if (!map) return;
+    // Aggregate part counts across every brick layer. Output format mirrors
+    // vanilla's ExportPartList: "part number, count".
+    QHash<QString, int> counts;
+    for (const auto& L : map->layers()) {
+        if (!L || L->kind() != core::LayerKind::Brick) continue;
+        for (const auto& b : static_cast<const core::LayerBrick&>(*L).bricks) {
+            counts[b.partNumber]++;
+        }
+    }
+    if (counts.isEmpty()) {
+        QMessageBox::information(this, tr("Export part list"),
+            tr("The current layout contains no bricks."));
+        return;
+    }
+    const QString path = QFileDialog::getSaveFileName(
+        this, tr("Export part list"),
+        currentFilePath_.isEmpty()
+            ? QStringLiteral("parts.csv")
+            : QFileInfo(currentFilePath_).baseName() + ".csv",
+        tr("CSV (*.csv);;Text (*.txt)"));
+    if (path.isEmpty()) return;
+    QFile f(path);
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QMessageBox::warning(this, tr("Export failed"),
+            tr("Cannot write %1: %2").arg(path, f.errorString()));
+        return;
+    }
+    // Sort alphabetically for a stable / diffable output.
+    QStringList keys = counts.keys(); std::sort(keys.begin(), keys.end());
+    f.write("PartNumber,Count\n");
+    int total = 0;
+    for (const QString& k : keys) {
+        f.write(QStringLiteral("%1,%2\n").arg(k).arg(counts[k]).toUtf8());
+        total += counts[k];
+    }
+    f.close();
+    statusBar()->showMessage(tr("Exported %1 unique parts, %2 total, to %3")
+        .arg(keys.size()).arg(total).arg(path), 5000);
+}
+
+void MainWindow::onAbout() {
+    QMessageBox::about(this, tr("About Collaborative Layout Designer"),
+        tr("<h3>Collaborative Layout Designer</h3>"
+           "<p>Cross-platform C++/Qt 6 fork of <b>BlueBrick</b> by Alban Nanty and contributors.</p>"
+           "<p>Adds cross-layer modules, anchored text labels, and event venues on top of the "
+           "vanilla <i>.bbm</i> format (extra metadata stored in a sidecar <i>.bbm.cld</i> so "
+           "vanilla BlueBrick 1.9.2 keeps opening our files).</p>"
+           "<p>Licensed under GPL-3.0 — same as upstream BlueBrick.</p>"
+           "<p>Parts library: %1 parts indexed.</p>")
+        .arg(parts_.partCount()));
+}
+
+// Recent-files list: persisted as QStringList under recent/list, capped to 12.
+namespace {
+constexpr const char* kRecentListKey = "recent/list";
+constexpr int kRecentMax = 12;
+}
+
+void MainWindow::rebuildRecentMenu() {
+    if (!recentMenu_) return;
+    recentMenu_->clear();
+    const QStringList list = QSettings().value(kRecentListKey).toStringList();
+    for (const QString& p : list) {
+        QAction* act = recentMenu_->addAction(QFileInfo(p).fileName());
+        act->setToolTip(p);
+        connect(act, &QAction::triggered, this, [this, p]{ openFile(p); });
+    }
+    if (list.isEmpty()) {
+        auto* empty = recentMenu_->addAction(tr("(no recent files)"));
+        empty->setEnabled(false);
+    } else {
+        recentMenu_->addSeparator();
+        auto* clear = recentMenu_->addAction(tr("Clear Menu"));
+        connect(clear, &QAction::triggered, this, [this]{
+            QSettings().remove(QString::fromLatin1(kRecentListKey));
+            rebuildRecentMenu();
+        });
+    }
+}
+
+void MainWindow::pushRecentFile(const QString& path) {
+    QSettings s;
+    QStringList list = s.value(kRecentListKey).toStringList();
+    list.removeAll(path);
+    list.prepend(path);
+    while (list.size() > kRecentMax) list.removeLast();
+    s.setValue(kRecentListKey, list);
+    rebuildRecentMenu();
 }
 
 void MainWindow::onZoomIn()  { mapView_->scale(1.2, 1.2); }

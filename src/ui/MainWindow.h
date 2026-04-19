@@ -39,6 +39,7 @@ protected:
     QString defaultVendoredPartsRoot() const;
 
 private slots:
+    void onNew();
     void onOpen();
     bool onSave();
     bool onSaveAs();
@@ -46,10 +47,15 @@ private slots:
     void onZoomOut();
     void onFitToView();
     void onManageLibraries();
+    void onReloadLibrary();
+    void onExportPartList();
+    void onAbout();
     void onCreateModuleFromSelection();
     void onImportBbmAsModule();
     void onSaveSelectionAsModule();
     void onImportModuleFromLibraryPath(const QString& bbmPath);
+    void rebuildRecentMenu();
+    void pushRecentFile(const QString& path);
 
 private:
     void setupMenus();
@@ -71,6 +77,8 @@ private:
 
     QComboBox* snapCombo_ = nullptr;
     QComboBox* rotCombo_  = nullptr;
+
+    class QMenu* recentMenu_ = nullptr;
 };
 
 }
