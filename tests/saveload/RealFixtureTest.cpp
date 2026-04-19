@@ -50,16 +50,11 @@ TEST(RealFixture, TightCornerLoads) {
     EXPECT_GE(nBrick, 1);
 }
 
-TEST(RealFixture, TightCornerByteExactRoundTrip) {
-    // Gold-standard Phase 1 gate: load the real .bbm, re-save through our
-    // pipeline, and assert the output is byte-for-byte identical to the input.
-    // Any regression here means vanilla BlueBrick would see different bytes.
-    if (!corpusAvailable()) GTEST_SKIP();
-    const QString path = corpusDir() + QStringLiteral("/tight-corner.bbm");
-    if (!QFile::exists(path)) GTEST_SKIP();
+namespace {
 
+void assertByteExactRoundTrip(const QString& path) {
     QFile src(path);
-    ASSERT_TRUE(src.open(QIODevice::ReadOnly));
+    ASSERT_TRUE(src.open(QIODevice::ReadOnly)) << path.toStdString();
     const QByteArray original = src.readAll();
 
     auto loaded = saveload::readBbm(path);
@@ -72,8 +67,26 @@ TEST(RealFixture, TightCornerByteExactRoundTrip) {
         ASSERT_TRUE(saveload::writeBbm(*loaded.map, out).ok);
     }
 
-    ASSERT_EQ(written.size(), original.size()) << "byte-count mismatch";
-    EXPECT_EQ(written, original);
+    ASSERT_EQ(written.size(), original.size())
+        << "byte-count mismatch for " << path.toStdString();
+    EXPECT_EQ(written, original) << "bytes differ for " << path.toStdString();
+}
+
+}
+
+TEST(RealFixture, CorpusByteExactRoundTrip) {
+    // Gold-standard Phase 1 gate: every real .bbm in fixtures/bbm-corpus/ must
+    // load + re-save byte-for-byte identical. Iterates the directory so any
+    // fixture dropped in gets coverage automatically.
+    if (!corpusAvailable()) GTEST_SKIP();
+    QDir dir(corpusDir());
+    const auto files = dir.entryList({ QStringLiteral("*.bbm") }, QDir::Files, QDir::Name);
+    if (files.isEmpty()) GTEST_SKIP() << "no .bbm fixtures present";
+
+    for (const QString& f : files) {
+        SCOPED_TRACE(f.toStdString());
+        assertByteExactRoundTrip(dir.absoluteFilePath(f));
+    }
 }
 
 TEST(RealFixture, TightCornerSemanticRoundTrip) {
