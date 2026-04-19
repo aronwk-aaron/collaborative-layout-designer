@@ -35,23 +35,26 @@ VenueDialog::VenueDialog(const std::optional<core::Venue>& current, QWidget* par
     auto* enabledChk = new QCheckBox(tr("Render this venue"), this);
     enabledChk->setChecked(venue.enabled);
     form->addRow(enabledChk);
+    // Walkway width: internal unit is studs, but the dialog accepts feet
+    // for real-world convenience (venues are quoted in feet).
+    constexpr double kStudsPerFoot = 38.09814081;
     auto* walkwaySpin = new QDoubleSpinBox(this);
-    walkwaySpin->setRange(0.0, 5000.0);
-    walkwaySpin->setDecimals(1);
-    walkwaySpin->setSuffix(tr(" studs"));
-    walkwaySpin->setValue(venue.minWalkwayStuds);
+    walkwaySpin->setRange(0.0, 500.0);
+    walkwaySpin->setDecimals(2);
+    walkwaySpin->setSuffix(tr(" ft"));
+    walkwaySpin->setValue(venue.minWalkwayStuds / kStudsPerFoot);
     form->addRow(tr("Min walkway:"), walkwaySpin);
     vbox->addLayout(form);
 
     vbox->addWidget(new QLabel(tr("<b>Edges</b> (from the drawn outline — classify each segment)")));
     auto* edgeTable = new QTableWidget(this);
     edgeTable->setColumnCount(4);
-    edgeTable->setHorizontalHeaderLabels({ tr("#"), tr("Kind"), tr("Door width (studs)"), tr("Label") });
+    edgeTable->setHorizontalHeaderLabels({ tr("#"), tr("Kind"), tr("Door width (ft)"), tr("Label") });
     edgeTable->horizontalHeader()->setStretchLastSection(true);
     edgeTable->verticalHeader()->setVisible(false);
     vbox->addWidget(edgeTable, 1);
 
-    auto rebuildEdgeTable = [edgeTable, &venue]{
+    auto rebuildEdgeTable = [edgeTable, &venue, kStudsPerFoot]{
         edgeTable->setRowCount(venue.edges.size());
         for (int i = 0; i < venue.edges.size(); ++i) {
             const auto& e = venue.edges[i];
@@ -65,8 +68,8 @@ VenueDialog::VenueDialog(const std::optional<core::Venue>& current, QWidget* par
             edgeTable->setCellWidget(i, 1, kindCombo);
 
             auto* widthSpin = new QDoubleSpinBox();
-            widthSpin->setRange(0.0, 10000.0); widthSpin->setDecimals(1);
-            widthSpin->setValue(e.doorWidthStuds);
+            widthSpin->setRange(0.0, 500.0); widthSpin->setDecimals(2);
+            widthSpin->setValue(e.doorWidthStuds / kStudsPerFoot);
             widthSpin->setEnabled(e.kind == core::EdgeKind::Door);
             edgeTable->setCellWidget(i, 2, widthSpin);
             QObject::connect(kindCombo, &QComboBox::currentIndexChanged, widthSpin,
@@ -93,19 +96,19 @@ VenueDialog::VenueDialog(const std::optional<core::Venue>& current, QWidget* par
     vbox->addWidget(bb);
 
     connect(bb, &QDialogButtonBox::rejected, this, &QDialog::reject);
-    connect(bb, &QDialogButtonBox::accepted, this, [this, &venue, nameE, enabledChk, walkwaySpin, edgeTable]{
+    connect(bb, &QDialogButtonBox::accepted, this, [this, &venue, nameE, enabledChk, walkwaySpin, edgeTable, kStudsPerFoot]{
         // Pull back edge kind / width / label from the table widgets.
         for (int i = 0; i < venue.edges.size(); ++i) {
             auto* kindCombo = qobject_cast<QComboBox*>(edgeTable->cellWidget(i, 1));
             auto* widthSpin = qobject_cast<QDoubleSpinBox*>(edgeTable->cellWidget(i, 2));
             auto* labelEdit = qobject_cast<QLineEdit*>(edgeTable->cellWidget(i, 3));
             if (kindCombo) venue.edges[i].kind = static_cast<core::EdgeKind>(kindCombo->currentIndex());
-            if (widthSpin) venue.edges[i].doorWidthStuds = widthSpin->value();
+            if (widthSpin) venue.edges[i].doorWidthStuds = widthSpin->value() * kStudsPerFoot;
             if (labelEdit) venue.edges[i].label = labelEdit->text();
         }
         venue.name = nameE->text();
         venue.enabled = enabledChk->isChecked();
-        venue.minWalkwayStuds = walkwaySpin->value();
+        venue.minWalkwayStuds = walkwaySpin->value() * kStudsPerFoot;
         result_ = venue;
         cleared_ = false;
         accept();
