@@ -88,6 +88,8 @@ MapView::MapView(parts::PartsLibrary& parts, QWidget* parent)
     scene->setBackgroundBrush(QColor(100, 149, 237));
     setScene(scene);
     connect(scene, &QGraphicsScene::selectionChanged, this, &MapView::selectionChanged);
+    // drawForeground repaints the overlay on any selection change.
+    connect(scene, &QGraphicsScene::selectionChanged, this, [this]{ viewport()->update(); });
 
     builder_ = std::make_unique<rendering::SceneBuilder>(*scene, parts_);
     undoStack_ = std::make_unique<QUndoStack>(this);
@@ -177,6 +179,39 @@ void MapView::drawBackground(QPainter* painter, const QRectF& rect) {
         }
         break;
     }
+}
+
+void MapView::drawForeground(QPainter* painter, const QRectF& rect) {
+    QGraphicsView::drawForeground(painter, rect);
+    // Draw selection highlights on top of every scene item. This happens
+    // after the items are painted so the outline / translucent fill is
+    // never occluded by later layers. Works reliably regardless of item
+    // type (pixmap, rect, line, ellipse) — boundingRect mapped to scene
+    // preserves rotation for rotated bricks.
+    const auto sel = scene()->selectedItems();
+    if (sel.isEmpty()) return;
+
+    painter->save();
+    // Bright orange: contrasts against both dark and light brick colors and
+    // against the default white scene background. Cosmetic pen so width
+    // stays constant as the user zooms.
+    QPen pen(QColor(255, 140, 0));
+    pen.setWidthF(3.0);
+    pen.setCosmetic(true);
+    pen.setJoinStyle(Qt::MiterJoin);
+    painter->setPen(pen);
+    painter->setBrush(QColor(255, 170, 0, 70));   // warm translucent fill
+
+    for (QGraphicsItem* it : sel) {
+        if (!it) continue;
+        const QRectF brect = it->boundingRect();
+        if (brect.isEmpty()) continue;
+        // mapToScene on a QRectF returns a QPolygonF that preserves rotation
+        // from the item's transform — draw that polygon directly.
+        const QPolygonF poly = it->mapToScene(brect);
+        if (!poly.isEmpty()) painter->drawPolygon(poly);
+    }
+    painter->restore();
 }
 
 std::vector<MapView::BrickOriginSnapshot> MapView::selectedBrickSnapshots() const {
