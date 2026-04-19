@@ -49,4 +49,19 @@ private:
     QString oldText_;
 };
 
+// Translate an anchored label by a (dx, dy) stud delta applied to its
+// offset. For brick-anchored labels this moves the label relative to the
+// anchor brick; for world-anchored labels it moves in world coords.
+class MoveAnchoredLabelCommand : public QUndoCommand {
+public:
+    MoveAnchoredLabelCommand(core::Map& map, QString labelId, QPointF deltaStuds,
+                             QUndoCommand* parent = nullptr);
+    void undo() override;
+    void redo() override;
+private:
+    core::Map& map_;
+    QString labelId_;
+    QPointF delta_;
+};
+
 }

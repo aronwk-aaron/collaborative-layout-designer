@@ -576,6 +576,30 @@ void addRulerLayer(const core::LayerRuler& L, LayerSink& sink, int layerIndex) {
                 g2->setPen(gpen);
                 sink.add(g1);
                 sink.add(g2);
+
+                // Small filled circles at the actual anchor points so the
+                // user can see where the ruler is anchored when it's been
+                // offset away from the visible measure line. Coloured to
+                // match whatever the ruler is attached to: orange = free,
+                // green = attached to a brick.
+                constexpr double kAnchorRadiusPx = 4.0;
+                auto addAnchorMarker = [&](QPointF p, bool attached) {
+                    auto* dot = new QGraphicsEllipseItem(
+                        p.x() - kAnchorRadiusPx, p.y() - kAnchorRadiusPx,
+                        kAnchorRadiusPx * 2, kAnchorRadiusPx * 2);
+                    QPen pen(QColor(40, 40, 40));
+                    pen.setWidthF(1.5);
+                    pen.setCosmetic(true);
+                    dot->setPen(pen);
+                    dot->setBrush(QBrush(attached ? QColor(30, 180, 60)
+                                                   : QColor(240, 140, 30)));
+                    dot->setData(kBrickDataLayerIndex, layerIndex);
+                    dot->setData(kBrickDataGuid,       r.guid);
+                    dot->setData(kBrickDataKind,       QStringLiteral("ruler"));
+                    sink.add(dot);
+                };
+                addAnchorMarker(anchor1, !r.attachedBrick1Id.isEmpty());
+                addAnchorMarker(anchor2, !r.attachedBrick2Id.isEmpty());
             }
         } else {
             const auto& r = any.circular;

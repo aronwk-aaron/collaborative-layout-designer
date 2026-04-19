@@ -71,4 +71,22 @@ void EditAnchoredLabelTextCommand::undo() {
     if (i >= 0) map_.sidecar.anchoredLabels[i].text = oldText_;
 }
 
+// ----- MoveAnchoredLabelCommand -----
+
+MoveAnchoredLabelCommand::MoveAnchoredLabelCommand(core::Map& map, QString labelId,
+                                                   QPointF deltaStuds, QUndoCommand* parent)
+    : QUndoCommand(parent), map_(map), labelId_(std::move(labelId)), delta_(deltaStuds) {
+    setText(QObject::tr("Move label"));
+}
+
+void MoveAnchoredLabelCommand::redo() {
+    const int i = findLabelIndex(map_, labelId_);
+    if (i >= 0) map_.sidecar.anchoredLabels[i].offset += delta_;
+}
+
+void MoveAnchoredLabelCommand::undo() {
+    const int i = findLabelIndex(map_, labelId_);
+    if (i >= 0) map_.sidecar.anchoredLabels[i].offset -= delta_;
+}
+
 }

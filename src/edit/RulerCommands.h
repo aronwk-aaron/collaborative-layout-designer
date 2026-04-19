@@ -42,6 +42,21 @@ private:
     int index_ = -1;
 };
 
+// Translate a ruler by a (dx, dy) stud delta. Moves point1 + point2 for
+// linear rulers, center for circular. Undo subtracts the same delta.
+class MoveRulerItemCommand : public QUndoCommand {
+public:
+    MoveRulerItemCommand(core::Map& map, int layerIndex, QString rulerGuid,
+                         QPointF deltaStuds, QUndoCommand* parent = nullptr);
+    void undo() override;
+    void redo() override;
+private:
+    core::Map& map_;
+    int layerIndex_;
+    QString rulerGuid_;
+    QPointF delta_;
+};
+
 // Attach or detach a ruler endpoint to a brick. `endpointIndex` is 0 or 1 on
 // linear rulers (point1/point2), ignored on circular rulers (the circle
 // centre is always the attached endpoint). Passing an empty brickGuid

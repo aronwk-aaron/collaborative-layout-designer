@@ -148,6 +148,56 @@ void EditRulerItemCommand::undo() {
     if (auto* r = findRuler(map_, layerIndex_, guid_)) apply(*r, before_);
 }
 
+// ----- MoveRulerItemCommand -----
+
+namespace {
+core::LayerRuler* rulerLayerForMove(core::Map& m, int idx) {
+    if (idx < 0 || idx >= static_cast<int>(m.layers().size())) return nullptr;
+    auto* L = m.layers()[idx].get();
+    return (L && L->kind() == core::LayerKind::Ruler)
+        ? static_cast<core::LayerRuler*>(L) : nullptr;
+}
+}
+
+MoveRulerItemCommand::MoveRulerItemCommand(core::Map& map, int layerIndex, QString rulerGuid,
+                                           QPointF deltaStuds, QUndoCommand* parent)
+    : QUndoCommand(parent), map_(map), layerIndex_(layerIndex),
+      rulerGuid_(std::move(rulerGuid)), delta_(deltaStuds) {
+    setText(QObject::tr("Move ruler"));
+}
+
+void MoveRulerItemCommand::redo() {
+    auto* L = rulerLayerForMove(map_, layerIndex_);
+    if (!L) return;
+    for (auto& any : L->rulers) {
+        const QString& g = (any.kind == core::RulerKind::Linear) ? any.linear.guid : any.circular.guid;
+        if (g != rulerGuid_) continue;
+        if (any.kind == core::RulerKind::Linear) {
+            any.linear.point1 += delta_;
+            any.linear.point2 += delta_;
+        } else {
+            any.circular.center += delta_;
+        }
+        break;
+    }
+}
+
+void MoveRulerItemCommand::undo() {
+    auto* L = rulerLayerForMove(map_, layerIndex_);
+    if (!L) return;
+    for (auto& any : L->rulers) {
+        const QString& g = (any.kind == core::RulerKind::Linear) ? any.linear.guid : any.circular.guid;
+        if (g != rulerGuid_) continue;
+        if (any.kind == core::RulerKind::Linear) {
+            any.linear.point1 -= delta_;
+            any.linear.point2 -= delta_;
+        } else {
+            any.circular.center -= delta_;
+        }
+        break;
+    }
+}
+
 // ----- AttachRulerCommand -----
 
 namespace {

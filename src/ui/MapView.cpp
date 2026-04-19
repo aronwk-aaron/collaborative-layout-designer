@@ -994,30 +994,60 @@ void MapView::keyPressEvent(QKeyEvent* e) {
 
 void MapView::nudgeSelected(double dxStuds, double dyStuds) {
     if (!map_ || (dxStuds == 0.0 && dyStuds == 0.0)) return;
-    std::vector<edit::MoveBricksCommand::Entry> entries;
+    const QPointF delta(dxStuds, dyStuds);
+    std::vector<edit::MoveBricksCommand::Entry> brickEntries;
+
+    // Nudge also moves selected rulers + labels. Collect the ruler guids
+    // we've already handled so nudging a multi-piece ruler (seg1+seg2+
+    // label) only fires one command.
+    QSet<QString> rulerSeen;
+    QSet<QString> labelSeen;
+    struct RulerHit { int li; QString guid; };
+    std::vector<RulerHit> rulerHits;
+    QStringList labelIds;
+
     for (QGraphicsItem* it : scene()->selectedItems()) {
-        if (!isBrickItem(it)) continue;
-        const int li = it->data(kBrickDataLayerIndex).toInt();
-        const QString guid = it->data(kBrickDataGuid).toString();
-        if (li < 0 || li >= static_cast<int>(map_->layers().size())) continue;
-        auto* L = map_->layers()[li].get();
-        if (!L || L->kind() != core::LayerKind::Brick) continue;
-        for (const auto& b : static_cast<core::LayerBrick&>(*L).bricks) {
-            if (b.guid != guid) continue;
-            edit::MoveBricksCommand::Entry e;
-            e.ref.layerIndex = li;
-            e.ref.guid = guid;
-            e.beforeTopLeft = b.displayArea.topLeft();
-            e.afterTopLeft  = b.displayArea.topLeft() + QPointF(dxStuds, dyStuds);
-            entries.push_back(e);
-            break;
+        if (isBrickItem(it)) {
+            const int li = it->data(kBrickDataLayerIndex).toInt();
+            const QString guid = it->data(kBrickDataGuid).toString();
+            if (li < 0 || li >= static_cast<int>(map_->layers().size())) continue;
+            auto* L = map_->layers()[li].get();
+            if (!L || L->kind() != core::LayerKind::Brick) continue;
+            for (const auto& b : static_cast<core::LayerBrick&>(*L).bricks) {
+                if (b.guid != guid) continue;
+                edit::MoveBricksCommand::Entry e;
+                e.ref.layerIndex = li;
+                e.ref.guid = guid;
+                e.beforeTopLeft = b.displayArea.topLeft();
+                e.afterTopLeft  = b.displayArea.topLeft() + delta;
+                brickEntries.push_back(e);
+                break;
+            }
+        } else if (isRulerItem(it)) {
+            const QString guid = it->data(kBrickDataGuid).toString();
+            if (guid.isEmpty() || rulerSeen.contains(guid)) continue;
+            rulerSeen.insert(guid);
+            rulerHits.push_back({ it->data(kBrickDataLayerIndex).toInt(), guid });
+        } else if (isLabelItem(it)) {
+            const QString guid = it->data(kBrickDataGuid).toString();
+            if (guid.isEmpty() || labelSeen.contains(guid)) continue;
+            labelSeen.insert(guid);
+            labelIds.append(guid);
         }
     }
-    if (entries.empty()) return;
-    // The undoStack's indexChanged handler rebuilds the scene and preserves
-    // the current selection — we don't need to call rebuildScene() ourselves,
-    // and doing so would wipe the selection the handler just restored.
-    undoStack_->push(new edit::MoveBricksCommand(*map_, std::move(entries)));
+    if (brickEntries.empty() && rulerHits.empty() && labelIds.isEmpty()) return;
+
+    undoStack_->beginMacro(tr("Move selection"));
+    if (!brickEntries.empty()) {
+        undoStack_->push(new edit::MoveBricksCommand(*map_, std::move(brickEntries)));
+    }
+    for (const auto& h : rulerHits) {
+        undoStack_->push(new edit::MoveRulerItemCommand(*map_, h.li, h.guid, delta));
+    }
+    for (const QString& id : labelIds) {
+        undoStack_->push(new edit::MoveAnchoredLabelCommand(*map_, id, delta));
+    }
+    undoStack_->endMacro();
 }
 
 void MapView::rotateSelected(float degrees) {
