@@ -14,12 +14,21 @@ namespace cld::ui {
 // Dockable panel listing the current map's layers, with a per-layer visibility
 // checkbox that forwards to the SceneBuilder. Also emits signals for layer
 // lifecycle operations so MainWindow can route them through the undo stack.
+//
+// Upstream-parity extras:
+//   - Clicking a row selects it as the "active" layer — new bricks / text /
+//     rulers added via MapView land on this layer, matching BlueBrick's
+//     selectedLayerIndex semantics.
+//   - Per-row prefix emoji indicates the layer's kind at a glance.
+//   - Layer Options... (double-click or context menu) opens a property
+//     editor that edits name + transparency in-place. (Per-type extras
+//     like grid size / area cell size land next.)
 class LayerPanel : public QDockWidget {
     Q_OBJECT
 public:
     explicit LayerPanel(QWidget* parent = nullptr);
 
-    void setMap(const core::Map* map, rendering::SceneBuilder* builder);
+    void setMap(core::Map* map, rendering::SceneBuilder* builder);
 
     // Currently-selected layer row, or -1 if none.
     int currentRow() const;
@@ -30,10 +39,13 @@ signals:
     void deleteLayerRequested(int index);
     void moveLayerRequested(int index, int delta);
     void renameLayerRequested(int index, const QString& newName);
+    void activeLayerChanged(int index);
+    void layerOptionsRequested(int index);
 
 private:
     QListWidget* list_ = nullptr;
     rendering::SceneBuilder* builder_ = nullptr;
+    core::Map* map_ = nullptr;
 };
 
 }

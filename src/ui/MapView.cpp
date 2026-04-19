@@ -655,13 +655,20 @@ void MapView::addPartAtViewCenter(const QString& partKey) {
 void MapView::addPartAtScenePos(const QString& partKey, QPointF sceneCenterPx) {
     if (!map_) return;
 
-    // Pick the first brick layer as the add target. Later we can surface a
-    // "current layer" selection in the layer panel.
+    // Use the active (selected) layer if it's a brick layer — matches
+    // BlueBrick's selectedLayerIndex-driven placement. Fall back to the
+    // first brick layer if the active one is a different type.
     int targetLayer = -1;
-    for (int i = 0; i < static_cast<int>(map_->layers().size()); ++i) {
-        if (map_->layers()[i]->kind() == core::LayerKind::Brick) {
-            targetLayer = i;
-            break;
+    if (map_->selectedLayerIndex >= 0 &&
+        map_->selectedLayerIndex < static_cast<int>(map_->layers().size()) &&
+        map_->layers()[map_->selectedLayerIndex]->kind() == core::LayerKind::Brick) {
+        targetLayer = map_->selectedLayerIndex;
+    } else {
+        for (int i = 0; i < static_cast<int>(map_->layers().size()); ++i) {
+            if (map_->layers()[i]->kind() == core::LayerKind::Brick) {
+                targetLayer = i;
+                break;
+            }
         }
     }
     if (targetLayer < 0) return;

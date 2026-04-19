@@ -79,6 +79,22 @@ private:
     QString newName_;
 };
 
+// Change a layer's transparency (0..100 percent). Undo restores the prior
+// value. No-op if before == after.
+class SetLayerTransparencyCommand : public QUndoCommand {
+public:
+    SetLayerTransparencyCommand(core::Map& map, int index, int newTransparency,
+                                QUndoCommand* parent = nullptr);
+    void undo() override;
+    void redo() override;
+
+private:
+    core::Map& map_;
+    int index_;
+    int before_;
+    int after_;
+};
+
 // ---------- Map-level metadata commands ----------
 
 class ChangeBackgroundColorCommand : public QUndoCommand {

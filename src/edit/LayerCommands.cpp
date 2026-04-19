@@ -135,6 +135,29 @@ void RenameLayerCommand::undo() {
     }
 }
 
+// ----- SetLayerTransparencyCommand -----
+
+SetLayerTransparencyCommand::SetLayerTransparencyCommand(core::Map& map, int index, int newTransparency,
+                                                         QUndoCommand* parent)
+    : QUndoCommand(parent), map_(map), index_(index), after_(std::clamp(newTransparency, 0, 100)) {
+    auto& layers = map_.layers();
+    before_ = (index_ >= 0 && index_ < static_cast<int>(layers.size()))
+                  ? layers[index_]->transparency : 100;
+    setText(QObject::tr("Change layer transparency"));
+}
+void SetLayerTransparencyCommand::redo() {
+    auto& layers = map_.layers();
+    if (index_ >= 0 && index_ < static_cast<int>(layers.size())) {
+        layers[index_]->transparency = after_;
+    }
+}
+void SetLayerTransparencyCommand::undo() {
+    auto& layers = map_.layers();
+    if (index_ >= 0 && index_ < static_cast<int>(layers.size())) {
+        layers[index_]->transparency = before_;
+    }
+}
+
 // ----- ChangeBackgroundColorCommand -----
 
 ChangeBackgroundColorCommand::ChangeBackgroundColorCommand(core::Map& map,

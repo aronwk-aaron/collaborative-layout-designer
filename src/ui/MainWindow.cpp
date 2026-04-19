@@ -49,8 +49,10 @@
 #include <QLineEdit>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QCheckBox>
 #include <QMenu>
 #include <QPlainTextEdit>
+#include <QSpinBox>
 #include <QSettings>
 #include <QStandardPaths>
 #include <QStatusBar>
@@ -110,6 +112,44 @@ MainWindow::MainWindow(parts::PartsLibrary& parts, QWidget* parent)
         if (!mapView_->currentMap()) return;
         mapView_->undoStack()->push(new edit::RenameLayerCommand(*mapView_->currentMap(), idx, name));
         layerPanel_->setMap(mapView_->currentMap(), mapView_->builder());
+    });
+    connect(layerPanel_, &LayerPanel::activeLayerChanged, this, [this](int){
+        // Active-layer change is a soft UI state — no undo entry, no scene
+        // rebuild. We don't need to do anything else here besides what
+        // LayerPanel already did (set map_->selectedLayerIndex).
+    });
+    connect(layerPanel_, &LayerPanel::layerOptionsRequested, this, [this](int idx){
+        auto* map = mapView_->currentMap();
+        if (!map || idx < 0 || idx >= static_cast<int>(map->layers().size())) return;
+        auto& layer = *map->layers()[idx];
+        QDialog dlg(this);
+        dlg.setWindowTitle(tr("Layer options"));
+        auto* form = new QFormLayout(&dlg);
+        auto* nameE = new QLineEdit(layer.name, &dlg);
+        form->addRow(tr("Name:"), nameE);
+        auto* alphaSpin = new QSpinBox(&dlg);
+        alphaSpin->setRange(0, 100); alphaSpin->setSuffix(QStringLiteral(" %"));
+        alphaSpin->setValue(layer.transparency);
+        form->addRow(tr("Transparency:"), alphaSpin);
+        auto* visChk = new QCheckBox(tr("Visible"), &dlg);
+        visChk->setChecked(layer.visible);
+        form->addRow(visChk);
+        auto* bb = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+        form->addRow(bb);
+        connect(bb, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+        connect(bb, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+        if (dlg.exec() != QDialog::Accepted) return;
+        mapView_->undoStack()->beginMacro(tr("Layer options"));
+        if (nameE->text() != layer.name) {
+            mapView_->undoStack()->push(new edit::RenameLayerCommand(*map, idx, nameE->text()));
+        }
+        if (alphaSpin->value() != layer.transparency) {
+            mapView_->undoStack()->push(new edit::SetLayerTransparencyCommand(*map, idx, alphaSpin->value()));
+        }
+        mapView_->undoStack()->endMacro();
+        layer.visible = visChk->isChecked();
+        mapView_->rebuildScene();
+        layerPanel_->setMap(map, mapView_->builder());
     });
 
     partsBrowser_ = new PartsBrowser(parts_, this);

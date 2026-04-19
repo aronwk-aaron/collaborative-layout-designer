@@ -32,6 +32,20 @@ const char* layerKindName(core::LayerKind k) {
     return "?";
 }
 
+// Compact per-kind visual prefix so the user can tell layer types apart
+// at a glance. Unicode symbols keep this stateless / no-icon-resource.
+QString layerKindGlyph(core::LayerKind k) {
+    switch (k) {
+        case core::LayerKind::Grid:         return QStringLiteral("◫");
+        case core::LayerKind::Brick:        return QStringLiteral("▦");
+        case core::LayerKind::Text:         return QStringLiteral("A");
+        case core::LayerKind::Area:         return QStringLiteral("▣");
+        case core::LayerKind::Ruler:        return QStringLiteral("⟷");
+        case core::LayerKind::AnchoredText: return QStringLiteral("↳");
+    }
+    return QStringLiteral("?");
+}
+
 }
 
 LayerPanel::LayerPanel(QWidget* parent) : QDockWidget(tr("Layers"), parent) {
@@ -109,6 +123,20 @@ LayerPanel::LayerPanel(QWidget* parent) : QDockWidget(tr("Layers"), parent) {
         const int idx = list_->row(item);
         builder_->setLayerVisible(idx, item->checkState() == Qt::Checked);
     });
+    // Clicking (or arrow-keying) onto a row sets it as the active layer —
+    // vanilla BlueBrick uses Map.selectedLayerIndex for new-item placements.
+    connect(list_, &QListWidget::currentRowChanged, this, [this](int row){
+        if (row >= 0 && map_) {
+            map_->selectedLayerIndex = row;
+            emit activeLayerChanged(row);
+            // Re-render the panel so the active row renders bold.
+            setMap(map_, builder_);
+        }
+    });
+    connect(list_, &QListWidget::itemDoubleClicked, this, [this](QListWidgetItem* item){
+        if (item) emit layerOptionsRequested(list_->row(item));
+    });
+
     connect(list_, &QWidget::customContextMenuRequested, this, [this](const QPoint& pos) {
         auto* item = list_->itemAt(pos);
         QMenu menu(this);
@@ -116,6 +144,11 @@ LayerPanel::LayerPanel(QWidget* parent) : QDockWidget(tr("Layers"), parent) {
         if (item) {
             const int row = list_->row(item);
             const bool visible = (item->checkState() == Qt::Checked);
+            auto* setActive = menu.addAction(tr("Make Active Layer"));
+            connect(setActive, &QAction::triggered, [this, row]{
+                list_->setCurrentRow(row);
+            });
+            menu.addSeparator();
             auto* toggle = menu.addAction(visible ? tr("Hide") : tr("Show"));
             connect(toggle, &QAction::triggered, [item, visible]{
                 item->setCheckState(visible ? Qt::Unchecked : Qt::Checked);
@@ -131,11 +164,13 @@ LayerPanel::LayerPanel(QWidget* parent) : QDockWidget(tr("Layers"), parent) {
                 }
             });
             menu.addSeparator();
+            auto* opts = menu.addAction(tr("Layer Options..."));
+            connect(opts, &QAction::triggered, [this, row]{ emit layerOptionsRequested(row); });
             auto* ren = menu.addAction(tr("Rename..."));
             connect(ren, &QAction::triggered, [this, row, item]{
                 bool ok = false;
-                // The display text starts with "[N] kind — name"; strip to the
-                // current user-facing name for the prompt default.
+                // The display text starts with "glyph [N] kind — name"; strip
+                // to the current user-facing name for the prompt default.
                 const QString shown = item->text();
                 const int dash = shown.lastIndexOf(QStringLiteral(" — "));
                 const QString def = dash >= 0 ? shown.mid(dash + 3) : shown;
@@ -172,19 +207,36 @@ LayerPanel::LayerPanel(QWidget* parent) : QDockWidget(tr("Layers"), parent) {
 
 int LayerPanel::currentRow() const { return list_->currentRow(); }
 
-void LayerPanel::setMap(const core::Map* map, rendering::SceneBuilder* builder) {
+void LayerPanel::setMap(core::Map* map, rendering::SceneBuilder* builder) {
     builder_ = builder;
+    map_ = map;
     list_->blockSignals(true);
     list_->clear();
     if (map) {
         int i = 0;
         for (const auto& layer : map->layers()) {
+            const bool isActive = (i == map->selectedLayerIndex);
             auto* item = new QListWidgetItem(
-                QStringLiteral("[%1] %2 — %3")
-                    .arg(i++).arg(layerKindName(layer->kind())).arg(layer->name));
+                QStringLiteral("%1  [%2] %3 — %4%5")
+                    .arg(layerKindGlyph(layer->kind()))
+                    .arg(i)
+                    .arg(layerKindName(layer->kind()))
+                    .arg(layer->name)
+                    .arg(layer->transparency < 100
+                            ? QStringLiteral("  (α%1)").arg(layer->transparency)
+                            : QString()));
             item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
             item->setCheckState(layer->visible ? Qt::Checked : Qt::Unchecked);
+            if (isActive) {
+                QFont f = item->font(); f.setBold(true); item->setFont(f);
+                item->setBackground(QColor(60, 120, 200, 60));
+                item->setToolTip(tr("Active layer (receives new items)"));
+            }
             list_->addItem(item);
+            ++i;
+        }
+        if (map->selectedLayerIndex >= 0 && map->selectedLayerIndex < list_->count()) {
+            list_->setCurrentRow(map->selectedLayerIndex);
         }
     }
     list_->blockSignals(false);
