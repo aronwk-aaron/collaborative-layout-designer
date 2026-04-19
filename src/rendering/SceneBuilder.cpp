@@ -57,18 +57,51 @@ constexpr int kBrickDataKind       = 2;  // value: "brick" to distinguish from o
 // whenever the snap toolbar changes); the per-item override reads the static.
 double gSnapPx = 0.0;
 
-// Paint a bright accent outline around the item's local bounding rect when
-// it's selected. Qt's default "dashed overlay" on selected items is too
-// subtle over the pixmap; users asked for a clearly visible highlight.
+// Vanilla BlueBrick darkens a selected brick via an ImageAttributes gamma
+// of 0.33 — we approximate the same "clearly visibly different" cue by
+// compositing a translucent accent tint over the item and drawing a bright
+// cosmetic outline. Qt's built-in "marching ants" overlay is too subtle on
+// pixmap items so SnappingPixmap/SnappingRect strip the Selected state flag
+// before calling the base paint and invoke this helper instead.
 void paintSelectionHighlight(QPainter* p, const QRectF& rect) {
     p->save();
-    QPen pen(QColor(0x3B, 0x8D, 0xFF));   // bright accent blue
+    // Tint overlay (SourceAtop only colors the visible pixmap pixels, not the
+    // transparent margins, producing a clean "colored" selection cue).
+    p->setCompositionMode(QPainter::CompositionMode_SourceAtop);
+    p->fillRect(rect, QColor(59, 141, 255, 85));
+    p->setCompositionMode(QPainter::CompositionMode_SourceOver);
+    QPen pen(QColor(0x1E, 0x6B, 0xE0));
     pen.setWidthF(2.5);
-    pen.setCosmetic(true);                 // constant pixels regardless of zoom
+    pen.setCosmetic(true);
     p->setPen(pen);
     p->setBrush(Qt::NoBrush);
     p->drawRect(rect);
     p->restore();
+}
+
+// Palette matching BlueBrick's ConnectionType.Color-ish defaults: rail (cyan),
+// road (orange), monorail (purple), and a fallback green. Type 0 means "no
+// type" and never rendered.
+QColor colorForConnectionType(int type) {
+    switch (type) {
+        case 1:  return QColor(0, 180, 220);   // rail
+        case 2:  return QColor(220, 140, 0);   // road
+        case 3:  return QColor(160, 0, 200);   // monorail std
+        case 4:  return QColor(200, 0, 160);   // monorail short curve
+        default: return QColor(30, 200, 60);   // all other types
+    }
+}
+
+// Toggles visibility of every connection-point marker child so they only
+// appear while the parent brick is selected. Children are tagged via
+// setData(kBrickDataKind, "connDot") by addBrickLayer so we pick them out
+// without disturbing anchored-label children etc.
+void setConnectionDotsVisible(QGraphicsItem* parent, bool visible) {
+    for (QGraphicsItem* child : parent->childItems()) {
+        if (child->data(kBrickDataKind).toString() == QStringLiteral("connDot")) {
+            child->setVisible(visible);
+        }
+    }
 }
 
 class SnappingPixmap : public QGraphicsPixmapItem {
@@ -82,11 +115,12 @@ protected:
             p.setY(std::round(p.y() / gSnapPx) * gSnapPx);
             return p;
         }
+        if (c == ItemSelectedChange) {
+            setConnectionDotsVisible(this, v.toBool());
+        }
         return QGraphicsPixmapItem::itemChange(c, v);
     }
     void paint(QPainter* p, const QStyleOptionGraphicsItem* opt, QWidget* w) override {
-        // Strip the selected-state style flag so Qt doesn't draw its muted
-        // default overlay; we paint our own highlight instead.
         QStyleOptionGraphicsItem cleaned(*opt);
         cleaned.state &= ~QStyle::State_Selected;
         QGraphicsPixmapItem::paint(p, &cleaned, w);
@@ -174,9 +208,35 @@ void addBrickLayer(const core::LayerBrick& L, QGraphicsItemGroup* group, parts::
 
         item->setFlag(QGraphicsItem::ItemIsSelectable, true);
         item->setFlag(QGraphicsItem::ItemIsMovable,    true);
+        item->setFlag(QGraphicsItem::ItemSendsGeometryChanges, true);
         item->setData(kBrickDataLayerIndex, layerIndex);
         item->setData(kBrickDataGuid,       brick.guid);
         item->setData(kBrickDataKind,       QStringLiteral("brick"));
+
+        // Connection-point markers: child ellipses in the brick's local coord
+        // system so they transform with the brick for free. Hidden by default;
+        // shown on selection via the ItemSelectedChange hook above. The dot
+        // radius in scene pixels stays fixed regardless of zoom (cosmetic).
+        if (meta && !meta->connections.isEmpty()) {
+            constexpr double kDotRadiusPx = 3.0;
+            for (const auto& c : meta->connections) {
+                if (c.type == 0) continue;
+                const QPointF localPx(c.position.x() * kPx, c.position.y() * kPx);
+                auto* dot = new QGraphicsEllipseItem(
+                    localPx.x() - kDotRadiusPx, localPx.y() - kDotRadiusPx,
+                    kDotRadiusPx * 2, kDotRadiusPx * 2, item);
+                QColor col = colorForConnectionType(c.type);
+                QPen pen(col.darker(160));
+                pen.setWidthF(1.0);
+                pen.setCosmetic(true);
+                dot->setPen(pen);
+                dot->setBrush(QBrush(col));
+                dot->setZValue(1000);     // above the pixmap
+                dot->setData(kBrickDataKind, QStringLiteral("connDot"));
+                dot->setVisible(false);
+            }
+        }
+
         brickByGuid.insert(brick.guid, item);
         group->addToGroup(item);
     }
@@ -253,15 +313,15 @@ void addAreaLayer(const core::LayerArea& L, QGraphicsItemGroup* group) {
 }
 
 QString formatDistance(double studs, int unit) {
-    // Vanilla's Tools.Distance.Unit enum values:
-    //   0 = studs, 1 = cm, 2 = inches, 3 = modules (64 studs), 4 = LDraw LDU.
-    // 1 stud = 8 mm = 0.8 cm ≈ 0.315 in. 1 stud = 20 LDU. Module size per
-    // upstream = 64 studs.
+    // Upstream Tools/Distance.cs Unit enum:
+    //   0 STUD, 1 LDU, 2 STRAIGHT_TRACK, 3 MODULE, 4 METER, 5 FEET.
+    // 1 stud = 20 LDU = 1/16 track = 1/96 AFOL module = 8 mm = 0.026248 ft.
     switch (unit) {
-        case 1:  return QStringLiteral("%1 cm").arg(studs * 0.8, 0, 'f', 2);
-        case 2:  return QStringLiteral("%1 in").arg(studs * 0.8 / 2.54, 0, 'f', 2);
-        case 3:  return QStringLiteral("%1 mod").arg(studs / 64.0, 0, 'f', 2);
-        case 4:  return QStringLiteral("%1 LDU").arg(studs * 20.0, 0, 'f', 0);
+        case 1:  return QStringLiteral("%1 LDU").arg(studs * 20.0, 0, 'f', 0);
+        case 2:  return QStringLiteral("%1 tracks").arg(studs / 16.0, 0, 'f', 2);
+        case 3:  return QStringLiteral("%1 mod").arg(studs / 96.0, 0, 'f', 2);
+        case 4:  return QStringLiteral("%1 m").arg(studs * 0.008, 0, 'f', 3);
+        case 5:  return QStringLiteral("%1 ft").arg(studs * 0.026248, 0, 'f', 2);
         default: return QStringLiteral("%1 studs").arg(studs, 0, 'f', 2);
     }
 }
