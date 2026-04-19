@@ -308,10 +308,20 @@ void MapView::loadMap(std::unique_ptr<core::Map> map) {
 
     scene()->setBackgroundBrush(map_->backgroundColor.color);
     builder_->build(*map_);
-    if (!scene()->itemsBoundingRect().isEmpty()) {
-        const auto r = scene()->itemsBoundingRect().adjusted(-50, -50, 50, 50);
-        scene()->setSceneRect(r);
-        fitInView(r, Qt::KeepAspectRatio);
+    // Give the view a much bigger scene rect than the current content so
+    // the user can pan well outside the existing bricks to add new ones
+    // or extend the layout. ~50 000 px = ~6 250 studs on each side, which
+    // is well beyond any realistic train-club layout. Without this the
+    // sceneRect defaulted to the items bounding box and pan stopped at
+    // the last brick.
+    const QRectF content = scene()->itemsBoundingRect();
+    const double kPadPx = 50000.0;
+    const QRectF bigRect = content.isEmpty()
+        ? QRectF(-kPadPx, -kPadPx, kPadPx * 2, kPadPx * 2)
+        : content.adjusted(-kPadPx, -kPadPx, kPadPx, kPadPx);
+    scene()->setSceneRect(bigRect);
+    if (!content.isEmpty()) {
+        fitInView(content.adjusted(-50, -50, 50, 50), Qt::KeepAspectRatio);
     }
     viewport()->update();
     emit selectionChanged();
