@@ -423,6 +423,15 @@ void MapView::mousePressEvent(QMouseEvent* e) {
 }
 
 void MapView::mouseMoveEvent(QMouseEvent* e) {
+    // While dragging a selected brick, cursor hint "drop here to delete" when
+    // the pointer leaves the viewport (over any dock — typically the Parts
+    // panel on the left). Restore on re-entry so in-scene dragging keeps the
+    // normal arrow/hand cursor.
+    if (!dragStart_.empty() && (e->buttons() & Qt::LeftButton)) {
+        if (!viewport()->rect().contains(e->pos())) setCursor(Qt::ForbiddenCursor);
+        else                                         unsetCursor();
+    }
+
     // Continue a paint/erase stroke as long as the left button is held down
     // and we're in a paint tool. Group each cell change as its own command so
     // Ctrl+Z rolls back one cell at a time (matches vanilla BlueBrick's

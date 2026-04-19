@@ -333,6 +333,31 @@ void addRulerLayer(const core::LayerRuler& L, QGraphicsItemGroup* group) {
             line->setPen(pen);
             group->addToGroup(line);
 
+            // Offset line + connector ticks. Vanilla BlueBrick draws an
+            // auxiliary parallel line at `offsetDistance` studs from the main
+            // line when AllowOffset is true. The sign of offsetDistance
+            // controls which side the offset sits on.
+            if (r.allowOffset && std::abs(r.offsetDistance) > 0.001f) {
+                const QPointF dir = p2px - p1px;
+                const double len = std::hypot(dir.x(), dir.y());
+                if (len > 0.001) {
+                    const QPointF nrm(-dir.y() / len, dir.x() / len);
+                    const double off = studToPx(r.offsetDistance);
+                    const QPointF o1 = p1px + nrm * off;
+                    const QPointF o2 = p2px + nrm * off;
+                    auto* off1 = new QGraphicsLineItem(p1px.x(), p1px.y(), o1.x(), o1.y());
+                    auto* off2 = new QGraphicsLineItem(p2px.x(), p2px.y(), o2.x(), o2.y());
+                    auto* mid  = new QGraphicsLineItem(o1.x(), o1.y(), o2.x(), o2.y());
+                    QPen opn(r.color.color);
+                    opn.setWidthF(r.lineThickness);
+                    opn.setStyle(Qt::DashLine);
+                    off1->setPen(opn); off2->setPen(opn); mid->setPen(opn);
+                    group->addToGroup(off1);
+                    group->addToGroup(off2);
+                    group->addToGroup(mid);
+                }
+            }
+
             // Distance label at the line midpoint.
             if (r.displayDistance) {
                 const QPointF delta = r.point2 - r.point1;
