@@ -11,6 +11,8 @@ add_library(cld_edit STATIC
     LayerCommands.h
     AreaCommands.cpp
     AreaCommands.h
+    RulerCommands.cpp
+    RulerCommands.h
 )
 
 target_include_directories(cld_edit PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)

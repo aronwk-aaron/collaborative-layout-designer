@@ -156,9 +156,17 @@ MainWindow::MainWindow(parts::PartsLibrary& parts, QWidget* parent)
     paintBtn->setText(tr("Paint")); paintBtn->setCheckable(true);
     auto* eraseBtn = new QToolButton(toolGroupHost);
     eraseBtn->setText(tr("Erase")); eraseBtn->setCheckable(true);
+    auto* lineBtn = new QToolButton(toolGroupHost);
+    lineBtn->setText(tr("Line")); lineBtn->setCheckable(true);
+    lineBtn->setToolTip(tr("Draw a linear ruler (click-drag)"));
+    auto* circleBtn = new QToolButton(toolGroupHost);
+    circleBtn->setText(tr("Circle")); circleBtn->setCheckable(true);
+    circleBtn->setToolTip(tr("Draw a circular ruler (click-drag)"));
     toolRow->addWidget(selectBtn);
     toolRow->addWidget(paintBtn);
     toolRow->addWidget(eraseBtn);
+    toolRow->addWidget(lineBtn);
+    toolRow->addWidget(circleBtn);
     toolbar->addWidget(toolGroupHost);
 
     auto* colorBtn = new QToolButton(this);
@@ -178,15 +186,19 @@ MainWindow::MainWindow(parts::PartsLibrary& parts, QWidget* parent)
     refreshColorBtn();
     toolbar->addWidget(colorBtn);
 
-    auto setTool = [this, selectBtn, paintBtn, eraseBtn](MapView::Tool t){
+    auto setTool = [this, selectBtn, paintBtn, eraseBtn, lineBtn, circleBtn](MapView::Tool t){
         selectBtn->setChecked(t == MapView::Tool::Select);
         paintBtn->setChecked(t == MapView::Tool::PaintArea);
         eraseBtn->setChecked(t == MapView::Tool::EraseArea);
+        lineBtn->setChecked(t == MapView::Tool::DrawLinearRuler);
+        circleBtn->setChecked(t == MapView::Tool::DrawCircularRuler);
         mapView_->setTool(t);
     };
     connect(selectBtn, &QToolButton::clicked, [setTool]{ setTool(MapView::Tool::Select); });
     connect(paintBtn,  &QToolButton::clicked, [setTool]{ setTool(MapView::Tool::PaintArea); });
     connect(eraseBtn,  &QToolButton::clicked, [setTool]{ setTool(MapView::Tool::EraseArea); });
+    connect(lineBtn,   &QToolButton::clicked, [setTool]{ setTool(MapView::Tool::DrawLinearRuler); });
+    connect(circleBtn, &QToolButton::clicked, [setTool]{ setTool(MapView::Tool::DrawCircularRuler); });
     connect(colorBtn, &QToolButton::clicked, [this, refreshColorBtn]{
         const QColor c = QColorDialog::getColor(mapView_->paintColor(), this,
                                                  tr("Paint colour"),

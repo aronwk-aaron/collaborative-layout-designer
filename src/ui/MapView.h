@@ -70,7 +70,7 @@ public:
     void editSelectedTextContent();
 
     // Active tool — affects left-click behaviour on the map.
-    enum class Tool { Select, PaintArea, EraseArea };
+    enum class Tool { Select, PaintArea, EraseArea, DrawLinearRuler, DrawCircularRuler };
     void setTool(Tool t) { tool_ = t; }
     Tool tool() const { return tool_; }
 
@@ -132,6 +132,11 @@ private:
     // Track which cells we already painted in the current stroke so dragging
     // a single cell size across cells adds exactly one change per cell.
     QSet<QPoint> strokeCellsTouched_;
+
+    // Ruler-draw state: scene pos of the first click-anchor when a ruler
+    // tool is active. Released-position pairs with this to create the ruler.
+    bool    drawingRuler_ = false;
+    QPointF rulerStart_;
 };
 
 }

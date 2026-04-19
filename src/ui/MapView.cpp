@@ -5,11 +5,13 @@
 #include "../core/LayerArea.h"
 #include "../core/LayerBrick.h"
 #include "../core/LayerGrid.h"
+#include "../core/LayerRuler.h"
 #include "../core/LayerText.h"
 #include "../core/Map.h"
 #include "../core/TextCell.h"
 #include "../edit/AreaCommands.h"
 #include "../edit/EditCommands.h"
+#include "../edit/RulerCommands.h"
 #include "../edit/TextCommands.h"
 #include "../parts/PartsLibrary.h"
 #include "../rendering/SceneBuilder.h"
@@ -232,6 +234,15 @@ void MapView::mousePressEvent(QMouseEvent* e) {
         e->accept();
         return;
     }
+    // Ruler draw tools: record press position; create the ruler on release.
+    if (e->button() == Qt::LeftButton && map_ &&
+        (tool_ == Tool::DrawLinearRuler || tool_ == Tool::DrawCircularRuler)) {
+        drawingRuler_ = true;
+        rulerStart_ = mapToScene(e->pos());
+        e->accept();
+        return;
+    }
+
     // Paint / erase: swallow the event so the graphics view doesn't start a
     // rubber band or drag, and stamp the cell under the cursor.
     if (e->button() == Qt::LeftButton && map_ &&
@@ -321,6 +332,55 @@ void MapView::mouseReleaseEvent(QMouseEvent* e) {
     if (e->button() == Qt::MiddleButton && panning_) {
         panning_ = false;
         unsetCursor();
+        e->accept();
+        return;
+    }
+    if (e->button() == Qt::LeftButton && drawingRuler_ && map_) {
+        drawingRuler_ = false;
+        const QPointF endScene = mapToScene(e->pos());
+        const double pxPerStud = rendering::SceneBuilder::kPixelsPerStud;
+        // Find or implicitly create a ruler layer.
+        int targetLayer = -1;
+        for (int i = 0; i < static_cast<int>(map_->layers().size()); ++i) {
+            if (map_->layers()[i]->kind() == core::LayerKind::Ruler) { targetLayer = i; break; }
+        }
+        if (targetLayer < 0) {
+            auto L = std::make_unique<core::LayerRuler>();
+            L->guid = QUuid::createUuid().toString(QUuid::WithoutBraces);
+            L->name = tr("Rulers");
+            map_->layers().push_back(std::move(L));
+            targetLayer = static_cast<int>(map_->layers().size()) - 1;
+        }
+
+        core::LayerRuler::AnyRuler any;
+        const QPointF p1(rulerStart_.x() / pxPerStud, rulerStart_.y() / pxPerStud);
+        const QPointF p2(endScene.x()    / pxPerStud, endScene.y()    / pxPerStud);
+
+        if (tool_ == Tool::DrawLinearRuler) {
+            any.kind = core::RulerKind::Linear;
+            any.linear.point1 = p1;
+            any.linear.point2 = p2;
+            const QPointF tl(std::min(p1.x(), p2.x()), std::min(p1.y(), p2.y()));
+            const QPointF br(std::max(p1.x(), p2.x()), std::max(p1.y(), p2.y()));
+            any.linear.displayArea = QRectF(tl, br);
+            any.linear.color = core::ColorSpec::fromKnown(QColor(Qt::black), QStringLiteral("Black"));
+            any.linear.lineThickness = 1.0f;
+            any.linear.displayDistance = true;
+            any.linear.displayUnit = true;
+        } else {
+            any.kind = core::RulerKind::Circular;
+            any.circular.center = p1;
+            const QPointF d = p2 - p1;
+            const double r = std::hypot(d.x(), d.y());
+            any.circular.radius = static_cast<float>(r);
+            any.circular.displayArea = QRectF(p1.x() - r, p1.y() - r, 2 * r, 2 * r);
+            any.circular.color = core::ColorSpec::fromKnown(QColor(Qt::black), QStringLiteral("Black"));
+            any.circular.lineThickness = 1.0f;
+            any.circular.displayDistance = true;
+            any.circular.displayUnit = true;
+        }
+        undoStack_->push(new edit::AddRulerItemCommand(*map_, targetLayer, std::move(any)));
+        rebuildScene();
         e->accept();
         return;
     }
