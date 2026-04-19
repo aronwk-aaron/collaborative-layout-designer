@@ -57,27 +57,10 @@ constexpr int kBrickDataKind       = 2;  // value: "brick" to distinguish from o
 // whenever the snap toolbar changes); the per-item override reads the static.
 double gSnapPx = 0.0;
 
-// Vanilla BlueBrick darkens a selected brick via an ImageAttributes gamma
-// of 0.33 — we approximate the same "clearly visibly different" cue by
-// compositing a translucent accent tint over the item and drawing a bright
-// cosmetic outline. Qt's built-in "marching ants" overlay is too subtle on
-// pixmap items so SnappingPixmap/SnappingRect strip the Selected state flag
-// before calling the base paint and invoke this helper instead.
-void paintSelectionHighlight(QPainter* p, const QRectF& rect) {
-    p->save();
-    // Tint overlay (SourceAtop only colors the visible pixmap pixels, not the
-    // transparent margins, producing a clean "colored" selection cue).
-    p->setCompositionMode(QPainter::CompositionMode_SourceAtop);
-    p->fillRect(rect, QColor(59, 141, 255, 85));
-    p->setCompositionMode(QPainter::CompositionMode_SourceOver);
-    QPen pen(QColor(0x1E, 0x6B, 0xE0));
-    pen.setWidthF(2.5);
-    pen.setCosmetic(true);
-    p->setPen(pen);
-    p->setBrush(Qt::NoBrush);
-    p->drawRect(rect);
-    p->restore();
-}
+// Selection is now painted from MapView::drawForeground so every item kind
+// (pixmap, rect, line, ellipse) gets a consistent, unmistakable highlight
+// regardless of subclass-specific paint overrides. This helper stays only
+// to hide connection-point dots on selection changes below.
 
 // Palette matching BlueBrick's ConnectionType.Color-ish defaults: rail (cyan),
 // road (orange), monorail (purple), and a fallback green. Type 0 means "no
@@ -120,12 +103,6 @@ protected:
         }
         return QGraphicsPixmapItem::itemChange(c, v);
     }
-    void paint(QPainter* p, const QStyleOptionGraphicsItem* opt, QWidget* w) override {
-        QStyleOptionGraphicsItem cleaned(*opt);
-        cleaned.state &= ~QStyle::State_Selected;
-        QGraphicsPixmapItem::paint(p, &cleaned, w);
-        if (isSelected()) paintSelectionHighlight(p, boundingRect());
-    }
 };
 
 class SnappingRect : public QGraphicsRectItem {
@@ -140,12 +117,6 @@ protected:
             return p;
         }
         return QGraphicsRectItem::itemChange(c, v);
-    }
-    void paint(QPainter* p, const QStyleOptionGraphicsItem* opt, QWidget* w) override {
-        QStyleOptionGraphicsItem cleaned(*opt);
-        cleaned.state &= ~QStyle::State_Selected;
-        QGraphicsRectItem::paint(p, &cleaned, w);
-        if (isSelected()) paintSelectionHighlight(p, rect());
     }
 };
 

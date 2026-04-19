@@ -300,6 +300,17 @@ MainWindow::MainWindow(parts::PartsLibrary& parts, QWidget* parent)
     connect(mapView_->undoStack(), &QUndoStack::indexChanged, this, [refreshDims](int){ refreshDims(); });
     QTimer::singleShot(0, this, refreshDims);
 
+    // Live selection readout — helps confirm that clicks and drag-select
+    // are actually producing a selection. Updates whenever the scene's
+    // selection set changes.
+    auto* selLabel = new QLabel(this);
+    statusBar()->addPermanentWidget(selLabel);
+    connect(mapView_, &MapView::selectionChanged, this, [this, selLabel]{
+        const int n = mapView_->scene()->selectedItems().size();
+        selLabel->setText(n == 0 ? tr("no selection")
+                                 : tr("selected: %1").arg(n));
+    });
+
     // Auto-save: 60s tick, writes to AppDataLocation/autosave.bbm whenever
     // the undo stack is dirty. Cheap enough to run unconditionally; the
     // writeMapTo path is the same used for manual saves.

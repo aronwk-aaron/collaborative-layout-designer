@@ -87,9 +87,13 @@ MapView::MapView(parts::PartsLibrary& parts, QWidget* parent)
     auto* scene = new QGraphicsScene(this);
     scene->setBackgroundBrush(QColor(100, 149, 237));
     setScene(scene);
-    connect(scene, &QGraphicsScene::selectionChanged, this, &MapView::selectionChanged);
-    // drawForeground repaints the overlay on any selection change.
-    connect(scene, &QGraphicsScene::selectionChanged, this, [this]{ viewport()->update(); });
+    // Scene selection changes -> force a viewport repaint so drawForeground
+    // repaints the highlight -> also relay as our own selectionChanged
+    // signal so the MainWindow status bar can update.
+    connect(scene, &QGraphicsScene::selectionChanged, this, [this]{
+        viewport()->update();
+        emit selectionChanged();
+    });
 
     builder_ = std::make_unique<rendering::SceneBuilder>(*scene, parts_);
     undoStack_ = std::make_unique<QUndoStack>(this);
@@ -183,33 +187,44 @@ void MapView::drawBackground(QPainter* painter, const QRectF& rect) {
 
 void MapView::drawForeground(QPainter* painter, const QRectF& rect) {
     QGraphicsView::drawForeground(painter, rect);
-    // Draw selection highlights on top of every scene item. This happens
-    // after the items are painted so the outline / translucent fill is
-    // never occluded by later layers. Works reliably regardless of item
-    // type (pixmap, rect, line, ellipse) — boundingRect mapped to scene
-    // preserves rotation for rotated bricks.
     const auto sel = scene()->selectedItems();
     if (sel.isEmpty()) return;
 
     painter->save();
-    // Bright orange: contrasts against both dark and light brick colors and
-    // against the default white scene background. Cosmetic pen so width
-    // stays constant as the user zooms.
-    QPen pen(QColor(255, 140, 0));
-    pen.setWidthF(3.0);
-    pen.setCosmetic(true);
-    pen.setJoinStyle(Qt::MiterJoin);
-    painter->setPen(pen);
-    painter->setBrush(QColor(255, 170, 0, 70));   // warm translucent fill
+    painter->setRenderHint(QPainter::Antialiasing, true);
+
+    // High-contrast double stroke like highway sign highlighters: a fat
+    // dark backer that shows against light bricks, with a thin bright
+    // yellow line on top that shows against dark bricks. Both cosmetic so
+    // width stays constant as the user zooms in and out. Plus a faint
+    // translucent fill to flag the item body itself.
+    QPen outer(QColor(0, 0, 0, 230));
+    outer.setWidthF(5.0);
+    outer.setCosmetic(true);
+    outer.setJoinStyle(Qt::MiterJoin);
+    QPen inner(QColor(255, 215, 0));
+    inner.setWidthF(2.0);
+    inner.setCosmetic(true);
+    inner.setJoinStyle(Qt::MiterJoin);
 
     for (QGraphicsItem* it : sel) {
         if (!it) continue;
-        const QRectF brect = it->boundingRect();
-        if (brect.isEmpty()) continue;
-        // mapToScene on a QRectF returns a QPolygonF that preserves rotation
-        // from the item's transform — draw that polygon directly.
-        const QPolygonF poly = it->mapToScene(brect);
-        if (!poly.isEmpty()) painter->drawPolygon(poly);
+        // Use sceneBoundingRect so we always get a visible AABB in scene
+        // coords even if the item's local boundingRect is thin (lines,
+        // ellipses). For rotated bricks this means the outline is the
+        // axis-aligned enclosing box, not the rotated polygon — we trade
+        // that for "always visible" reliability.
+        QRectF r = it->sceneBoundingRect();
+        if (r.width() < 1.0 || r.height() < 1.0) {
+            // Degenerate (zero-height line etc.) — inflate to a clickable area.
+            r.adjust(-3.0, -3.0, 3.0, 3.0);
+        }
+        painter->setPen(outer);
+        painter->setBrush(Qt::NoBrush);
+        painter->drawRect(r);
+        painter->setPen(inner);
+        painter->setBrush(QColor(255, 215, 0, 70));
+        painter->drawRect(r);
     }
     painter->restore();
 }
