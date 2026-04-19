@@ -617,7 +617,46 @@ void MapView::keyPressEvent(QKeyEvent* e) {
         e->accept();
         return;
     }
+    // Arrow keys: nudge selection by the current snap step (1 stud default).
+    if (e->key() == Qt::Key_Left  || e->key() == Qt::Key_Right ||
+        e->key() == Qt::Key_Up    || e->key() == Qt::Key_Down) {
+        const double step = snapStepStuds_ > 0.0 ? snapStepStuds_ : 1.0;
+        double dx = 0.0, dy = 0.0;
+        if (e->key() == Qt::Key_Left)  dx = -step;
+        if (e->key() == Qt::Key_Right) dx =  step;
+        if (e->key() == Qt::Key_Up)    dy = -step;
+        if (e->key() == Qt::Key_Down)  dy =  step;
+        nudgeSelected(dx, dy);
+        e->accept();
+        return;
+    }
     QGraphicsView::keyPressEvent(e);
+}
+
+void MapView::nudgeSelected(double dxStuds, double dyStuds) {
+    if (!map_ || (dxStuds == 0.0 && dyStuds == 0.0)) return;
+    std::vector<edit::MoveBricksCommand::Entry> entries;
+    for (QGraphicsItem* it : scene()->selectedItems()) {
+        if (!isBrickItem(it)) continue;
+        const int li = it->data(kBrickDataLayerIndex).toInt();
+        const QString guid = it->data(kBrickDataGuid).toString();
+        if (li < 0 || li >= static_cast<int>(map_->layers().size())) continue;
+        auto* L = map_->layers()[li].get();
+        if (!L || L->kind() != core::LayerKind::Brick) continue;
+        for (const auto& b : static_cast<core::LayerBrick&>(*L).bricks) {
+            if (b.guid != guid) continue;
+            edit::MoveBricksCommand::Entry e;
+            e.ref.layerIndex = li;
+            e.ref.guid = guid;
+            e.beforeTopLeft = b.displayArea.topLeft();
+            e.afterTopLeft  = b.displayArea.topLeft() + QPointF(dxStuds, dyStuds);
+            entries.push_back(e);
+            break;
+        }
+    }
+    if (entries.empty()) return;
+    undoStack_->push(new edit::MoveBricksCommand(*map_, std::move(entries)));
+    rebuildScene();
 }
 
 void MapView::rotateSelected(float degrees) {

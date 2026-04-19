@@ -47,6 +47,7 @@ public:
 
     // Edit operations (invoked by menu/shortcut actions):
     void rotateSelected(float degrees);
+    void nudgeSelected(double dxStuds, double dyStuds);
     void deleteSelected();
     void addPartAtViewCenter(const QString& partKey);
     void addPartAtScenePos(const QString& partKey, QPointF scenePosPx);

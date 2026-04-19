@@ -15,6 +15,7 @@
 #include "../core/Ids.h"
 #include "../core/Layer.h"
 #include "../core/LayerBrick.h"
+#include "../core/LayerGrid.h"
 #include "../core/AnchoredLabel.h"
 #include "../core/ColorSpec.h"
 #include "../edit/EditCommands.h"
@@ -134,6 +135,49 @@ MainWindow::MainWindow(parts::PartsLibrary& parts, QWidget* parent)
         auto* visChk = new QCheckBox(tr("Visible"), &dlg);
         visChk->setChecked(layer.visible);
         form->addRow(visChk);
+
+        // Hull section (vanilla's DisplayHulls on brick/text/ruler layers).
+        auto* hullChk = new QCheckBox(tr("Display selection hulls"), &dlg);
+        hullChk->setChecked(layer.hull.displayHulls);
+        form->addRow(hullChk);
+        auto* hullThick = new QSpinBox(&dlg);
+        hullThick->setRange(1, 20);
+        hullThick->setValue(layer.hull.thickness);
+        form->addRow(tr("Hull thickness:"), hullThick);
+
+        // Grid-layer specific section — mirrors LayerGridOptionForm.cs.
+        QSpinBox* gridSize = nullptr;
+        QSpinBox* gridThick = nullptr;
+        QSpinBox* subDiv = nullptr;
+        QCheckBox* showGrid = nullptr;
+        QCheckBox* showSub = nullptr;
+        QCheckBox* showCellIdx = nullptr;
+        if (layer.kind() == core::LayerKind::Grid) {
+            auto& G = static_cast<core::LayerGrid&>(layer);
+            form->addRow(new QLabel(QStringLiteral("<b>%1</b>").arg(tr("Grid layer")), &dlg));
+            gridSize = new QSpinBox(&dlg);
+            gridSize->setRange(1, 512); gridSize->setSuffix(tr(" studs"));
+            gridSize->setValue(G.gridSizeInStud);
+            form->addRow(tr("Cell size:"), gridSize);
+            gridThick = new QSpinBox(&dlg);
+            gridThick->setRange(1, 20);
+            gridThick->setValue(static_cast<int>(G.gridThickness));
+            form->addRow(tr("Grid line thickness:"), gridThick);
+            subDiv = new QSpinBox(&dlg);
+            subDiv->setRange(2, 32);
+            subDiv->setValue(G.subDivisionNumber);
+            form->addRow(tr("Sub-divisions per cell:"), subDiv);
+            showGrid = new QCheckBox(tr("Display grid"), &dlg);
+            showGrid->setChecked(G.displayGrid);
+            form->addRow(showGrid);
+            showSub = new QCheckBox(tr("Display sub-grid"), &dlg);
+            showSub->setChecked(G.displaySubGrid);
+            form->addRow(showSub);
+            showCellIdx = new QCheckBox(tr("Display cell index labels"), &dlg);
+            showCellIdx->setChecked(G.displayCellIndex);
+            form->addRow(showCellIdx);
+        }
+
         auto* bb = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
         form->addRow(bb);
         connect(bb, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
@@ -148,6 +192,17 @@ MainWindow::MainWindow(parts::PartsLibrary& parts, QWidget* parent)
         }
         mapView_->undoStack()->endMacro();
         layer.visible = visChk->isChecked();
+        layer.hull.displayHulls = hullChk->isChecked();
+        layer.hull.thickness = hullThick->value();
+        if (layer.kind() == core::LayerKind::Grid) {
+            auto& G = static_cast<core::LayerGrid&>(layer);
+            G.gridSizeInStud = gridSize->value();
+            G.gridThickness = static_cast<float>(gridThick->value());
+            G.subDivisionNumber = subDiv->value();
+            G.displayGrid = showGrid->isChecked();
+            G.displaySubGrid = showSub->isChecked();
+            G.displayCellIndex = showCellIdx->isChecked();
+        }
         mapView_->rebuildScene();
         layerPanel_->setMap(map, mapView_->builder());
     });
@@ -506,6 +561,20 @@ void MainWindow::setupMenus() {
     connect(selPathAct, &QAction::triggered, [this]{ mapView_->selectPath(); });
 
     edit->addSeparator();
+    // Move Step submenu — nudge selection by the current snap step (or a
+    // specific override). Mirrors BlueBrick's Edit > Transform > Move Step.
+    auto* moveStepMenu = edit->addMenu(tr("&Move Step"));
+    auto addNudge = [this, moveStepMenu](const QString& label, double dx, double dy){
+        auto* a = moveStepMenu->addAction(label);
+        connect(a, &QAction::triggered, this, [this, dx, dy]{
+            mapView_->nudgeSelected(dx, dy);
+        });
+    };
+    addNudge(tr("Up"),    0.0, -1.0);
+    addNudge(tr("Down"),  0.0,  1.0);
+    addNudge(tr("Left"), -1.0,  0.0);
+    addNudge(tr("Right"), 1.0,  0.0);
+
     auto* groupAct = edit->addAction(tr("&Group"));
     groupAct->setShortcut(QKeySequence(tr("Ctrl+G")));
     connect(groupAct, &QAction::triggered, [this]{ mapView_->groupSelection(); });
