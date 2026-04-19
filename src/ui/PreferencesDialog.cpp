@@ -46,14 +46,48 @@ QWidget* buildGeneralTab(QDialog* parent) {
     splashChk->setChecked(s.value(QStringLiteral("general/showSplash"), false).toBool());
     form->addRow(splashChk);
 
+    // Template file for File > New — vanilla "use default template" parity.
+    auto* tplEdit = new QLineEdit(
+        s.value(QStringLiteral("general/newMapTemplate")).toString(), w);
+    auto* tplBrowse = new QPushButton(QObject::tr("..."), w);
+    QObject::connect(tplBrowse, &QPushButton::clicked, w, [tplEdit, w]{
+        const QString p = QFileDialog::getOpenFileName(w,
+            QObject::tr("New-map template"), tplEdit->text(),
+            QObject::tr("BlueBrick map (*.bbm)"));
+        if (!p.isEmpty()) tplEdit->setText(p);
+    });
+    auto* tplRow = new QHBoxLayout();
+    tplRow->addWidget(tplEdit, 1);
+    tplRow->addWidget(tplBrowse);
+    auto* tplWrap = new QWidget(w); tplWrap->setLayout(tplRow);
+    form->addRow(QObject::tr("File > New template:"), tplWrap);
+
+    // Language selector (scaffolding; applies next launch).
+    auto* langCombo = new QComboBox(w);
+    langCombo->addItem(QObject::tr("English"),     QStringLiteral("en"));
+    langCombo->addItem(QObject::tr("Français"),    QStringLiteral("fr"));
+    langCombo->addItem(QObject::tr("Deutsch"),     QStringLiteral("de"));
+    langCombo->addItem(QObject::tr("Nederlands"),  QStringLiteral("nl"));
+    langCombo->addItem(QObject::tr("Português"),   QStringLiteral("pt"));
+    langCombo->addItem(QObject::tr("Español"),     QStringLiteral("es"));
+    langCombo->addItem(QObject::tr("Italiano"),    QStringLiteral("it"));
+    langCombo->addItem(QObject::tr("Norsk"),       QStringLiteral("no"));
+    langCombo->addItem(QObject::tr("Svenska"),     QStringLiteral("sv"));
+    const QString curLang = s.value(QStringLiteral("general/language"), QStringLiteral("en")).toString();
+    for (int i = 0; i < langCombo->count(); ++i)
+        if (langCombo->itemData(i).toString() == curLang) { langCombo->setCurrentIndex(i); break; }
+    form->addRow(QObject::tr("Language (restart required):"), langCombo);
+
     // Save-on-accept: parent's accepted signal fires before exec() returns, so
     // we wire per-tab savers that the dialog's QDialogButtonBox can trigger.
-    QObject::connect(parent, &QDialog::accepted, w, [undoSpin, wheelSpin, reopenChk, splashChk]{
+    QObject::connect(parent, &QDialog::accepted, w, [undoSpin, wheelSpin, reopenChk, splashChk, tplEdit, langCombo]{
         QSettings s;
         s.setValue(QStringLiteral("general/undoStackDepth"), undoSpin->value());
         s.setValue(QStringLiteral("general/wheelZoomFactor"), wheelSpin->value());
         s.setValue(QStringLiteral("general/reopenLastFile"), reopenChk->isChecked());
         s.setValue(QStringLiteral("general/showSplash"), splashChk->isChecked());
+        s.setValue(QStringLiteral("general/newMapTemplate"), tplEdit->text());
+        s.setValue(QStringLiteral("general/language"), langCombo->currentData().toString());
     });
     return w;
 }

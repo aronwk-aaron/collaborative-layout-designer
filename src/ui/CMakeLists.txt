@@ -19,6 +19,8 @@ add_library(cld_ui STATIC
     PreferencesDialog.h
     FindDialog.cpp
     FindDialog.h
+    BudgetDialog.cpp
+    BudgetDialog.h
 )
 
 target_link_libraries(cld_ui

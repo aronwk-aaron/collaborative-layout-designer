@@ -2,10 +2,14 @@
 #include "../ui/MainWindow.h"
 
 #include <QApplication>
+#include <QCoreApplication>
 #include <QDir>
 #include <QFile>
+#include <QLibraryInfo>
+#include <QLocale>
 #include <QSettings>
 #include <QStandardPaths>
+#include <QTranslator>
 
 namespace {
 
@@ -35,6 +39,25 @@ int main(int argc, char** argv) {
     QApplication::setApplicationVersion(QStringLiteral("0.0.1"));
 
     QApplication app(argc, argv);
+
+    // Localization scaffolding: load the user-selected UI language's .qm file
+    // from <appDir>/translations/cld_<code>.qm if it exists, and the matching
+    // Qt-provided generic translations (qtbase_<code>.qm). No-op until we
+    // actually ship compiled .qm files, but the wiring is in place.
+    static QTranslator appTranslator;
+    static QTranslator qtTranslator;
+    QString langCode = QSettings().value(QStringLiteral("general/language")).toString();
+    if (langCode.isEmpty()) langCode = QLocale::system().name().split('_').value(0);
+    if (!langCode.isEmpty() && langCode != QStringLiteral("en")) {
+        const QString dir = QCoreApplication::applicationDirPath() + QStringLiteral("/translations");
+        if (appTranslator.load(QStringLiteral("cld_") + langCode, dir)) {
+            QCoreApplication::installTranslator(&appTranslator);
+        }
+        if (qtTranslator.load(QStringLiteral("qtbase_") + langCode,
+                              QLibraryInfo::path(QLibraryInfo::TranslationsPath))) {
+            QCoreApplication::installTranslator(&qtTranslator);
+        }
+    }
 
     // MainWindow scans the library during construction using paths from
     // QSettings (plus the vendored submodule if present); main only owns

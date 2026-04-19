@@ -1,6 +1,7 @@
 #include "MainWindow.h"
 
 #include "LayerPanel.h"
+#include "BudgetDialog.h"
 #include "FindDialog.h"
 #include "LibraryPathsDialog.h"
 #include "PreferencesDialog.h"
@@ -399,7 +400,7 @@ MainWindow::MainWindow(parts::PartsLibrary& parts, QWidget* parent)
     // Live selection readout — helps confirm that clicks and drag-select
     // are actually producing a selection. Updates whenever the scene's
     // selection set changes.
-    auto* selLabel = new QLabel(tr("no selection"), this);
+    QLabel* selLabel = new QLabel(tr("no selection"), this);
     statusBar()->addPermanentWidget(selLabel);
     connect(mapView_, &MapView::selectionChanged, this, [this, selLabel]{
         const int n = mapView_->scene()->selectedItems().size();
@@ -843,6 +844,15 @@ void MainWindow::setupMenus() {
 
     menuBar()->addMenu(tr("&Layers"));
 
+    auto* budgetMenu = menuBar()->addMenu(tr("&Budget"));
+    auto* budgetDlg = budgetMenu->addAction(tr("Open Budget &Editor..."));
+    connect(budgetDlg, &QAction::triggered, this, [this]{
+        if (!mapView_->currentMap()) return;
+        auto* dlg = new BudgetDialog(*mapView_->currentMap(), this);
+        dlg->setAttribute(Qt::WA_DeleteOnClose);
+        dlg->show();
+    });
+
     auto* modules = menuBar()->addMenu(tr("&Modules"));
     auto* createModAct = modules->addAction(tr("Create from &Selection..."));
     connect(createModAct, &QAction::triggered, this, &MainWindow::onCreateModuleFromSelection);
@@ -1214,6 +1224,27 @@ QString MainWindow::defaultVendoredPartsRoot() const {
 
 void MainWindow::onNew() {
     if (!maybeSave()) return;
+
+    // If the user configured a "new map template" file in Preferences
+    // (Settings.general/newMapTemplate), load that as the starting point —
+    // vanilla BlueBrick's StartNewFileUsingDefaultTemplate parity.
+    const QString templatePath =
+        QSettings().value(QStringLiteral("general/newMapTemplate")).toString();
+    if (!templatePath.isEmpty() && QFile::exists(templatePath)) {
+        auto res = saveload::readBbm(templatePath);
+        if (res.ok() && res.map) {
+            mapView_->loadMap(std::move(res.map));
+            layerPanel_->setMap(mapView_->currentMap(), mapView_->builder());
+            modulesPanel_->setMap(mapView_->currentMap());
+            currentFilePath_.clear();
+            mapView_->undoStack()->clear();
+            mapView_->undoStack()->setClean();
+            updateTitle();
+            statusBar()->showMessage(tr("New layout from template %1").arg(templatePath), 3000);
+            return;
+        }
+    }
+
     auto blank = std::make_unique<core::Map>();
     // Seed with a single brick layer so drop-onto-map works out of the box.
     auto layer = std::make_unique<core::LayerBrick>();
