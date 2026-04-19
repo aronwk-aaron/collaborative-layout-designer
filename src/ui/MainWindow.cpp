@@ -53,6 +53,7 @@
 #include <QCheckBox>
 #include <QMenu>
 #include <QPlainTextEdit>
+#include <QPushButton>
 #include <QSpinBox>
 #include <QSettings>
 #include <QStandardPaths>
@@ -465,30 +466,101 @@ void MainWindow::setupMenus() {
             QMessageBox::information(this, tr("Export"), tr("The map is empty."));
             return;
         }
-        const QString path = QFileDialog::getSaveFileName(
-            this, tr("Export map as image"),
-            currentFilePath_.isEmpty() ? QString() : QFileInfo(currentFilePath_).baseName() + ".png",
-            tr("PNG (*.png);;JPEG (*.jpg *.jpeg)"));
+        // Rich ExportImageForm.cs parity: width, keep-aspect/height, watermark,
+        // background fill, transparent background, antialias, path. Each
+        // setting is persisted under export/* so the next export remembers
+        // the user's preferences.
+        QSettings s;
+        QDialog dlg(this);
+        dlg.setWindowTitle(tr("Export image"));
+        auto* form = new QFormLayout(&dlg);
+        auto* pathEdit = new QLineEdit(
+            currentFilePath_.isEmpty()
+                ? s.value(QStringLiteral("export/path")).toString()
+                : QFileInfo(currentFilePath_).baseName() + QStringLiteral(".png"), &dlg);
+        auto* browseBtn = new QPushButton(tr("..."), &dlg);
+        auto* pathRow = new QHBoxLayout(); pathRow->addWidget(pathEdit); pathRow->addWidget(browseBtn);
+        auto* pathWrap = new QWidget(&dlg); pathWrap->setLayout(pathRow);
+        form->addRow(tr("Output file:"), pathWrap);
+        connect(browseBtn, &QPushButton::clicked, &dlg, [pathEdit, &dlg]{
+            const QString p = QFileDialog::getSaveFileName(&dlg, tr("Export map as image"),
+                pathEdit->text(), tr("PNG (*.png);;JPEG (*.jpg *.jpeg)"));
+            if (!p.isEmpty()) pathEdit->setText(p);
+        });
+
+        auto* widthSpin = new QSpinBox(&dlg);
+        widthSpin->setRange(128, 16384);
+        widthSpin->setValue(s.value(QStringLiteral("export/width"), 1600).toInt());
+        form->addRow(tr("Width (px):"), widthSpin);
+        auto* keepAspect = new QCheckBox(tr("Keep aspect ratio (height auto)"), &dlg);
+        keepAspect->setChecked(s.value(QStringLiteral("export/keepAspect"), true).toBool());
+        form->addRow(keepAspect);
+        auto* heightSpin = new QSpinBox(&dlg);
+        heightSpin->setRange(64, 16384);
+        heightSpin->setValue(s.value(QStringLiteral("export/height"), 1200).toInt());
+        heightSpin->setEnabled(!keepAspect->isChecked());
+        connect(keepAspect, &QCheckBox::toggled, heightSpin, [heightSpin](bool on){
+            heightSpin->setEnabled(!on);
+        });
+        form->addRow(tr("Height (px):"), heightSpin);
+
+        auto* watermarkChk = new QCheckBox(tr("Embed general-info watermark"), &dlg);
+        watermarkChk->setChecked(s.value(QStringLiteral("export/watermark"), false).toBool());
+        form->addRow(watermarkChk);
+        auto* transparentChk = new QCheckBox(tr("Transparent background"), &dlg);
+        transparentChk->setChecked(s.value(QStringLiteral("export/transparent"), false).toBool());
+        form->addRow(transparentChk);
+        auto* antialiasChk = new QCheckBox(tr("Antialias"), &dlg);
+        antialiasChk->setChecked(s.value(QStringLiteral("export/antialias"), true).toBool());
+        form->addRow(antialiasChk);
+
+        auto* bb = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+        form->addRow(bb);
+        connect(bb, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+        connect(bb, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+        if (dlg.exec() != QDialog::Accepted) return;
+        const QString path = pathEdit->text();
         if (path.isEmpty()) return;
-        bool ok = false;
-        const int width = QInputDialog::getInt(
-            this, tr("Image width"),
-            tr("Output width in pixels (height auto-scales):"), 1600, 128, 16384, 1, &ok);
-        if (!ok) return;
-        const double aspect = bounds.height() / bounds.width();
-        const int height = std::max(64, static_cast<int>(width * aspect));
-        QImage img(width, height, QImage::Format_ARGB32);
-        img.fill(mapView_->currentMap()->backgroundColor.color);
+
+        const int width  = widthSpin->value();
+        const int height = keepAspect->isChecked()
+            ? std::max(64, static_cast<int>(width * (bounds.height() / bounds.width())))
+            : heightSpin->value();
+        QImage img(width, height,
+                   transparentChk->isChecked() ? QImage::Format_ARGB32 : QImage::Format_RGB32);
+        img.fill(transparentChk->isChecked()
+                     ? Qt::transparent
+                     : mapView_->currentMap()->backgroundColor.color);
         {
             QPainter p(&img);
-            p.setRenderHint(QPainter::Antialiasing);
-            p.setRenderHint(QPainter::SmoothPixmapTransform);
-            scene->render(&p, QRectF(0, 0, width, height), bounds, Qt::KeepAspectRatio);
+            if (antialiasChk->isChecked()) {
+                p.setRenderHint(QPainter::Antialiasing);
+                p.setRenderHint(QPainter::SmoothPixmapTransform);
+            }
+            scene->render(&p, QRectF(0, 0, width, height), bounds,
+                          keepAspect->isChecked() ? Qt::KeepAspectRatio : Qt::IgnoreAspectRatio);
+            if (watermarkChk->isChecked()) {
+                const auto* m = mapView_->currentMap();
+                const QString stamp = tr("%1 / %2 / %3").arg(m->author, m->lug, m->event);
+                QFont f; f.setPointSize(std::max(8, height / 60));
+                p.setFont(f);
+                p.setPen(QColor(0, 0, 0, 140));
+                p.drawText(QRectF(0, 0, width, height).adjusted(10, 0, -10, -10),
+                           Qt::AlignRight | Qt::AlignBottom, stamp);
+            }
         }
         if (!img.save(path)) {
             QMessageBox::warning(this, tr("Export failed"), tr("Could not write %1").arg(path));
             return;
         }
+        // Persist every field for next time.
+        s.setValue(QStringLiteral("export/path"),        path);
+        s.setValue(QStringLiteral("export/width"),       width);
+        s.setValue(QStringLiteral("export/height"),      height);
+        s.setValue(QStringLiteral("export/keepAspect"),  keepAspect->isChecked());
+        s.setValue(QStringLiteral("export/watermark"),   watermarkChk->isChecked());
+        s.setValue(QStringLiteral("export/transparent"), transparentChk->isChecked());
+        s.setValue(QStringLiteral("export/antialias"),   antialiasChk->isChecked());
         statusBar()->showMessage(tr("Exported %1x%2 to %3").arg(width).arg(height).arg(path), 5000);
     });
 
