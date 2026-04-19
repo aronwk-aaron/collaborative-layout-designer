@@ -12,8 +12,10 @@
 #include "../core/Layer.h"
 #include "../core/LayerBrick.h"
 #include "../core/AnchoredLabel.h"
+#include "../core/ColorSpec.h"
 #include "../edit/EditCommands.h"
 #include "../edit/LabelCommands.h"
+#include "../edit/LayerCommands.h"
 #include "../edit/ModuleCommands.h"
 #include "../saveload/BbmReader.h"
 #include "../saveload/BbmWriter.h"
@@ -22,12 +24,17 @@
 #include <QAction>
 #include <QApplication>
 #include <QCloseEvent>
+#include <QColorDialog>
 #include <QComboBox>
 #include <QCoreApplication>
+#include <QDateEdit>
+#include <QDialog>
+#include <QDialogButtonBox>
 #include <QDir>
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QFormLayout>
 #include <QGraphicsItem>
 #include <QGraphicsScene>
 #include <QInputDialog>
@@ -35,9 +42,11 @@
 #include <QLineEdit>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QPlainTextEdit>
 #include <QSettings>
 #include <QStatusBar>
 #include <QToolBar>
+#include <QVBoxLayout>
 #include <QUndoStack>
 #include <QUuid>
 
@@ -66,6 +75,29 @@ MainWindow::MainWindow(parts::PartsLibrary& parts, QWidget* parent)
 
     layerPanel_ = new LayerPanel(this);
     addDockWidget(Qt::RightDockWidgetArea, layerPanel_);
+    connect(layerPanel_, &LayerPanel::addLayerRequested, this, [this](core::LayerKind k){
+        if (!mapView_->currentMap()) return;
+        mapView_->undoStack()->push(new edit::AddLayerCommand(*mapView_->currentMap(), k));
+        layerPanel_->setMap(mapView_->currentMap(), mapView_->builder());
+        mapView_->rebuildScene();
+    });
+    connect(layerPanel_, &LayerPanel::deleteLayerRequested, this, [this](int idx){
+        if (!mapView_->currentMap()) return;
+        mapView_->undoStack()->push(new edit::DeleteLayerCommand(*mapView_->currentMap(), idx));
+        layerPanel_->setMap(mapView_->currentMap(), mapView_->builder());
+        mapView_->rebuildScene();
+    });
+    connect(layerPanel_, &LayerPanel::moveLayerRequested, this, [this](int idx, int delta){
+        if (!mapView_->currentMap()) return;
+        mapView_->undoStack()->push(new edit::MoveLayerCommand(*mapView_->currentMap(), idx, delta));
+        layerPanel_->setMap(mapView_->currentMap(), mapView_->builder());
+        mapView_->rebuildScene();
+    });
+    connect(layerPanel_, &LayerPanel::renameLayerRequested, this, [this](int idx, const QString& name){
+        if (!mapView_->currentMap()) return;
+        mapView_->undoStack()->push(new edit::RenameLayerCommand(*mapView_->currentMap(), idx, name));
+        layerPanel_->setMap(mapView_->currentMap(), mapView_->builder());
+    });
 
     partsBrowser_ = new PartsBrowser(parts_, this);
     addDockWidget(Qt::LeftDockWidgetArea, partsBrowser_);
@@ -323,6 +355,51 @@ void MainWindow::setupMenus() {
     auto* tools = menuBar()->addMenu(tr("&Tools"));
     auto* libAct = tools->addAction(tr("Manage Parts &Libraries..."));
     connect(libAct, &QAction::triggered, this, &MainWindow::onManageLibraries);
+
+    // ----- Map menu -----
+    auto* mapMenu = menuBar()->addMenu(tr("&Map"));
+    auto* bgAct = mapMenu->addAction(tr("Background &Colour..."));
+    connect(bgAct, &QAction::triggered, this, [this]{
+        auto* m = mapView_->currentMap();
+        if (!m) return;
+        QColor init = m->backgroundColor.color;
+        const QColor c = QColorDialog::getColor(init, this, tr("Background colour"),
+                                                 QColorDialog::ShowAlphaChannel);
+        if (!c.isValid()) return;
+        mapView_->undoStack()->push(new edit::ChangeBackgroundColorCommand(
+            *m, core::ColorSpec::fromArgb(c)));
+        mapView_->rebuildScene();
+        mapView_->scene()->setBackgroundBrush(c);
+    });
+    auto* infoAct = mapMenu->addAction(tr("General &Info..."));
+    connect(infoAct, &QAction::triggered, this, [this]{
+        auto* m = mapView_->currentMap();
+        if (!m) return;
+        QDialog dlg(this);
+        dlg.setWindowTitle(tr("Map information"));
+        auto* form = new QFormLayout(&dlg);
+        auto* authorE = new QLineEdit(m->author, &dlg);
+        auto* lugE    = new QLineEdit(m->lug, &dlg);
+        auto* eventE  = new QLineEdit(m->event, &dlg);
+        auto* dateE   = new QDateEdit(m->date, &dlg); dateE->setCalendarPopup(true);
+        auto* commentE = new QPlainTextEdit(m->comment, &dlg);
+        commentE->setMinimumHeight(100);
+        form->addRow(tr("Author:"),  authorE);
+        form->addRow(tr("LUG:"),     lugE);
+        form->addRow(tr("Event:"),   eventE);
+        form->addRow(tr("Date:"),    dateE);
+        form->addRow(tr("Comment:"), commentE);
+        auto* bb = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+        form->addRow(bb);
+        connect(bb, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+        connect(bb, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+        if (dlg.exec() != QDialog::Accepted) return;
+        edit::ChangeGeneralInfoCommand::Info next{
+            authorE->text(), lugE->text(), eventE->text(),
+            dateE->date(), commentE->toPlainText()
+        };
+        mapView_->undoStack()->push(new edit::ChangeGeneralInfoCommand(*m, std::move(next)));
+    });
 
     menuBar()->addMenu(tr("&Layers"));
 
