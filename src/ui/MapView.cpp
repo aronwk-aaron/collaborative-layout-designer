@@ -4,8 +4,11 @@
 #include "../core/Layer.h"
 #include "../core/LayerBrick.h"
 #include "../core/LayerGrid.h"
+#include "../core/LayerText.h"
 #include "../core/Map.h"
+#include "../core/TextCell.h"
 #include "../edit/EditCommands.h"
+#include "../edit/TextCommands.h"
 #include "../parts/PartsLibrary.h"
 #include "../rendering/SceneBuilder.h"
 #include "PartsBrowser.h"   // kPartMimeType
@@ -16,7 +19,9 @@
 #include <QDropEvent>
 #include <QGraphicsItem>
 #include <QGraphicsScene>
+#include <QInputDialog>
 #include <QKeyEvent>
+#include <QLineEdit>
 #include <QMenu>
 #include <QMimeData>
 #include <QMouseEvent>
@@ -42,6 +47,10 @@ constexpr int kBrickDataKind       = 2;
 
 bool isBrickItem(const QGraphicsItem* it) {
     return it && it->data(kBrickDataKind).toString() == QStringLiteral("brick");
+}
+
+bool isTextItem(const QGraphicsItem* it) {
+    return it && it->data(kBrickDataKind).toString() == QStringLiteral("text");
 }
 
 double studToPx() { return rendering::SceneBuilder::kPixelsPerStud; }
@@ -342,9 +351,24 @@ void MapView::contextMenuEvent(QContextMenuEvent* e) {
     }
 
     QMenu menu(this);
-    const bool hasSel = !scene()->selectedItems().isEmpty();
+    const auto sel = scene()->selectedItems();
+    const bool hasSel = !sel.isEmpty();
+    // Categorise: is the selection pure-text, pure-brick, or mixed.
+    int brickCount = 0, textCount = 0;
+    for (QGraphicsItem* it : sel) {
+        if (isBrickItem(it)) ++brickCount;
+        else if (isTextItem(it)) ++textCount;
+    }
+    const bool onlyText  = textCount > 0 && brickCount == 0;
+    const bool onlyBrick = brickCount > 0 && textCount == 0;
+    const bool singleText = onlyText && sel.size() == 1;
 
     if (hasSel) {
+        if (singleText) {
+            auto* edit = menu.addAction(tr("Edit Text..."));
+            connect(edit, &QAction::triggered, [this]{ editSelectedTextContent(); });
+        }
+
         auto* ccw = menu.addAction(tr("Rotate CCW"));
         connect(ccw, &QAction::triggered,
                 [this]{ rotateSelected(static_cast<float>(-rotationStepDegrees_)); });
@@ -353,27 +377,45 @@ void MapView::contextMenuEvent(QContextMenuEvent* e) {
                 [this]{ rotateSelected(static_cast<float>(rotationStepDegrees_)); });
         menu.addSeparator();
 
-        auto* bringFront = menu.addAction(tr("Bring to Front"));
-        connect(bringFront, &QAction::triggered, [this]{ bringSelectionToFront(); });
-        auto* sendBack = menu.addAction(tr("Send to Back"));
-        connect(sendBack, &QAction::triggered, [this]{ sendSelectionToBack(); });
-        menu.addSeparator();
+        if (onlyBrick) {
+            auto* bringFront = menu.addAction(tr("Bring to Front"));
+            connect(bringFront, &QAction::triggered, [this]{ bringSelectionToFront(); });
+            auto* sendBack = menu.addAction(tr("Send to Back"));
+            connect(sendBack, &QAction::triggered, [this]{ sendSelectionToBack(); });
+            menu.addSeparator();
 
-        auto* cut = menu.addAction(tr("Cut"));
-        connect(cut, &QAction::triggered, [this]{ cutSelection(); });
-        auto* copy = menu.addAction(tr("Copy"));
-        connect(copy, &QAction::triggered, [this]{ copySelection(); });
-        auto* dup = menu.addAction(tr("Duplicate"));
-        connect(dup, &QAction::triggered, [this]{ duplicateSelection(); });
-        menu.addSeparator();
+            auto* cut = menu.addAction(tr("Cut"));
+            connect(cut, &QAction::triggered, [this]{ cutSelection(); });
+            auto* copy = menu.addAction(tr("Copy"));
+            connect(copy, &QAction::triggered, [this]{ copySelection(); });
+            auto* dup = menu.addAction(tr("Duplicate"));
+            connect(dup, &QAction::triggered, [this]{ duplicateSelection(); });
+            menu.addSeparator();
+        }
 
         auto* del = menu.addAction(tr("Delete"));
         del->setShortcut(Qt::Key_Delete);
         connect(del, &QAction::triggered, [this]{ deleteSelected(); });
         menu.addSeparator();
-    } else if (!clipboard_.empty()) {
-        auto* paste = menu.addAction(tr("Paste"));
-        connect(paste, &QAction::triggered, [this]{ pasteClipboard(); });
+    } else {
+        // Empty-area menu: offer paste and quick-add actions tied to the
+        // current cursor position.
+        if (!clipboard_.empty()) {
+            auto* paste = menu.addAction(tr("Paste"));
+            connect(paste, &QAction::triggered, [this]{ pasteClipboard(); });
+            menu.addSeparator();
+        }
+        const QPointF scenePos = mapToScene(e->pos());
+        auto* addText = menu.addAction(tr("Add Text Here..."));
+        connect(addText, &QAction::triggered, [this, scenePos]{
+            if (!map_) return;
+            bool ok = false;
+            const QString text = QInputDialog::getText(
+                this, tr("Add text"), tr("Label text:"),
+                QLineEdit::Normal, {}, &ok);
+            if (!ok || text.isEmpty()) return;
+            addTextAtScenePos(text, scenePos);
+        });
         menu.addSeparator();
     }
 
@@ -478,6 +520,84 @@ void MapView::sendSelectionToBack() {
     rebuildScene();
 }
 
+void MapView::editSelectedTextContent() {
+    if (!map_) return;
+    QGraphicsItem* sel = nullptr;
+    for (QGraphicsItem* it : scene()->selectedItems()) {
+        if (isTextItem(it)) { sel = it; break; }
+    }
+    if (!sel) return;
+    const int li = sel->data(kBrickDataLayerIndex).toInt();
+    const QString guid = sel->data(kBrickDataGuid).toString();
+    if (li < 0 || li >= static_cast<int>(map_->layers().size())) return;
+    auto* L = map_->layers()[li].get();
+    if (!L || L->kind() != core::LayerKind::Text) return;
+    auto& TL = static_cast<core::LayerText&>(*L);
+    QString current;
+    for (const auto& c : TL.textCells) if (c.guid == guid) { current = c.text; break; }
+    bool ok = false;
+    const QString next = QInputDialog::getMultiLineText(
+        this, tr("Edit text"), tr("Label text:"), current, &ok);
+    if (!ok || next == current) return;
+    undoStack_->push(new edit::EditTextCellTextCommand(*map_, li, guid, next));
+    rebuildScene();
+}
+
+void MapView::mouseDoubleClickEvent(QMouseEvent* e) {
+    if (auto* under = itemAt(e->pos()); under && isTextItem(under)) {
+        scene()->clearSelection();
+        under->setSelected(true);
+        editSelectedTextContent();
+        e->accept();
+        return;
+    }
+    QGraphicsView::mouseDoubleClickEvent(e);
+}
+
+void MapView::addTextAtViewCenter(const QString& text) {
+    if (!map_) return;
+    addTextAtScenePos(text, mapToScene(viewport()->rect().center()));
+}
+
+void MapView::addTextAtScenePos(const QString& text, QPointF sceneCenterPx) {
+    if (!map_ || text.isEmpty()) return;
+    // Pick the first text layer; create one if none exists so calling this on
+    // a layout that doesn't have a text layer still works.
+    int targetLayer = -1;
+    for (int i = 0; i < static_cast<int>(map_->layers().size()); ++i) {
+        if (map_->layers()[i]->kind() == core::LayerKind::Text) { targetLayer = i; break; }
+    }
+    if (targetLayer < 0) {
+        auto L = std::make_unique<core::LayerText>();
+        L->guid = QUuid::createUuid().toString(QUuid::WithoutBraces);
+        L->name = tr("Labels");
+        map_->layers().push_back(std::move(L));
+        targetLayer = static_cast<int>(map_->layers().size()) - 1;
+    }
+
+    const double pxPerStud = rendering::SceneBuilder::kPixelsPerStud;
+    // Default label box: sized so the fit-to-box renderer shows the text at
+    // a readable height. Width scales with character count, height is a
+    // fixed line height in studs.
+    const double heightStuds = 10.0;
+    const double widthStuds  = std::max(heightStuds * 0.6 * text.size(), heightStuds * 2.0);
+
+    core::TextCell c;
+    c.guid = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    c.text = text;
+    c.orientation = 0.0f;
+    c.fontColor = core::ColorSpec::fromKnown(QColor(Qt::black), QStringLiteral("Black"));
+    c.font.familyName = QStringLiteral("Arial");
+    c.font.sizePt = 12.0f;
+    c.font.styleString = QStringLiteral("Regular");
+    c.alignment = core::TextAlignment::Center;
+    c.displayArea = QRectF(sceneCenterPx.x() / pxPerStud - widthStuds / 2.0,
+                            sceneCenterPx.y() / pxPerStud - heightStuds / 2.0,
+                            widthStuds, heightStuds);
+    undoStack_->push(new edit::AddTextCellCommand(*map_, targetLayer, std::move(c)));
+    rebuildScene();
+}
+
 void MapView::dragEnterEvent(QDragEnterEvent* e) {
     if (e->mimeData()->hasFormat(QString::fromLatin1(PartsBrowser::kPartMimeType))) {
         e->acceptProposedAction();
@@ -508,33 +628,45 @@ void MapView::dropEvent(QDropEvent* e) {
 
 void MapView::deleteSelected() {
     if (!map_) return;
-    std::vector<edit::DeleteBricksCommand::Entry> entries;
-    // Build per-layer lists first so we record the correct pre-deletion index.
-    struct PerLayerHit { int li; QString guid; };
-    std::vector<PerLayerHit> hits;
+    std::vector<edit::DeleteBricksCommand::Entry> brickEntries;
+    // (layerIndex, text guid) hits for text cells — deleted with one command
+    // each inside a single macro so undo collapses the whole deletion.
+    struct TextHit { int li; QString guid; };
+    std::vector<TextHit> textHits;
+
     for (QGraphicsItem* it : scene()->selectedItems()) {
-        if (!isBrickItem(it)) continue;
-        hits.push_back({ it->data(kBrickDataLayerIndex).toInt(),
-                         it->data(kBrickDataGuid).toString() });
-    }
-    for (const auto& h : hits) {
-        if (h.li < 0 || h.li >= static_cast<int>(map_->layers().size())) continue;
-        auto* L = map_->layers()[h.li].get();
-        if (!L || L->kind() != core::LayerKind::Brick) continue;
-        auto& BL = static_cast<core::LayerBrick&>(*L);
-        for (int i = 0; i < static_cast<int>(BL.bricks.size()); ++i) {
-            if (BL.bricks[i].guid == h.guid) {
-                edit::DeleteBricksCommand::Entry e;
-                e.layerIndex = h.li;
-                e.indexInLayer = i;
-                e.brick = BL.bricks[i];
-                entries.push_back(std::move(e));
-                break;
+        if (isBrickItem(it)) {
+            const int li = it->data(kBrickDataLayerIndex).toInt();
+            const QString guid = it->data(kBrickDataGuid).toString();
+            if (li < 0 || li >= static_cast<int>(map_->layers().size())) continue;
+            auto* L = map_->layers()[li].get();
+            if (!L || L->kind() != core::LayerKind::Brick) continue;
+            auto& BL = static_cast<core::LayerBrick&>(*L);
+            for (int i = 0; i < static_cast<int>(BL.bricks.size()); ++i) {
+                if (BL.bricks[i].guid == guid) {
+                    edit::DeleteBricksCommand::Entry e;
+                    e.layerIndex = li;
+                    e.indexInLayer = i;
+                    e.brick = BL.bricks[i];
+                    brickEntries.push_back(std::move(e));
+                    break;
+                }
             }
+        } else if (isTextItem(it)) {
+            textHits.push_back({ it->data(kBrickDataLayerIndex).toInt(),
+                                  it->data(kBrickDataGuid).toString() });
         }
     }
-    if (entries.empty()) return;
-    undoStack_->push(new edit::DeleteBricksCommand(*map_, std::move(entries)));
+    if (brickEntries.empty() && textHits.empty()) return;
+
+    undoStack_->beginMacro(tr("Delete selection"));
+    if (!brickEntries.empty()) {
+        undoStack_->push(new edit::DeleteBricksCommand(*map_, std::move(brickEntries)));
+    }
+    for (const auto& h : textHits) {
+        undoStack_->push(new edit::DeleteTextCellCommand(*map_, h.li, h.guid));
+    }
+    undoStack_->endMacro();
     rebuildScene();
 }
 

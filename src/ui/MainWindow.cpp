@@ -32,6 +32,7 @@
 #include <QGraphicsScene>
 #include <QInputDialog>
 #include <QLabel>
+#include <QLineEdit>
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QSettings>
@@ -247,6 +248,18 @@ void MainWindow::setupMenus() {
     auto* selNoneAct = edit->addAction(tr("Deselect All"));
     selNoneAct->setShortcut(QKeySequence(tr("Ctrl+Shift+A")));
     connect(selNoneAct, &QAction::triggered, [this]{ mapView_->deselectAll(); });
+
+    edit->addSeparator();
+    auto* addTextAct = edit->addAction(tr("Add &Text..."));
+    addTextAct->setShortcut(QKeySequence(tr("Ctrl+T")));
+    connect(addTextAct, &QAction::triggered, this, [this]{
+        if (!mapView_->currentMap()) return;
+        bool ok = false;
+        const QString text = QInputDialog::getText(
+            this, tr("Add text"), tr("Label text:"),
+            QLineEdit::Normal, {}, &ok);
+        if (ok && !text.isEmpty()) mapView_->addTextAtViewCenter(text);
+    });
 
     edit->addSeparator();
     auto* toFrontAct = edit->addAction(tr("Bring to &Front"));

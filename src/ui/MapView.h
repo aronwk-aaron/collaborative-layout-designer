@@ -60,6 +60,12 @@ public:
     void bringSelectionToFront();
     void sendSelectionToBack();
 
+    // Text ops.
+    void addTextAtViewCenter(const QString& text);
+    void addTextAtScenePos(const QString& text, QPointF scenePosPx);
+    // Prompt the user to edit the selected single text cell's content.
+    void editSelectedTextContent();
+
 signals:
     void selectionChanged();
 
@@ -69,6 +75,7 @@ protected:
     void mousePressEvent(QMouseEvent* e) override;
     void mouseMoveEvent(QMouseEvent* e) override;
     void mouseReleaseEvent(QMouseEvent* e) override;
+    void mouseDoubleClickEvent(QMouseEvent* e) override;
     void keyPressEvent(QKeyEvent* e) override;
     void contextMenuEvent(QContextMenuEvent* e) override;
     void dragEnterEvent(QDragEnterEvent* e) override;

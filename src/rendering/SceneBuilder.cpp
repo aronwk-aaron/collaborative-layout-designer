@@ -111,7 +111,7 @@ void addBrickLayer(const core::LayerBrick& L, QGraphicsItemGroup* group, parts::
     }
 }
 
-void addTextLayer(const core::LayerText& L, QGraphicsItemGroup* group) {
+void addTextLayer(const core::LayerText& L, QGraphicsItemGroup* group, int layerIndex) {
     for (const auto& cell : L.textCells) {
         auto* t = new QGraphicsSimpleTextItem(cell.text);
         QFont f(cell.font.familyName);
@@ -163,6 +163,10 @@ void addTextLayer(const core::LayerText& L, QGraphicsItemGroup* group) {
         tr.rotate(cell.orientation);
         tr.translate(-localBbox.width() / 2.0, -localBbox.height() / 2.0);
         t->setTransform(tr);
+        t->setFlag(QGraphicsItem::ItemIsSelectable, true);
+        t->setData(kBrickDataLayerIndex, layerIndex);
+        t->setData(kBrickDataGuid,       cell.guid);
+        t->setData(kBrickDataKind,       QStringLiteral("text"));
         group->addToGroup(t);
     }
 }
@@ -241,7 +245,7 @@ void SceneBuilder::addLayer(const core::Layer& L, int layerIndex) {
             addBrickLayer(static_cast<const core::LayerBrick&>(L), group, parts_, layerIndex, brickByGuid_);
             break;
         case core::LayerKind::Text:
-            addTextLayer(static_cast<const core::LayerText&>(L), group);
+            addTextLayer(static_cast<const core::LayerText&>(L), group, layerIndex);
             break;
         case core::LayerKind::Area:
             addAreaLayer(static_cast<const core::LayerArea&>(L), group);
