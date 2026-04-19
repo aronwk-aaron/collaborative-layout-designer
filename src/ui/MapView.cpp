@@ -13,6 +13,8 @@
 #include "../edit/EditCommands.h"
 #include "../edit/RulerCommands.h"
 #include "../edit/TextCommands.h"
+#include "../edit/VenueCommands.h"
+#include "../core/Venue.h"
 #include "../parts/PartsLibrary.h"
 #include "../rendering/SceneBuilder.h"
 #include "EditDialogs.h"
@@ -639,6 +641,24 @@ void MapView::mousePressEvent(QMouseEvent* e) {
         return;
     }
 
+    // Venue outline / obstacle drawing: each left-click adds a vertex.
+    // Right-click (or Enter) finishes the polygon. Escape cancels.
+    if (e->button() == Qt::LeftButton && map_ &&
+        (tool_ == Tool::DrawVenueOutline || tool_ == Tool::DrawVenueObstacle)) {
+        const double px = rendering::SceneBuilder::kPixelsPerStud;
+        const QPointF scenePos = mapToScene(e->pos());
+        venueDrawPoints_.append(QPointF(scenePos.x() / px, scenePos.y() / px));
+        updateVenueDrawPreview();
+        e->accept();
+        return;
+    }
+    if (e->button() == Qt::RightButton && map_ &&
+        (tool_ == Tool::DrawVenueOutline || tool_ == Tool::DrawVenueObstacle)) {
+        finishVenueDraw();
+        e->accept();
+        return;
+    }
+
     // Paint / erase: swallow the event so the graphics view doesn't start a
     // rubber band or drag, and stamp the cell under the cursor.
     if (e->button() == Qt::LeftButton && map_ &&
@@ -810,8 +830,88 @@ void MapView::mouseReleaseEvent(QMouseEvent* e) {
     }
 }
 
+void MapView::updateVenueDrawPreview(QPointF /*hoverScenePos*/) {
+    // Draw / refresh the in-progress polygon as a dashed outline so the
+    // user sees what they're building. Persistent scene item; replaced on
+    // every click.
+    if (venueDrawPreview_) {
+        scene()->removeItem(venueDrawPreview_);
+        delete venueDrawPreview_;
+        venueDrawPreview_ = nullptr;
+    }
+    if (venueDrawPoints_.isEmpty()) return;
+    const double px = rendering::SceneBuilder::kPixelsPerStud;
+    QPainterPath path;
+    path.moveTo(venueDrawPoints_.first() * px);
+    for (int i = 1; i < venueDrawPoints_.size(); ++i) path.lineTo(venueDrawPoints_[i] * px);
+    venueDrawPreview_ = new QGraphicsPathItem(path);
+    QPen pen(QColor(230, 40, 40));
+    pen.setWidthF(2.0); pen.setCosmetic(true); pen.setStyle(Qt::DashLine);
+    venueDrawPreview_->setPen(pen);
+    venueDrawPreview_->setZValue(1e8);
+    scene()->addItem(venueDrawPreview_);
+}
+
+void MapView::finishVenueDraw() {
+    if (!map_) { venueDrawPoints_.clear(); return; }
+    if (venueDrawPoints_.size() < 3) {
+        venueDrawPoints_.clear();
+        updateVenueDrawPreview();
+        if (auto* mw = window())
+            if (auto* sb = mw->findChild<QStatusBar*>())
+                sb->showMessage(tr("Venue polygon needs at least 3 points"), 2500);
+        return;
+    }
+
+    core::Venue v = map_->sidecar.venue.value_or(core::Venue{});
+    v.enabled = true;
+
+    if (tool_ == Tool::DrawVenueOutline) {
+        // Replace outline: one VenueEdge per polygon side (closed loop).
+        v.edges.clear();
+        for (int i = 0; i < venueDrawPoints_.size(); ++i) {
+            const QPointF a = venueDrawPoints_[i];
+            const QPointF b = venueDrawPoints_[(i + 1) % venueDrawPoints_.size()];
+            core::VenueEdge e;
+            e.polyline = { a, b };
+            e.kind = core::EdgeKind::Wall;
+            v.edges.push_back(e);
+        }
+    } else {   // DrawVenueObstacle
+        core::VenueObstacle ob;
+        ob.polygon = venueDrawPoints_;
+        v.obstacles.push_back(ob);
+    }
+
+    undoStack_->push(new edit::SetVenueCommand(*map_, std::make_optional(v)));
+    venueDrawPoints_.clear();
+    updateVenueDrawPreview();
+
+    // Drop back to Select so normal editing resumes after a polygon lands.
+    tool_ = Tool::Select;
+
+    if (auto* mw = window())
+        if (auto* sb = mw->findChild<QStatusBar*>())
+            sb->showMessage(tr("Venue updated"), 2000);
+}
+
 void MapView::keyPressEvent(QKeyEvent* e) {
     if (!map_) { QGraphicsView::keyPressEvent(e); return; }
+    // Venue-draw commit/cancel keys.
+    if (tool_ == Tool::DrawVenueOutline || tool_ == Tool::DrawVenueObstacle) {
+        if (e->key() == Qt::Key_Return || e->key() == Qt::Key_Enter) {
+            finishVenueDraw();
+            e->accept();
+            return;
+        }
+        if (e->key() == Qt::Key_Escape) {
+            venueDrawPoints_.clear();
+            updateVenueDrawPreview();
+            tool_ = Tool::Select;
+            e->accept();
+            return;
+        }
+    }
     if (e->key() == Qt::Key_Delete || e->key() == Qt::Key_Backspace) {
         deleteSelected();
         e->accept();

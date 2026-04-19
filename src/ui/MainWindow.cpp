@@ -5,6 +5,8 @@
 #include "FindDialog.h"
 #include "LibraryPathsDialog.h"
 #include "PreferencesDialog.h"
+#include "VenueDialog.h"
+#include "../edit/VenueCommands.h"
 #include "MapView.h"
 #include "ModuleLibraryPanel.h"
 #include "ModulesPanel.h"
@@ -1123,6 +1125,56 @@ void MainWindow::setupMenus() {
             dateE->date(), commentE->toPlainText()
         };
         mapView_->undoStack()->push(new edit::ChangeGeneralInfoCommand(*m, std::move(next)));
+    });
+
+    mapMenu->addSeparator();
+    auto* venueMenu = mapMenu->addMenu(tr("&Venue"));
+    auto* drawOutlineAct = venueMenu->addAction(tr("Draw &Outline..."));
+    drawOutlineAct->setToolTip(tr("Click points on the map to build the venue outline. "
+                                    "Right-click or Enter finishes; Escape cancels."));
+    connect(drawOutlineAct, &QAction::triggered, this, [this]{
+        if (!mapView_->currentMap()) return;
+        mapView_->setTool(MapView::Tool::DrawVenueOutline);
+        statusBar()->showMessage(
+            tr("Click points to outline the venue. Right-click / Enter to finish, Escape to cancel."),
+            8000);
+    });
+    auto* drawObstacleAct = venueMenu->addAction(tr("Add &Obstacle..."));
+    drawObstacleAct->setToolTip(tr("Click points to add an obstacle polygon (pillar, column)."));
+    connect(drawObstacleAct, &QAction::triggered, this, [this]{
+        if (!mapView_->currentMap() || !mapView_->currentMap()->sidecar.venue) {
+            QMessageBox::information(this, tr("Add obstacle"),
+                tr("Draw the venue outline first."));
+            return;
+        }
+        mapView_->setTool(MapView::Tool::DrawVenueObstacle);
+        statusBar()->showMessage(
+            tr("Click points to outline an obstacle. Right-click / Enter to finish, Escape to cancel."),
+            8000);
+    });
+    venueMenu->addSeparator();
+    auto* editVenueAct = venueMenu->addAction(tr("&Edit Venue Properties..."));
+    connect(editVenueAct, &QAction::triggered, this, [this]{
+        auto* m = mapView_->currentMap();
+        if (!m) return;
+        VenueDialog dlg(m->sidecar.venue, this);
+        if (dlg.exec() != QDialog::Accepted) return;
+        if (dlg.cleared()) {
+            mapView_->undoStack()->push(new edit::SetVenueCommand(*m, std::nullopt));
+        } else {
+            mapView_->undoStack()->push(new edit::SetVenueCommand(*m, dlg.result()));
+        }
+        mapView_->rebuildScene();
+    });
+    auto* clearVenueAct = venueMenu->addAction(tr("&Clear Venue"));
+    connect(clearVenueAct, &QAction::triggered, this, [this]{
+        auto* m = mapView_->currentMap();
+        if (!m || !m->sidecar.venue) return;
+        const auto btn = QMessageBox::question(this, tr("Clear venue"),
+            tr("Remove the venue from this project?"));
+        if (btn != QMessageBox::Yes) return;
+        mapView_->undoStack()->push(new edit::SetVenueCommand(*m, std::nullopt));
+        mapView_->rebuildScene();
     });
 
     menuBar()->addMenu(tr("&Layers"));

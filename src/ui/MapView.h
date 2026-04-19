@@ -78,7 +78,16 @@ public:
     void editSelectedTextContent();
 
     // Active tool — affects left-click behaviour on the map.
-    enum class Tool { Select, PaintArea, EraseArea, DrawLinearRuler, DrawCircularRuler };
+    enum class Tool {
+        Select, PaintArea, EraseArea, DrawLinearRuler, DrawCircularRuler,
+        // Click points to build a venue outline polygon (first point,
+        // subsequent points make edges). Right-click or Enter finishes;
+        // Escape cancels. Replaces any existing outline.
+        DrawVenueOutline,
+        // Same interaction, but appends a new obstacle polygon to the
+        // current venue (must already have an outline).
+        DrawVenueObstacle,
+    };
     void setTool(Tool t) { tool_ = t; }
     Tool tool() const { return tool_; }
 
@@ -158,6 +167,16 @@ private:
     // tool is active. Released-position pairs with this to create the ruler.
     bool    drawingRuler_ = false;
     QPointF rulerStart_;
+
+    // Venue-draw state: accumulated polygon vertices in scene-stud coords
+    // while the user is clicking points in DrawVenueOutline /
+    // DrawVenueObstacle mode. Finalised via right-click or Enter key,
+    // cancelled via Escape.
+    QVector<QPointF> venueDrawPoints_;
+    // Preview item shown while drawing so the user sees what's being built.
+    class QGraphicsPathItem* venueDrawPreview_ = nullptr;
+    void finishVenueDraw();
+    void updateVenueDrawPreview(QPointF hoverScenePos = {});
 
     // Live overlay item that paints outlines around every selected item.
     // Lives in the scene with a very high z-value so it's always on top.

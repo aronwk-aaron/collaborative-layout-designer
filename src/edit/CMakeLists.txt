@@ -13,6 +13,8 @@ add_library(cld_edit STATIC
     AreaCommands.h
     RulerCommands.cpp
     RulerCommands.h
+    VenueCommands.cpp
+    VenueCommands.h
 )
 
 target_include_directories(cld_edit PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)
