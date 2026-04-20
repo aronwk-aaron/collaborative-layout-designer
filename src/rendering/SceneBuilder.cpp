@@ -1032,12 +1032,13 @@ void SceneBuilder::addModuleLabels(const core::Map& map) {
         enum class Side { Top, Bottom, Left, Right, Inside };
         struct Candidate { Side side; QPointF centre; QRectF labelBox; int fontPx; };
 
-        // Label size for outside placement: track the module's long
-        // axis so the text reads big (25 % of the long axis, clamped
-        // 28..64 px).
+        // Label size for outside placement: 35 % of the long axis,
+        // clamped 48..140 px. Bigger than the previous pass — users
+        // want module names readable from a normal zoom level without
+        // squinting.
         const double longAxis = portrait ? framePx.height() : framePx.width();
         const int outsidePx = static_cast<int>(
-            std::clamp(longAxis * 0.25, 28.0, 64.0));
+            std::clamp(longAxis * 0.35, 48.0, 140.0));
 
         // Rectangle the label would take at this font size (horizontal
         // text). Vertical sides swap width/height.
@@ -1088,12 +1089,13 @@ void SceneBuilder::addModuleLabels(const core::Map& map) {
             }
         }
         if (chosenSide == Side::Inside) {
-            // Dense neighbourhood — fall back to centred inside.
+            // Dense neighbourhood — fall back to centred inside,
+            // scaled to fill the interior so the name is still big.
             const double interiorW = (portrait ? framePx.height() : framePx.width())  * 0.92;
             const double interiorH = (portrait ? framePx.width()  : framePx.height()) * 0.55;
             const double scaleW = (probe.width()  > 0) ? interiorW / probe.width()  : 1.0;
             const double scaleH = (probe.height() > 0) ? interiorH / probe.height() : 1.0;
-            finalPx = std::max(16, static_cast<int>(kProbePx * std::min(scaleW, scaleH)));
+            finalPx = std::max(24, static_cast<int>(kProbePx * std::min(scaleW, scaleH)));
             centerPx = framePx.center();
         }
 
