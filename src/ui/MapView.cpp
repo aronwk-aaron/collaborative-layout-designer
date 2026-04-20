@@ -375,11 +375,22 @@ void MapView::rebuildScene() {
 }
 
 void MapView::wheelEvent(QWheelEvent* e) {
-    const double step = e->angleDelta().y() > 0 ? 1.15 : 1.0 / 1.15;
+    // Proportional to the wheel's actual angle delta so a single "notch"
+    // produces a small change and a hard scroll still moves fast. Mouse
+    // wheels typically report 120 units per notch; smoother high-res
+    // trackpad scrolls report smaller values. The base factor here
+    // (1.0015^delta_y) yields ~1.20× for a full 120-unit notch —
+    // noticeably gentler than the old fixed 1.15× step, and fractional
+    // increments feel continuous instead of twitchy.
+    const double rawDelta = e->angleDelta().y();
+    if (rawDelta == 0.0) { e->ignore(); return; }
+    constexpr double kBase = 1.0015;
+    const double step = std::pow(kBase, rawDelta);
     const double current = transform().m11();
-    const double next = current * step;
-    if (next < kMinZoom || next > kMaxZoom) return;
-    scale(step, step);
+    const double next = std::clamp(current * step, kMinZoom, kMaxZoom);
+    const double actualStep = next / current;
+    if (std::abs(actualStep - 1.0) < 1e-5) { e->accept(); return; }
+    scale(actualStep, actualStep);
     e->accept();
 }
 
