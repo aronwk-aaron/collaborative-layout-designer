@@ -943,25 +943,38 @@ void SceneBuilder::addModuleLabels(const core::Map& map) {
         QColor(220,  80, 140),
     };
 
-    int modIdx = 0;
-    for (const auto& mod : map.sidecar.modules) {
-        QRectF bbStuds;
-        for (const auto& L : map.layers()) {
-            if (!L || L->kind() != core::LayerKind::Brick) continue;
-            for (const auto& b : static_cast<const core::LayerBrick&>(*L).bricks) {
-                if (mod.memberIds.contains(b.guid)) bbStuds = bbStuds.united(b.displayArea);
+    // First pass: compute every module's frame rect. We need them up
+    // front so each label can avoid overlapping any other module's
+    // frame when it gets placed outside.
+    struct ModuleEntry { int idx; const core::Module* mod; QRectF framePx; QColor color; };
+    std::vector<ModuleEntry> modules;
+    {
+        int modIdx = 0;
+        for (const auto& mod : map.sidecar.modules) {
+            QRectF bbStuds;
+            for (const auto& L : map.layers()) {
+                if (!L || L->kind() != core::LayerKind::Brick) continue;
+                for (const auto& b : static_cast<const core::LayerBrick&>(*L).bricks) {
+                    if (mod.memberIds.contains(b.guid)) bbStuds = bbStuds.united(b.displayArea);
+                }
             }
+            if (bbStuds.isEmpty()) { ++modIdx; continue; }
+            constexpr double kInsetStuds = 1.0;
+            const QRectF framePx(
+                (bbStuds.x()      - kInsetStuds) * kPx,
+                (bbStuds.y()      - kInsetStuds) * kPx,
+                (bbStuds.width()  + 2 * kInsetStuds) * kPx,
+                (bbStuds.height() + 2 * kInsetStuds) * kPx);
+            const QColor color = kPalette[modIdx % (sizeof(kPalette) / sizeof(kPalette[0]))];
+            modules.push_back({ modIdx, &mod, framePx, color });
+            ++modIdx;
         }
-        if (bbStuds.isEmpty()) { ++modIdx; continue; }
+    }
 
-        const QColor color = kPalette[modIdx % (sizeof(kPalette) / sizeof(kPalette[0]))];
-
-        constexpr double kInsetStuds = 1.0;
-        const QRectF framePx(
-            (bbStuds.x()      - kInsetStuds) * kPx,
-            (bbStuds.y()      - kInsetStuds) * kPx,
-            (bbStuds.width()  + 2 * kInsetStuds) * kPx,
-            (bbStuds.height() + 2 * kInsetStuds) * kPx);
+    for (const auto& me : modules) {
+        const core::Module& mod = *me.mod;
+        const QRectF framePx = me.framePx;
+        const QColor color   = me.color;
 
         auto* frame = new QGraphicsRectItem(framePx);
         QPen framePen(color);
@@ -988,52 +1001,123 @@ void SceneBuilder::addModuleLabels(const core::Map& map) {
         addCornerTicks(framePx.bottomLeft(),  QPointF( kTickPx, 0), QPointF(0, -kTickPx));
         addCornerTicks(framePx.bottomRight(), QPointF(-kTickPx, 0), QPointF(0, -kTickPx));
 
-        // Module name: centred inside the frame, sized so it fills the
-        // interior. Portrait-oriented frames (taller than wide) get
-        // rotated 90° so the text still maximises the module's
-        // space instead of being squashed into the narrow axis.
+        // Module name. Inside-the-frame by default, but for thin /
+        // short strips the interior would force an illegibly tiny
+        // size — in that case float the label OUTSIDE the frame,
+        // matching the "Nikki above the tables" placement we saw in
+        // BlueBrick screenshots. Portrait frames get a 90° rotation
+        // so the text runs along the long axis either way.
         const QString name = mod.name.isEmpty() ? QStringLiteral("(unnamed module)") : mod.name;
         const bool vertical = framePx.height() > framePx.width() * 1.1;
-        const double interiorW = (vertical ? framePx.height() : framePx.width())  * 0.92;
-        const double interiorH = (vertical ? framePx.width()  : framePx.height()) * 0.92;
 
+        // Probe the text at a reference size so we can decide whether
+        // the interior fit is comfortable.
         auto* label = new QGraphicsSimpleTextItem(name);
         QFont lf(QStringLiteral("Sans"));
         lf.setBold(true);
         constexpr int kProbePx = 100;
         lf.setPixelSize(kProbePx);
         label->setFont(lf);
-        label->setBrush(QBrush(color.darker(140)));
         const QRectF probe = label->boundingRect();
-        if (probe.width() > 0 && probe.height() > 0) {
-            const double scaleW = interiorW / probe.width();
-            const double scaleH = interiorH / probe.height();
-            const int finalPx = std::max(16, static_cast<int>(kProbePx * std::min(scaleW, scaleH)));
-            lf.setPixelSize(finalPx);
-            label->setFont(lf);
+
+        const double interiorW = (vertical ? framePx.height() : framePx.width())  * 0.92;
+        const double interiorH = (vertical ? framePx.width()  : framePx.height()) * 0.55;  // leave room for bricks
+        const double scaleW = (probe.width()  > 0) ? interiorW / probe.width()  : 1.0;
+        const double scaleH = (probe.height() > 0) ? interiorH / probe.height() : 1.0;
+        const double interiorScale = std::min(scaleW, scaleH);
+        const int   interiorPx     = static_cast<int>(kProbePx * interiorScale);
+
+        // If the interior size would be smaller than ~24 px we park
+        // the label outside. Use a generous size there since we've got
+        // open scene space to work with.
+        const bool placeOutside = interiorPx < 24;
+        int finalPx;
+        if (placeOutside) {
+            const double longAxis = vertical ? framePx.height() : framePx.width();
+            const double sized    = std::min(longAxis * 0.25, 64.0);
+            finalPx = static_cast<int>(std::max<double>(28.0, sized));
+        } else {
+            finalPx = std::max(16, interiorPx);
         }
+        lf.setPixelSize(finalPx);
+        label->setFont(lf);
+        // Pure black text for maximum contrast; the colored backdrop
+        // carries the per-module identity.
+        label->setBrush(QBrush(QColor(10, 10, 10)));
         const QRectF lbb = label->boundingRect();
-        const QPointF centerPx = framePx.center();
-        // Translate to centre, rotate if vertical, then offset by half
-        // the text bbox so the centre of the text lands at the frame
-        // centre regardless of orientation.
+
+        // Compute the label's centre point (in scene pixels). For
+        // outside placement we start above (landscape) or to the left
+        // (portrait), then fall back to below / to the right if the
+        // label would overlap another module's frame. Inside labels
+        // always centre on the frame.
+        auto othersOverlap = [&modules, &me](const QRectF& r) {
+            for (const auto& other : modules) {
+                if (other.mod == me.mod) continue;
+                if (r.intersects(other.framePx)) return true;
+            }
+            return false;
+        };
+
+        // Bounding rect this label would occupy in scene coords given
+        // a tentative centre — used to test against other modules.
+        auto labelRectAt = [&](QPointF centre) {
+            // Rotated text bounding box lives on the sceneBoundingRect
+            // of the transformed item; approximate via width/height
+            // swap for vertical.
+            const double w = vertical ? lbb.height() : lbb.width();
+            const double h = vertical ? lbb.width()  : lbb.height();
+            return QRectF(centre.x() - w / 2.0 - 8.0, centre.y() - h / 2.0 - 4.0,
+                          w + 16.0, h + 8.0);
+        };
+
+        QPointF centerPx = framePx.center();
+        if (placeOutside) {
+            const double pad = vertical ? lbb.height() / 2.0 + 10.0
+                                         : lbb.height() / 2.0 + 10.0;
+            QPointF above(framePx.center().x(), framePx.top()    - pad);
+            QPointF below(framePx.center().x(), framePx.bottom() + pad);
+            QPointF leftP(framePx.left()  - pad, framePx.center().y());
+            QPointF rightP(framePx.right() + pad, framePx.center().y());
+
+            // Preferred direction mirrors the module's short axis
+            // (labels outside the SHORT side). Try the preferred slot
+            // first, then the opposite side, then the perpendicular
+            // directions as a last resort.
+            std::array<QPointF, 4> tries = vertical
+                ? std::array<QPointF, 4>{ leftP, rightP, above, below }
+                : std::array<QPointF, 4>{ above, below, leftP, rightP };
+            centerPx = tries[0];
+            for (const QPointF& cand : tries) {
+                if (!othersOverlap(labelRectAt(cand))) { centerPx = cand; break; }
+            }
+        }
+
         QTransform tr;
         tr.translate(centerPx.x(), centerPx.y());
         if (vertical) tr.rotate(-90.0);
         tr.translate(-lbb.width() / 2.0, -lbb.height() / 2.0);
         label->setTransform(tr);
 
-        // Translucent backdrop hugging the (rotated) text.
+        // High-contrast backdrop: solid white fill with a thick
+        // coloured border + subtle drop-shadow-like offset rect for
+        // separation from the map behind. Replaces the previous
+        // alpha-60 translucent tint which washed out against
+        // busy-colored bricks.
         const QRectF lsbr = label->sceneBoundingRect();
-        auto* bg = new QGraphicsRectItem(lsbr.adjusted(-6, -2, 6, 2));
-        bg->setPen(Qt::NoPen);
-        QColor bgFill = color;
-        bgFill.setAlpha(60);
-        bg->setBrush(QBrush(bgFill));
+        const QRectF bgRect = lsbr.adjusted(-8, -4, 8, 4);
+        auto* shadow = new QGraphicsRectItem(bgRect.translated(2, 2));
+        shadow->setPen(Qt::NoPen);
+        shadow->setBrush(QBrush(QColor(0, 0, 0, 80)));
+        sink.add(shadow);
+        auto* bg = new QGraphicsRectItem(bgRect);
+        QPen bgPen(color.darker(130));
+        bgPen.setWidthF(2.0);
+        bgPen.setCosmetic(true);
+        bg->setPen(bgPen);
+        bg->setBrush(QBrush(QColor(255, 255, 255)));
         sink.add(bg);
         sink.add(label);
-
-        ++modIdx;
     }
 }
 
