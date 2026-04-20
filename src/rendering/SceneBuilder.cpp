@@ -926,11 +926,17 @@ void SceneBuilder::addModuleLabels(const core::Map& map) {
     // sees annotations the first time they import / create a module.
     QSettings vs;
     if (!vs.value(QStringLiteral("view/moduleNames"), true).toBool()) return;
-    // Configurable frame thickness (Preferences > Appearance).
+    // Configurable frame thickness + label size (Preferences > Appearance).
     const double frameThickness = std::clamp(
         vs.value(QStringLiteral("view/moduleFrameThickness"), 5.0).toDouble(),
         0.5, 40.0);
     const double tickThickness  = std::max(1.0, frameThickness * 1.25);
+    // Module label size as a percentage of the module's long axis.
+    // Default 35 % — users can push higher for bolder annotation or
+    // lower for modest labels.
+    const double labelPercent = std::clamp(
+        vs.value(QStringLiteral("view/moduleLabelPercent"), 35.0).toDouble(),
+        5.0, 100.0);
 
     // Module annotations sit above every layer so they're always
     // visible. Tagged kind="moduleAnnotation" so they don't intercept
@@ -1032,13 +1038,12 @@ void SceneBuilder::addModuleLabels(const core::Map& map) {
         enum class Side { Top, Bottom, Left, Right, Inside };
         struct Candidate { Side side; QPointF centre; QRectF labelBox; int fontPx; };
 
-        // Label size for outside placement: 35 % of the long axis,
-        // clamped 48..140 px. Bigger than the previous pass — users
-        // want module names readable from a normal zoom level without
-        // squinting.
+        // Label size for outside placement: labelPercent% of the
+        // module's long axis, clamped to a sane readable range.
+        // Users tune labelPercent through Preferences > Appearance.
         const double longAxis = portrait ? framePx.height() : framePx.width();
         const int outsidePx = static_cast<int>(
-            std::clamp(longAxis * 0.35, 48.0, 140.0));
+            std::clamp(longAxis * (labelPercent / 100.0), 16.0, 400.0));
 
         // Rectangle the label would take at this font size (horizontal
         // text). Vertical sides swap width/height.

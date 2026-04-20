@@ -178,14 +178,28 @@ QWidget* buildAppearanceTab(QDialog* parent) {
         s.value(QStringLiteral("view/moduleFrameThickness"), 5.0).toDouble());
     form->addRow(QObject::tr("Module frame thickness:"), moduleFrameSpin);
 
-    QObject::connect(parent, &QDialog::accepted, w, [gridChk, connDotsChk, highlightChk, watermarkChk, moduleFrameSpin]{
-        QSettings s;
-        s.setValue(QStringLiteral("appearance/showGrid"), gridChk->isChecked());
-        s.setValue(QStringLiteral("appearance/alwaysShowConnections"), connDotsChk->isChecked());
-        s.setValue(QStringLiteral("appearance/selectionTint"), highlightChk->isChecked());
-        s.setValue(QStringLiteral("appearance/exportWatermark"), watermarkChk->isChecked());
-        s.setValue(QStringLiteral("view/moduleFrameThickness"), moduleFrameSpin->value());
-    });
+    auto* moduleLabelSpin = new QDoubleSpinBox(w);
+    moduleLabelSpin->setRange(5.0, 100.0);
+    moduleLabelSpin->setSingleStep(5.0);
+    moduleLabelSpin->setDecimals(0);
+    moduleLabelSpin->setSuffix(QObject::tr(" %"));
+    moduleLabelSpin->setValue(
+        s.value(QStringLiteral("view/moduleLabelPercent"), 35.0).toDouble());
+    moduleLabelSpin->setToolTip(QObject::tr(
+        "Module name size as a percentage of the module's long axis. "
+        "Higher = bigger label. Scene rebuilds on dialog close."));
+    form->addRow(QObject::tr("Module label size:"), moduleLabelSpin);
+
+    QObject::connect(parent, &QDialog::accepted, w,
+        [gridChk, connDotsChk, highlightChk, watermarkChk, moduleFrameSpin, moduleLabelSpin]{
+            QSettings s;
+            s.setValue(QStringLiteral("appearance/showGrid"), gridChk->isChecked());
+            s.setValue(QStringLiteral("appearance/alwaysShowConnections"), connDotsChk->isChecked());
+            s.setValue(QStringLiteral("appearance/selectionTint"), highlightChk->isChecked());
+            s.setValue(QStringLiteral("appearance/exportWatermark"), watermarkChk->isChecked());
+            s.setValue(QStringLiteral("view/moduleFrameThickness"), moduleFrameSpin->value());
+            s.setValue(QStringLiteral("view/moduleLabelPercent"),   moduleLabelSpin->value());
+        });
     return w;
 }
 
