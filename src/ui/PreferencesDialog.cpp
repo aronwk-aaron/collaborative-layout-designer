@@ -169,12 +169,22 @@ QWidget* buildAppearanceTab(QDialog* parent) {
     watermarkChk->setChecked(s.value(QStringLiteral("appearance/exportWatermark"), true).toBool());
     form->addRow(watermarkChk);
 
-    QObject::connect(parent, &QDialog::accepted, w, [gridChk, connDotsChk, highlightChk, watermarkChk]{
+    auto* moduleFrameSpin = new QDoubleSpinBox(w);
+    moduleFrameSpin->setRange(0.5, 20.0);
+    moduleFrameSpin->setSingleStep(0.5);
+    moduleFrameSpin->setDecimals(1);
+    moduleFrameSpin->setSuffix(QObject::tr(" px"));
+    moduleFrameSpin->setValue(
+        s.value(QStringLiteral("view/moduleFrameThickness"), 5.0).toDouble());
+    form->addRow(QObject::tr("Module frame thickness:"), moduleFrameSpin);
+
+    QObject::connect(parent, &QDialog::accepted, w, [gridChk, connDotsChk, highlightChk, watermarkChk, moduleFrameSpin]{
         QSettings s;
         s.setValue(QStringLiteral("appearance/showGrid"), gridChk->isChecked());
         s.setValue(QStringLiteral("appearance/alwaysShowConnections"), connDotsChk->isChecked());
         s.setValue(QStringLiteral("appearance/selectionTint"), highlightChk->isChecked());
         s.setValue(QStringLiteral("appearance/exportWatermark"), watermarkChk->isChecked());
+        s.setValue(QStringLiteral("view/moduleFrameThickness"), moduleFrameSpin->value());
     });
     return w;
 }

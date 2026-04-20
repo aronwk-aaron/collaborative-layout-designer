@@ -1082,6 +1082,9 @@ void MainWindow::setupMenus() {
         if (!libDir.isEmpty() && libDir != moduleLibraryPanel_->libraryPath()) {
             moduleLibraryPanel_->setLibraryPath(libDir);
         }
+        // Rebuild the scene so settings that affect rendering (module
+        // frame thickness, selection tint, etc.) take effect immediately.
+        mapView_->rebuildScene();
     });
 
     // ----- Map menu -----

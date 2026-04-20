@@ -924,7 +924,13 @@ void SceneBuilder::addModuleLabels(const core::Map& map) {
     if (map.sidecar.modules.empty()) return;
     // User-controlled via View > Module Names. Default = on so the user
     // sees annotations the first time they import / create a module.
-    if (!QSettings().value(QStringLiteral("view/moduleNames"), true).toBool()) return;
+    QSettings vs;
+    if (!vs.value(QStringLiteral("view/moduleNames"), true).toBool()) return;
+    // Configurable frame thickness (Preferences > Appearance).
+    const double frameThickness = std::clamp(
+        vs.value(QStringLiteral("view/moduleFrameThickness"), 5.0).toDouble(),
+        0.5, 40.0);
+    const double tickThickness  = std::max(1.0, frameThickness * 1.25);
 
     // Module annotations sit above every layer so they're always
     // visible. Tagged kind="moduleAnnotation" so they don't intercept
@@ -959,7 +965,7 @@ void SceneBuilder::addModuleLabels(const core::Map& map) {
 
         auto* frame = new QGraphicsRectItem(framePx);
         QPen framePen(color);
-        framePen.setWidthF(2.5);
+        framePen.setWidthF(frameThickness);
         framePen.setCosmetic(true);
         framePen.setStyle(Qt::DashLine);
         frame->setPen(framePen);
@@ -973,7 +979,7 @@ void SceneBuilder::addModuleLabels(const core::Map& map) {
             auto* v = new QGraphicsLineItem(corner.x(), corner.y(),
                                               corner.x() + dy.x(), corner.y() + dy.y());
             QPen p(color);
-            p.setWidthF(3.0); p.setCosmetic(true);
+            p.setWidthF(tickThickness); p.setCosmetic(true);
             h->setPen(p); v->setPen(p);
             sink.add(h); sink.add(v);
         };
