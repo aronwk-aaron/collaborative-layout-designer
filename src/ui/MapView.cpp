@@ -339,7 +339,19 @@ MapView::MapView(parts::PartsLibrary& parts, QWidget* parent)
     });
 }
 
-MapView::~MapView() = default;
+MapView::~MapView() {
+    // Teardown order matters. QGraphicsView's base destructor will
+    // destroy the scene, which deletes items individually. As each
+    // selectable item is removed Qt fires selectionChanged on the
+    // scene — our handler then walks scene->items() / setSelected on
+    // survivors that may already be mid-destruction. Disconnect from
+    // the scene signals BEFORE any of that runs.
+    if (scene()) scene()->disconnect(this);
+    // Clear the static connection-snap hook so its `this`-capturing
+    // lambda can't outlive us and deref a dangling MapView pointer
+    // during any late itemChange tick.
+    rendering::SceneBuilder::setLiveConnectionSnapHook({});
+}
 
 void MapView::loadMap(std::unique_ptr<core::Map> map) {
     undoStack_->clear();
