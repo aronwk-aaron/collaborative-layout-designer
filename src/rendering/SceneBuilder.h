@@ -55,6 +55,7 @@ private:
     void addSidecarContent(const core::Map& map);
     void addVenue(const core::Map& map);
     void addAnchoredLabels(const core::Map& map);
+    void addModuleLabels(const core::Map& map);
 
     QGraphicsScene& scene_;
     parts::PartsLibrary& parts_;
@@ -62,6 +63,7 @@ private:
     QHash<QString, QGraphicsItem*>    brickByGuid_;   // brick.guid -> QGraphicsItem*
     QList<QGraphicsItem*>             venueItems_;
     QList<QGraphicsItem*>             worldLabelItems_;
+    QList<QGraphicsItem*>             moduleLabelItems_;
 };
 
 }

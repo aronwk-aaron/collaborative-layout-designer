@@ -661,10 +661,12 @@ void SceneBuilder::clear() {
     }
     itemsByLayer_.clear();
     brickByGuid_.clear();
-    for (auto* it : venueItems_)      { scene_.removeItem(it); delete it; }
-    for (auto* it : worldLabelItems_) { scene_.removeItem(it); delete it; }
+    for (auto* it : venueItems_)        { scene_.removeItem(it); delete it; }
+    for (auto* it : worldLabelItems_)   { scene_.removeItem(it); delete it; }
+    for (auto* it : moduleLabelItems_)  { scene_.removeItem(it); delete it; }
     venueItems_.clear();
     worldLabelItems_.clear();
+    moduleLabelItems_.clear();
 }
 
 void SceneBuilder::build(const core::Map& map) {
@@ -674,6 +676,7 @@ void SceneBuilder::build(const core::Map& map) {
         addLayer(*map.layers()[i], static_cast<int>(i));
     }
     addAnchoredLabels(map);
+    addModuleLabels(map);
 }
 
 void SceneBuilder::addLayer(const core::Layer& L, int layerIndex) {
@@ -844,6 +847,106 @@ void SceneBuilder::addAnchoredLabels(const core::Map& map) {
         // World (or unresolved): position in scene coords.
         t->setPos(lbl.offset * kPx);
         sink.add(t);
+    }
+}
+
+void SceneBuilder::addModuleLabels(const core::Map& map) {
+    if (map.sidecar.modules.empty()) return;
+
+    // Module annotations sit above every layer so they're always visible.
+    // Tagged kind="moduleAnnotation" so they don't intercept selection —
+    // the user interacts with modules via the Modules panel.
+    LayerSink sink{ scene_, moduleLabelItems_, 200000.0, true };
+
+    // Color cycle so adjacent modules look visually distinct.
+    static const QColor kPalette[] = {
+        QColor(230,  90,  40),   // red-orange
+        QColor( 30, 150, 220),   // blue
+        QColor( 60, 180,  90),   // green
+        QColor(180,  90, 200),   // purple
+        QColor(220, 160,  30),   // gold
+        QColor( 90, 180, 200),   // teal
+        QColor(220,  80, 140),   // pink
+    };
+
+    int modIdx = 0;
+    for (const auto& mod : map.sidecar.modules) {
+        // Compute the module's bounding rect from its member bricks.
+        QRectF bbStuds;
+        for (const auto& L : map.layers()) {
+            if (!L || L->kind() != core::LayerKind::Brick) continue;
+            for (const auto& b : static_cast<const core::LayerBrick&>(*L).bricks) {
+                if (mod.memberIds.contains(b.guid)) {
+                    bbStuds = bbStuds.united(b.displayArea);
+                }
+            }
+        }
+        if (bbStuds.isEmpty()) { ++modIdx; continue; }
+
+        const QColor color = kPalette[modIdx % (sizeof(kPalette) / sizeof(kPalette[0]))];
+
+        // Convert to scene pixels, add a small inset so the frame sits
+        // just outside the member bricks rather than cutting through
+        // their edges.
+        constexpr double kInsetStuds = 1.0;
+        QRectF framePx(
+            (bbStuds.x()      - kInsetStuds) * kPx,
+            (bbStuds.y()      - kInsetStuds) * kPx,
+            (bbStuds.width()  + 2 * kInsetStuds) * kPx,
+            (bbStuds.height() + 2 * kInsetStuds) * kPx);
+
+        // Dashed coloured rectangle = ruler-style frame around the module.
+        auto* frame = new QGraphicsRectItem(framePx);
+        QPen framePen(color);
+        framePen.setWidthF(2.5);
+        framePen.setCosmetic(true);
+        framePen.setStyle(Qt::DashLine);
+        frame->setPen(framePen);
+        frame->setBrush(Qt::NoBrush);
+        sink.add(frame);
+
+        // Small corner tick marks so it reads as a ruler/measurement
+        // frame, not just a selection rectangle.
+        constexpr double kTickPx = 10.0;
+        auto addCornerTicks = [&](QPointF corner, QPointF dx, QPointF dy) {
+            auto* h = new QGraphicsLineItem(corner.x(), corner.y(),
+                                              corner.x() + dx.x(), corner.y() + dx.y());
+            auto* v = new QGraphicsLineItem(corner.x(), corner.y(),
+                                              corner.x() + dy.x(), corner.y() + dy.y());
+            QPen p(color);
+            p.setWidthF(3.0); p.setCosmetic(true);
+            h->setPen(p); v->setPen(p);
+            sink.add(h); sink.add(v);
+        };
+        addCornerTicks(framePx.topLeft(),     QPointF( kTickPx, 0), QPointF(0,  kTickPx));
+        addCornerTicks(framePx.topRight(),    QPointF(-kTickPx, 0), QPointF(0,  kTickPx));
+        addCornerTicks(framePx.bottomLeft(),  QPointF( kTickPx, 0), QPointF(0, -kTickPx));
+        addCornerTicks(framePx.bottomRight(), QPointF(-kTickPx, 0), QPointF(0, -kTickPx));
+
+        // Module name, placed above the top edge of the frame, outside
+        // the layout. Small filled background stripe behind the text so
+        // it stays legible against the map.
+        const QString name = mod.name.isEmpty() ? QStringLiteral("(unnamed module)") : mod.name;
+        auto* label = new QGraphicsSimpleTextItem(name);
+        QFont lf(QStringLiteral("Sans"));
+        lf.setBold(true);
+        lf.setPixelSize(14);
+        label->setFont(lf);
+        label->setBrush(QBrush(color.darker(140)));
+        const QRectF lbb = label->boundingRect();
+        const double labelX = framePx.left() + 4.0;
+        const double labelY = framePx.top() - lbb.height() - 4.0;
+        // Background stripe so the name doesn't disappear against dark
+        // bricks / the grid.
+        auto* bg = new QGraphicsRectItem(
+            labelX - 3.0, labelY - 1.0, lbb.width() + 6.0, lbb.height() + 2.0);
+        bg->setPen(Qt::NoPen);
+        bg->setBrush(QBrush(QColor(255, 255, 255, 220)));
+        sink.add(bg);
+        label->setPos(labelX, labelY);
+        sink.add(label);
+
+        ++modIdx;
     }
 }
 
