@@ -1001,56 +1001,26 @@ void SceneBuilder::addModuleLabels(const core::Map& map) {
         addCornerTicks(framePx.bottomLeft(),  QPointF( kTickPx, 0), QPointF(0, -kTickPx));
         addCornerTicks(framePx.bottomRight(), QPointF(-kTickPx, 0), QPointF(0, -kTickPx));
 
-        // Module name. Inside-the-frame by default, but for thin /
-        // short strips the interior would force an illegibly tiny
-        // size — in that case float the label OUTSIDE the frame,
-        // matching the "Nikki above the tables" placement we saw in
-        // BlueBrick screenshots. Portrait frames get a 90° rotation
-        // so the text runs along the long axis either way.
+        // Module name. Default policy: ALWAYS place outside the
+        // module's enclosed area, on whichever side has clear space
+        // (no overlap with other modules). Vertical labels face
+        // the inside — i.e. text top points toward the module — so
+        // the name reads naturally when you look at the module.
+        //
+        // Only fall back to inside when every outside slot would
+        // collide with another module (dense layouts).
         const QString name = mod.name.isEmpty() ? QStringLiteral("(unnamed module)") : mod.name;
-        const bool vertical = framePx.height() > framePx.width() * 1.1;
+        const bool portrait = framePx.height() > framePx.width() * 1.1;
 
-        // Probe the text at a reference size so we can decide whether
-        // the interior fit is comfortable.
         auto* label = new QGraphicsSimpleTextItem(name);
         QFont lf(QStringLiteral("Sans"));
         lf.setBold(true);
         constexpr int kProbePx = 100;
         lf.setPixelSize(kProbePx);
         label->setFont(lf);
+        label->setBrush(QBrush(QColor(10, 10, 10)));
         const QRectF probe = label->boundingRect();
 
-        const double interiorW = (vertical ? framePx.height() : framePx.width())  * 0.92;
-        const double interiorH = (vertical ? framePx.width()  : framePx.height()) * 0.55;  // leave room for bricks
-        const double scaleW = (probe.width()  > 0) ? interiorW / probe.width()  : 1.0;
-        const double scaleH = (probe.height() > 0) ? interiorH / probe.height() : 1.0;
-        const double interiorScale = std::min(scaleW, scaleH);
-        const int   interiorPx     = static_cast<int>(kProbePx * interiorScale);
-
-        // If the interior size would be smaller than ~24 px we park
-        // the label outside. Use a generous size there since we've got
-        // open scene space to work with.
-        const bool placeOutside = interiorPx < 24;
-        int finalPx;
-        if (placeOutside) {
-            const double longAxis = vertical ? framePx.height() : framePx.width();
-            const double sized    = std::min(longAxis * 0.25, 64.0);
-            finalPx = static_cast<int>(std::max<double>(28.0, sized));
-        } else {
-            finalPx = std::max(16, interiorPx);
-        }
-        lf.setPixelSize(finalPx);
-        label->setFont(lf);
-        // Pure black text for maximum contrast; the colored backdrop
-        // carries the per-module identity.
-        label->setBrush(QBrush(QColor(10, 10, 10)));
-        const QRectF lbb = label->boundingRect();
-
-        // Compute the label's centre point (in scene pixels). For
-        // outside placement we start above (landscape) or to the left
-        // (portrait), then fall back to below / to the right if the
-        // label would overlap another module's frame. Inside labels
-        // always centre on the frame.
         auto othersOverlap = [&modules, &me](const QRectF& r) {
             for (const auto& other : modules) {
                 if (other.mod == me.mod) continue;
@@ -1059,43 +1029,95 @@ void SceneBuilder::addModuleLabels(const core::Map& map) {
             return false;
         };
 
-        // Bounding rect this label would occupy in scene coords given
-        // a tentative centre — used to test against other modules.
-        auto labelRectAt = [&](QPointF centre) {
-            // Rotated text bounding box lives on the sceneBoundingRect
-            // of the transformed item; approximate via width/height
-            // swap for vertical.
-            const double w = vertical ? lbb.height() : lbb.width();
-            const double h = vertical ? lbb.width()  : lbb.height();
-            return QRectF(centre.x() - w / 2.0 - 8.0, centre.y() - h / 2.0 - 4.0,
+        enum class Side { Top, Bottom, Left, Right, Inside };
+        struct Candidate { Side side; QPointF centre; QRectF labelBox; int fontPx; };
+
+        // Label size for outside placement: track the module's long
+        // axis so the text reads big (25 % of the long axis, clamped
+        // 28..64 px).
+        const double longAxis = portrait ? framePx.height() : framePx.width();
+        const int outsidePx = static_cast<int>(
+            std::clamp(longAxis * 0.25, 28.0, 64.0));
+
+        // Rectangle the label would take at this font size (horizontal
+        // text). Vertical sides swap width/height.
+        lf.setPixelSize(outsidePx);
+        label->setFont(lf);
+        const QRectF outsideText = label->boundingRect();
+
+        auto boxAround = [](QPointF centre, double w, double h) {
+            return QRectF(centre.x() - w / 2.0 - 8.0,
+                          centre.y() - h / 2.0 - 4.0,
                           w + 16.0, h + 8.0);
         };
 
-        QPointF centerPx = framePx.center();
-        if (placeOutside) {
-            const double pad = vertical ? lbb.height() / 2.0 + 10.0
-                                         : lbb.height() / 2.0 + 10.0;
-            QPointF above(framePx.center().x(), framePx.top()    - pad);
-            QPointF below(framePx.center().x(), framePx.bottom() + pad);
-            QPointF leftP(framePx.left()  - pad, framePx.center().y());
-            QPointF rightP(framePx.right() + pad, framePx.center().y());
+        const double padOut = 16.0;
+        QPointF topC   (framePx.center().x(), framePx.top()    - outsideText.height() / 2.0 - padOut);
+        QPointF botC   (framePx.center().x(), framePx.bottom() + outsideText.height() / 2.0 + padOut);
+        QPointF leftC  (framePx.left()  - outsideText.height() / 2.0 - padOut, framePx.center().y());
+        QPointF rightC (framePx.right() + outsideText.height() / 2.0 + padOut, framePx.center().y());
 
-            // Preferred direction mirrors the module's short axis
-            // (labels outside the SHORT side). Try the preferred slot
-            // first, then the opposite side, then the perpendicular
-            // directions as a last resort.
-            std::array<QPointF, 4> tries = vertical
-                ? std::array<QPointF, 4>{ leftP, rightP, above, below }
-                : std::array<QPointF, 4>{ above, below, leftP, rightP };
-            centerPx = tries[0];
-            for (const QPointF& cand : tries) {
-                if (!othersOverlap(labelRectAt(cand))) { centerPx = cand; break; }
+        // Try the short-axis sides first (labels look best parallel
+        // to the long axis). For landscape modules that's above/
+        // below; for portrait it's left/right. Within each pair, pick
+        // the non-colliding side; if both collide, try the long-axis
+        // sides; if every outside slot collides, fall back to inside.
+        std::vector<Candidate> tries;
+        const double hW = outsideText.width(), hH = outsideText.height();
+        if (portrait) {
+            tries.push_back({ Side::Left,   leftC,   boxAround(leftC,   hH, hW), outsidePx });
+            tries.push_back({ Side::Right,  rightC,  boxAround(rightC,  hH, hW), outsidePx });
+            tries.push_back({ Side::Top,    topC,    boxAround(topC,    hW, hH), outsidePx });
+            tries.push_back({ Side::Bottom, botC,    boxAround(botC,    hW, hH), outsidePx });
+        } else {
+            tries.push_back({ Side::Top,    topC,    boxAround(topC,    hW, hH), outsidePx });
+            tries.push_back({ Side::Bottom, botC,    boxAround(botC,    hW, hH), outsidePx });
+            tries.push_back({ Side::Left,   leftC,   boxAround(leftC,   hH, hW), outsidePx });
+            tries.push_back({ Side::Right,  rightC,  boxAround(rightC,  hH, hW), outsidePx });
+        }
+
+        Side chosenSide = Side::Inside;
+        QPointF centerPx;
+        int finalPx = outsidePx;
+        for (const auto& c : tries) {
+            if (!othersOverlap(c.labelBox)) {
+                chosenSide = c.side;
+                centerPx   = c.centre;
+                finalPx    = c.fontPx;
+                break;
             }
+        }
+        if (chosenSide == Side::Inside) {
+            // Dense neighbourhood — fall back to centred inside.
+            const double interiorW = (portrait ? framePx.height() : framePx.width())  * 0.92;
+            const double interiorH = (portrait ? framePx.width()  : framePx.height()) * 0.55;
+            const double scaleW = (probe.width()  > 0) ? interiorW / probe.width()  : 1.0;
+            const double scaleH = (probe.height() > 0) ? interiorH / probe.height() : 1.0;
+            finalPx = std::max(16, static_cast<int>(kProbePx * std::min(scaleW, scaleH)));
+            centerPx = framePx.center();
+        }
+
+        // Re-set the font at the final size (outsidePx was a probe).
+        lf.setPixelSize(finalPx);
+        label->setFont(lf);
+        const QRectF lbb = label->boundingRect();
+
+        // Rotation: vertical sides (Left/Right + the portrait Inside
+        // case) rotate so the top of the text faces the INTERIOR of
+        // the module. Left-side label → top faces right → rotate -90°.
+        // Right-side label → top faces left → rotate +90°.
+        double rotation = 0.0;
+        const bool needsRotation = chosenSide == Side::Left
+                                    || chosenSide == Side::Right
+                                    || (chosenSide == Side::Inside && portrait);
+        if (needsRotation) {
+            if (chosenSide == Side::Right) rotation =  90.0;   // top → left  (inside)
+            else                            rotation = -90.0;  // top → right (inside) — default
         }
 
         QTransform tr;
         tr.translate(centerPx.x(), centerPx.y());
-        if (vertical) tr.rotate(-90.0);
+        if (rotation != 0.0) tr.rotate(rotation);
         tr.translate(-lbb.width() / 2.0, -lbb.height() / 2.0);
         label->setTransform(tr);
 
