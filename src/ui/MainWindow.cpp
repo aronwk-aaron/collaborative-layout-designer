@@ -1054,6 +1054,7 @@ void MainWindow::setupMenus() {
     addRenderToggle(tr("&Watermark"),                QStringLiteral("view/watermark"),           true);
     addRenderToggle(tr("Brick &Hulls"),              QStringLiteral("view/brickHulls"),          false);
     addRenderToggle(tr("Brick E&levation Labels"),   QStringLiteral("view/brickElevation"),      false);
+    addRenderToggle(tr("&Module Names"),              QStringLiteral("view/moduleNames"),         true);
 
     auto* tools = menuBar()->addMenu(tr("&Tools"));
     auto* libAct = tools->addAction(tr("Manage Parts &Libraries..."));

@@ -922,50 +922,41 @@ void SceneBuilder::addAnchoredLabels(const core::Map& map) {
 
 void SceneBuilder::addModuleLabels(const core::Map& map) {
     if (map.sidecar.modules.empty()) return;
+    // User-controlled via View > Module Names. Default = on so the user
+    // sees annotations the first time they import / create a module.
+    if (!QSettings().value(QStringLiteral("view/moduleNames"), true).toBool()) return;
 
-    // Module annotations sit above every layer so they're always visible.
-    // Tagged kind="moduleAnnotation" so they don't intercept selection —
-    // the user interacts with modules via the Modules panel.
+    // Module annotations sit above every layer so they're always
+    // visible. Tagged kind="moduleAnnotation" so they don't intercept
+    // selection — the user interacts with modules via the Modules panel.
     LayerSink sink{ scene_, moduleLabelItems_, 200000.0, true };
 
-    // Color cycle so adjacent modules look visually distinct.
     static const QColor kPalette[] = {
-        QColor(230,  90,  40),   // red-orange
-        QColor( 30, 150, 220),   // blue
-        QColor( 60, 180,  90),   // green
-        QColor(180,  90, 200),   // purple
-        QColor(220, 160,  30),   // gold
-        QColor( 90, 180, 200),   // teal
-        QColor(220,  80, 140),   // pink
+        QColor(230,  90,  40), QColor( 30, 150, 220), QColor( 60, 180,  90),
+        QColor(180,  90, 200), QColor(220, 160,  30), QColor( 90, 180, 200),
+        QColor(220,  80, 140),
     };
 
     int modIdx = 0;
     for (const auto& mod : map.sidecar.modules) {
-        // Compute the module's bounding rect from its member bricks.
         QRectF bbStuds;
         for (const auto& L : map.layers()) {
             if (!L || L->kind() != core::LayerKind::Brick) continue;
             for (const auto& b : static_cast<const core::LayerBrick&>(*L).bricks) {
-                if (mod.memberIds.contains(b.guid)) {
-                    bbStuds = bbStuds.united(b.displayArea);
-                }
+                if (mod.memberIds.contains(b.guid)) bbStuds = bbStuds.united(b.displayArea);
             }
         }
         if (bbStuds.isEmpty()) { ++modIdx; continue; }
 
         const QColor color = kPalette[modIdx % (sizeof(kPalette) / sizeof(kPalette[0]))];
 
-        // Convert to scene pixels, add a small inset so the frame sits
-        // just outside the member bricks rather than cutting through
-        // their edges.
         constexpr double kInsetStuds = 1.0;
-        QRectF framePx(
+        const QRectF framePx(
             (bbStuds.x()      - kInsetStuds) * kPx,
             (bbStuds.y()      - kInsetStuds) * kPx,
             (bbStuds.width()  + 2 * kInsetStuds) * kPx,
             (bbStuds.height() + 2 * kInsetStuds) * kPx);
 
-        // Dashed coloured rectangle = ruler-style frame around the module.
         auto* frame = new QGraphicsRectItem(framePx);
         QPen framePen(color);
         framePen.setWidthF(2.5);
@@ -975,9 +966,7 @@ void SceneBuilder::addModuleLabels(const core::Map& map) {
         frame->setBrush(Qt::NoBrush);
         sink.add(frame);
 
-        // Small corner tick marks so it reads as a ruler/measurement
-        // frame, not just a selection rectangle.
-        constexpr double kTickPx = 10.0;
+        constexpr double kTickPx = 12.0;
         auto addCornerTicks = [&](QPointF corner, QPointF dx, QPointF dy) {
             auto* h = new QGraphicsLineItem(corner.x(), corner.y(),
                                               corner.x() + dx.x(), corner.y() + dx.y());
@@ -993,27 +982,49 @@ void SceneBuilder::addModuleLabels(const core::Map& map) {
         addCornerTicks(framePx.bottomLeft(),  QPointF( kTickPx, 0), QPointF(0, -kTickPx));
         addCornerTicks(framePx.bottomRight(), QPointF(-kTickPx, 0), QPointF(0, -kTickPx));
 
-        // Module name, placed above the top edge of the frame, outside
-        // the layout. Small filled background stripe behind the text so
-        // it stays legible against the map.
+        // Module name: centred inside the frame, sized so it fills the
+        // interior. Portrait-oriented frames (taller than wide) get
+        // rotated 90° so the text still maximises the module's
+        // space instead of being squashed into the narrow axis.
         const QString name = mod.name.isEmpty() ? QStringLiteral("(unnamed module)") : mod.name;
+        const bool vertical = framePx.height() > framePx.width() * 1.1;
+        const double interiorW = (vertical ? framePx.height() : framePx.width())  * 0.92;
+        const double interiorH = (vertical ? framePx.width()  : framePx.height()) * 0.92;
+
         auto* label = new QGraphicsSimpleTextItem(name);
         QFont lf(QStringLiteral("Sans"));
         lf.setBold(true);
-        lf.setPixelSize(14);
+        constexpr int kProbePx = 100;
+        lf.setPixelSize(kProbePx);
         label->setFont(lf);
         label->setBrush(QBrush(color.darker(140)));
+        const QRectF probe = label->boundingRect();
+        if (probe.width() > 0 && probe.height() > 0) {
+            const double scaleW = interiorW / probe.width();
+            const double scaleH = interiorH / probe.height();
+            const int finalPx = std::max(16, static_cast<int>(kProbePx * std::min(scaleW, scaleH)));
+            lf.setPixelSize(finalPx);
+            label->setFont(lf);
+        }
         const QRectF lbb = label->boundingRect();
-        const double labelX = framePx.left() + 4.0;
-        const double labelY = framePx.top() - lbb.height() - 4.0;
-        // Background stripe so the name doesn't disappear against dark
-        // bricks / the grid.
-        auto* bg = new QGraphicsRectItem(
-            labelX - 3.0, labelY - 1.0, lbb.width() + 6.0, lbb.height() + 2.0);
+        const QPointF centerPx = framePx.center();
+        // Translate to centre, rotate if vertical, then offset by half
+        // the text bbox so the centre of the text lands at the frame
+        // centre regardless of orientation.
+        QTransform tr;
+        tr.translate(centerPx.x(), centerPx.y());
+        if (vertical) tr.rotate(-90.0);
+        tr.translate(-lbb.width() / 2.0, -lbb.height() / 2.0);
+        label->setTransform(tr);
+
+        // Translucent backdrop hugging the (rotated) text.
+        const QRectF lsbr = label->sceneBoundingRect();
+        auto* bg = new QGraphicsRectItem(lsbr.adjusted(-6, -2, 6, 2));
         bg->setPen(Qt::NoPen);
-        bg->setBrush(QBrush(QColor(255, 255, 255, 220)));
+        QColor bgFill = color;
+        bgFill.setAlpha(60);
+        bg->setBrush(QBrush(bgFill));
         sink.add(bg);
-        label->setPos(labelX, labelY);
         sink.add(label);
 
         ++modIdx;
