@@ -977,6 +977,10 @@ void SceneBuilder::addModuleLabels(const core::Map& map) {
         }
     }
 
+    // Track every label rect we've committed so subsequent labels can
+    // avoid landing on top of them (not just on other modules' frames).
+    std::vector<QRectF> placedLabels;
+
     for (const auto& me : modules) {
         const core::Module& mod = *me.mod;
         const QRectF framePx = me.framePx;
@@ -1027,10 +1031,13 @@ void SceneBuilder::addModuleLabels(const core::Map& map) {
         label->setBrush(QBrush(QColor(10, 10, 10)));
         const QRectF probe = label->boundingRect();
 
-        auto othersOverlap = [&modules, &me](const QRectF& r) {
+        auto othersOverlap = [&modules, &me, &placedLabels](const QRectF& r) {
             for (const auto& other : modules) {
                 if (other.mod == me.mod) continue;
                 if (r.intersects(other.framePx)) return true;
+            }
+            for (const QRectF& placed : placedLabels) {
+                if (r.intersects(placed)) return true;
             }
             return false;
         };
@@ -1147,6 +1154,10 @@ void SceneBuilder::addModuleLabels(const core::Map& map) {
         bg->setBrush(QBrush(QColor(255, 255, 255)));
         sink.add(bg);
         sink.add(label);
+        // Remember this label's footprint so the next module's label
+        // avoids it — user requested "labels shouldn't overlap other
+        // modules' labels", not just frames.
+        placedLabels.push_back(bgRect);
     }
 }
 
