@@ -96,7 +96,8 @@ struct ConnectionSnapResult {
 ConnectionSnapResult computeConnectionSnap(
     const core::Map& map, parts::PartsLibrary& lib,
     const QSet<QString>& movingGuids, const QString& draggedPart,
-    float draggedOrientation, QPointF draggedCenter, double thresholdStuds);
+    float draggedOrientation, QPointF draggedCenter, double thresholdStuds,
+    const core::Brick* draggedBrick = nullptr);
 
 }  // namespace
 
@@ -287,7 +288,7 @@ MapView::MapView(parts::PartsLibrary& parts, QWidget* parent)
             const double threshold = std::max(4.0, snapStepStuds_);
             auto snap = computeConnectionSnap(*map_, parts_, moving,
                                               b->partNumber, b->orientation,
-                                              proposedCentreStuds, threshold);
+                                              proposedCentreStuds, threshold, b);
             if (!snap.applied) { liveSnapActive_ = false; return std::nullopt; }
             liveSnapActive_ = true;
             liveSnapPointScene_ = QPointF(snap.newCenter.x() * px, snap.newCenter.y() * px);
@@ -567,7 +568,8 @@ ConnectionSnapResult computeConnectionSnap(
     const QString& draggedPart,
     float   draggedOrientation,
     QPointF draggedCenter,
-    double  thresholdStuds) {
+    double  thresholdStuds,
+    const core::Brick* draggedBrick /* = nullptr */) {
 
     ConnectionSnapResult out;
 
@@ -580,6 +582,23 @@ ConnectionSnapResult computeConnectionSnap(
     QPointF bestDraggedLocal;
     double  bestDraggedLocalAngle = 0.0;
 
+    // Only free connections count as snap partners. Vanilla BlueBrick
+    // filters via mFreeConnectionPoints; we cross-reference the brick
+    // instance's ConnectionPoint list (which stores linkedToId per
+    // connection) against the part library's connection-index list.
+    // Dragged side: if draggedBrick is given, any of its already-linked
+    // connections are ineligible too. For existing in-map moves this
+    // prevents re-snapping a connection that's currently holding the
+    // group together. For new-part drops we pass nullptr and every
+    // dragged-side connection is considered free.
+    auto isDraggedConnFree = [draggedBrick, &movingGuids](int connIdx) -> bool {
+        if (!draggedBrick) return true;
+        if (connIdx < 0 || connIdx >= static_cast<int>(draggedBrick->connections.size()))
+            return true;  // part has more library connections than brick instance tracks
+        return draggedBrick->connections[connIdx].linkedToId.isEmpty();
+        (void)movingGuids;
+    };
+
     // Static side: gather world connection points from all non-dragged bricks.
     for (const auto& layerPtr : map.layers()) {
         if (!layerPtr || layerPtr->kind() != core::LayerKind::Brick) continue;
@@ -589,14 +608,23 @@ ConnectionSnapResult computeConnectionSnap(
             auto tmeta = lib.metadata(b.partNumber);
             if (!tmeta) continue;
             const QPointF tCentre = b.displayArea.center();
-            for (const auto& tc : tmeta->connections) {
+            const int targetConnCount = tmeta->connections.size();
+            for (int tci = 0; tci < targetConnCount; ++tci) {
+                const auto& tc = tmeta->connections[tci];
+                // Skip already-linked target connections — user asked
+                // specifically to only snap to OPEN connection points.
+                if (tci < static_cast<int>(b.connections.size()) &&
+                    !b.connections[tci].linkedToId.isEmpty()) continue;
                 const QPointF tWorldPos = tCentre + rotatePoint(tc.position, b.orientation);
                 // For each dragged connection, measure distance at the
                 // CURRENT dragged orientation so we only snap when the drop
                 // lands near an existing connection — we don't pull a brick
                 // from the far side of the layout.
-                for (const auto& dc : meta->connections) {
+                const int draggedConnCount = meta->connections.size();
+                for (int dci = 0; dci < draggedConnCount; ++dci) {
+                    const auto& dc = meta->connections[dci];
                     if (dc.type != tc.type || dc.type.isEmpty()) continue;
+                    if (!isDraggedConnFree(dci)) continue;
                     const QPointF dWorldPos =
                         draggedCenter + rotatePoint(dc.position, draggedOrientation);
                     const QPointF diff = dWorldPos - tWorldPos;
@@ -722,7 +750,7 @@ void MapView::commitDragIfMoved() {
                 const double threshold = std::max(4.0, snapStepStuds_);
                 auto snap = computeConnectionSnap(*map_, parts_, moving,
                                                    b.partNumber, b.orientation,
-                                                   proposedCentre, threshold);
+                                                   proposedCentre, threshold, &b);
                 if (snap.applied) {
                     const QPointF anchorNewTopLeft = snap.newCenter
                         - QPointF(b.displayArea.width() / 2.0, b.displayArea.height() / 2.0);

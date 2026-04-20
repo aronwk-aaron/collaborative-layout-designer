@@ -115,15 +115,21 @@ protected:
     QVariant itemChange(GraphicsItemChange c, const QVariant& v) override {
         if (c == ItemPositionChange && (flags() & ItemIsMovable)) {
             QPointF p = v.toPointF();
-            // Try connection snap FIRST (matches vanilla's getMovedSnapPoint
-            // connection-priority behavior). Only fall back to the grid snap
-            // if no free connection is close enough.
+            // Try connection snap FIRST (vanilla's getMovedSnapPoint
+            // connection-priority behavior). For a multi-item drag the
+            // hook runs only for the anchor piece; siblings skip snap
+            // entirely and translate by Qt's rigid delta.
             if (gLiveSnapHook) {
                 if (auto snapped = gLiveSnapHook(this, p)) {
                     return *snapped;
                 }
             }
-            if (gSnapPx > 0.0) {
+            // Grid snap: only for single-selection drags. Multi-selection
+            // groups must translate rigidly so connections within the
+            // group stay intact; drop-time commitDragIfMoved snaps the
+            // whole group as a unit.
+            const bool multi = scene() && scene()->selectedItems().size() > 1;
+            if (gSnapPx > 0.0 && !multi) {
                 p.setX(std::round(p.x() / gSnapPx) * gSnapPx);
                 p.setY(std::round(p.y() / gSnapPx) * gSnapPx);
                 return p;
@@ -142,6 +148,8 @@ public:
 protected:
     QVariant itemChange(GraphicsItemChange c, const QVariant& v) override {
         if (c == ItemPositionChange && gSnapPx > 0.0 && (flags() & ItemIsMovable)) {
+            const bool multi = scene() && scene()->selectedItems().size() > 1;
+            if (multi) return QGraphicsRectItem::itemChange(c, v);
             QPointF p = v.toPointF();
             p.setX(std::round(p.x() / gSnapPx) * gSnapPx);
             p.setY(std::round(p.y() / gSnapPx) * gSnapPx);
