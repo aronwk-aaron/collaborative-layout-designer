@@ -189,17 +189,16 @@ void PartsBrowser::rebuild() {
             desc = meta->descriptions.front().text;
         }
 
-        // Two-line caption: part key on top, first chunk of description below.
-        // QListView::IconMode wraps long text but for density we manually cap
-        // the description to a short length.
+        // Caption = the description (the "nice name") instead of the
+        // internal part key like "9vhalf-straight.8". The tooltip still
+        // surfaces the internal key so the user can reference it when
+        // needed, and the drag MIME still carries the key for placement.
         QString descShort = desc;
         if (descShort.size() > 28) descShort = descShort.left(27) + QChar(0x2026);  // …
-        const QString caption = descShort.isEmpty()
-            ? key
-            : QStringLiteral("%1\n%2").arg(key, descShort);
+        const QString caption = descShort.isEmpty() ? key : descShort;
 
         auto* item = new QListWidgetItem(caption);
-        item->setToolTip(desc.isEmpty() ? key : QStringLiteral("%1\n%2").arg(key, desc));
+        item->setToolTip(desc.isEmpty() ? key : QStringLiteral("%1\n(%2)").arg(desc, key));
         item->setTextAlignment(Qt::AlignHCenter | Qt::AlignTop);
 
         // Icon from the part GIF, scaled to kIconSize.

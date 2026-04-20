@@ -986,6 +986,18 @@ void SceneBuilder::addModuleLabels(const core::Map& map) {
         const QRectF framePx = me.framePx;
         const QColor color   = me.color;
 
+        // Double-stroke: solid dark outer + dashed colored inner. Keeps
+        // the frame visible against both light sky-blue map background
+        // and dark brick colors, without making the colored dashed pen
+        // invisible when it crosses similar-hued bricks.
+        auto* frameBack = new QGraphicsRectItem(framePx);
+        QPen backPen(QColor(20, 20, 20));
+        backPen.setWidthF(frameThickness + 3.0);
+        backPen.setCosmetic(true);
+        frameBack->setPen(backPen);
+        frameBack->setBrush(Qt::NoBrush);
+        sink.add(frameBack);
+
         auto* frame = new QGraphicsRectItem(framePx);
         QPen framePen(color);
         framePen.setWidthF(frameThickness);

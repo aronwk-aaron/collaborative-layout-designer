@@ -11,6 +11,8 @@ add_library(cld_saveload STATIC
     BbmWriter.h
     SidecarIO.cpp
     SidecarIO.h
+    VenueIO.cpp
+    VenueIO.h
 )
 
 target_link_libraries(cld_saveload PUBLIC cld_core Qt6::Core Qt6::Gui)
