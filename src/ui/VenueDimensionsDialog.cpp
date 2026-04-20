@@ -73,23 +73,40 @@ namespace cld::ui {
 
 VenueDimensionsDialog::VenueDimensionsDialog(QWidget* parent) : QDialog(parent) {
     setWindowTitle(tr("Draw venue outline by dimensions"));
-    resize(560, 520);
+    resize(600, 560);
 
-    // All length input in feet (vanilla BlueBrick's Distance.FEET: 1 stud
-    // = 0.026248 ft ⇒ 1 ft = 38.09814081 studs). Stored internally in
-    // studs; conversion happens in the OK handler / preset.
+    // Real-world venues are quoted in either feet OR inches depending on
+    // the drawing. Data model stays in studs; conversion happens in the
+    // OK handler based on the selected unit.
     constexpr double kStudsPerFoot = 38.09814081;
+    constexpr double kStudsPerInch = kStudsPerFoot / 12.0;
 
     auto* vbox = new QVBoxLayout(this);
 
+    auto* unitCombo = new QComboBox(this);
+    unitCombo->addItem(tr("Feet (ft)"),   QStringLiteral("ft"));
+    unitCombo->addItem(tr("Inches (in)"), QStringLiteral("in"));
+
     auto* form = new QFormLayout();
+    form->addRow(tr("Unit:"), unitCombo);
     auto* originX = new QDoubleSpinBox(this);
-    originX->setRange(-1e5, 1e5); originX->setDecimals(2); originX->setSuffix(tr(" ft"));
+    originX->setRange(-1e5, 1e5); originX->setDecimals(2);
     auto* originY = new QDoubleSpinBox(this);
-    originY->setRange(-1e5, 1e5); originY->setDecimals(2); originY->setSuffix(tr(" ft"));
+    originY->setRange(-1e5, 1e5); originY->setDecimals(2);
     form->addRow(tr("Start X:"), originX);
     form->addRow(tr("Start Y:"), originY);
     vbox->addLayout(form);
+
+    auto applyUnitSuffix = [unitCombo, originX, originY](const QString& unit){
+        const QString s = QStringLiteral(" %1").arg(unit);
+        originX->setSuffix(s);
+        originY->setSuffix(s);
+    };
+    applyUnitSuffix(QStringLiteral("ft"));
+    QObject::connect(unitCombo, &QComboBox::currentIndexChanged, this,
+                     [unitCombo, applyUnitSuffix](int){
+        applyUnitSuffix(unitCombo->currentData().toString());
+    });
 
     vbox->addWidget(new QLabel(tr(
         "<b>Segments</b> — each row adds a new vertex at the given distance "
@@ -98,8 +115,17 @@ VenueDimensionsDialog::VenueDimensionsDialog(QWidget* parent) : QDialog(parent) 
         "closed automatically.")));
 
     auto* table = new QTableWidget(0, 4, this);
-    table->setHorizontalHeaderLabels({ tr("Length (ft)"), tr("Angle (°)"),
-                                        tr("Kind"), tr("Label") });
+    const auto setHeader = [table](const QString& unit){
+        table->setHorizontalHeaderLabels({ QObject::tr("Length (%1)").arg(unit),
+                                            QObject::tr("Angle (°)"),
+                                            QObject::tr("Kind"),
+                                            QObject::tr("Label") });
+    };
+    setHeader(QStringLiteral("ft"));
+    QObject::connect(unitCombo, &QComboBox::currentIndexChanged, this,
+                     [unitCombo, setHeader](int){
+        setHeader(unitCombo->currentData().toString());
+    });
     table->horizontalHeader()->setStretchLastSection(true);
     table->verticalHeader()->setVisible(true);
     vbox->addWidget(table, 1);
@@ -186,12 +212,15 @@ VenueDimensionsDialog::VenueDimensionsDialog(QWidget* parent) : QDialog(parent) 
     });
 
     connect(bb, &QDialogButtonBox::rejected, this, &QDialog::reject);
-    connect(bb, &QDialogButtonBox::accepted, this, [this, table, originX, originY, kStudsPerFoot]{
+    connect(bb, &QDialogButtonBox::accepted, this,
+            [this, table, originX, originY, unitCombo, kStudsPerFoot, kStudsPerInch]{
+        const QString unit = unitCombo->currentData().toString();
+        const double studsPerUnit = (unit == QStringLiteral("in")) ? kStudsPerInch
+                                                                    : kStudsPerFoot;
         QVector<QPointF>     pts;
         QVector<SegmentMeta> metas;
-        // Convert origin from feet to studs for the internal data model.
-        QPointF cur(originX->value() * kStudsPerFoot,
-                    originY->value() * kStudsPerFoot);
+        QPointF cur(originX->value() * studsPerUnit,
+                    originY->value() * studsPerUnit);
         pts.push_back(cur);
         for (int r = 0; r < table->rowCount(); ++r) {
             auto* lenItem  = table->item(r, 0);
@@ -199,10 +228,10 @@ VenueDimensionsDialog::VenueDimensionsDialog(QWidget* parent) : QDialog(parent) 
             auto* kindCombo = qobject_cast<QComboBox*>(table->cellWidget(r, 2));
             auto* labelEdit = qobject_cast<QLineEdit*>(table->cellWidget(r, 3));
             if (!lenItem || !angCombo) continue;
-            const double lengthFt = lenItem->text().toDouble();
+            const double lengthUnit = lenItem->text().toDouble();
             const double angDeg   = readAngleFromCombo(angCombo);
-            if (lengthFt <= 0.0) continue;
-            const double lengthStuds = lengthFt * kStudsPerFoot;
+            if (lengthUnit <= 0.0) continue;
+            const double lengthStuds = lengthUnit * studsPerUnit;
             const double rad = angDeg * M_PI / 180.0;
             cur += QPointF(std::cos(rad) * lengthStuds, std::sin(rad) * lengthStuds);
             pts.push_back(cur);

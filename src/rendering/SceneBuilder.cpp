@@ -792,6 +792,76 @@ void SceneBuilder::addVenue(const core::Map& map) {
         item->setData(kBrickDataGuid,       QStringLiteral("venue"));
         item->setData(kBrickDataKind,       QStringLiteral("venue"));
         sink.add(item);
+
+        // Measurement label on the OUTSIDE of each segment so the user
+        // sees the real-world length of every wall at a glance. Uses
+        // feet by default; computes the segment's stud length and
+        // converts back via 1 stud = 0.026248 ft.
+        if (edge.polyline.size() >= 2) {
+            const QPointF a = edge.polyline.first();
+            const QPointF b = edge.polyline.last();
+            const QPointF d = b - a;
+            const double lenStuds = std::hypot(d.x(), d.y());
+            if (lenStuds > 0.5) {
+                const double lenFt = lenStuds * 0.026248;
+                const double lenIn = lenFt * 12.0;
+                // Smart formatting: whole feet up to 100 ft, otherwise
+                // show feet with 2 decimals; for very short edges (<1 ft)
+                // switch to inches.
+                QString txt;
+                if (lenFt < 1.0) {
+                    txt = QStringLiteral("%1\"").arg(lenIn, 0, 'f', 1);
+                } else {
+                    txt = QStringLiteral("%1 ft").arg(lenFt, 0, 'f', 2);
+                }
+                if (!edge.label.isEmpty()) {
+                    txt = edge.label + QStringLiteral(" — ") + txt;
+                }
+
+                // Perpendicular "outside" normal. The vertices of a
+                // closed venue polygon go in a consistent winding; we
+                // don't know which side is interior, but the user can
+                // read labels on either side. We default to the
+                // right-hand normal (positive 90° rotation of the
+                // segment direction). Users can rebuild the polygon if
+                // they want them on the other side.
+                const QPointF unit(d.x() / lenStuds, d.y() / lenStuds);
+                const QPointF normal(-unit.y(), unit.x());
+                // Offset enough to clear the stroke thickness (up to
+                // 7 px wall + some padding).
+                constexpr double kLabelOffsetPx = 16.0;
+                const QPointF midStuds = (a + b) * 0.5;
+                const QPointF labelScenePos = midStuds * kPx
+                                              + normal * kLabelOffsetPx;
+
+                auto* lbl = new QGraphicsSimpleTextItem(txt);
+                QFont f(QStringLiteral("Sans"));
+                f.setBold(true);
+                f.setPixelSize(18);
+                lbl->setFont(f);
+                lbl->setBrush(QBrush(QColor(20, 20, 20)));
+                // Rotate the label along the segment so it reads
+                // parallel to the wall. Flip 180° if the natural angle
+                // would be upside-down.
+                double angleDeg = std::atan2(d.y(), d.x()) * 180.0 / M_PI;
+                if (angleDeg > 90.0 || angleDeg < -90.0) angleDeg += 180.0;
+                const QRectF tb = lbl->boundingRect();
+                QTransform tr;
+                tr.translate(labelScenePos.x(), labelScenePos.y());
+                tr.rotate(angleDeg);
+                tr.translate(-tb.width() / 2.0, -tb.height() / 2.0);
+                lbl->setTransform(tr);
+
+                // Semi-transparent white backdrop so the measurement
+                // stays readable against bricks / grid.
+                const QRectF sceneBb = lbl->sceneBoundingRect();
+                auto* bg = new QGraphicsRectItem(sceneBb.adjusted(-3, -1, 3, 1));
+                bg->setPen(Qt::NoPen);
+                bg->setBrush(QBrush(QColor(255, 255, 255, 220)));
+                sink.add(bg);
+                sink.add(lbl);
+            }
+        }
     }
     for (const auto& ob : v.obstacles) {
         if (ob.polygon.size() < 3) continue;
