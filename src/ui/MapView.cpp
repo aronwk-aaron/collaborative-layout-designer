@@ -215,6 +215,14 @@ MapView::~MapView() {
 
 void MapView::loadMap(std::unique_ptr<core::Map> map) {
     undoStack_->clear();
+    // Any in-flight drag snapshots reference QGraphicsItems in the
+    // previous scene — builder_->clear() / build() below will delete
+    // those. Drop the snapshots first so no mouse event re-enters with
+    // dangling pointers.
+    dragStart_.clear();
+    rulerDragStart_.clear();
+    labelDragStart_.clear();
+    liveSnapActive_ = false;
     map_ = std::move(map);
     if (!map_) { builder_->clear(); return; }
 
@@ -247,6 +255,18 @@ void MapView::loadMap(std::unique_ptr<core::Map> map) {
 
 void MapView::rebuildScene() {
     if (!map_) return;
+    // SceneBuilder::build() deletes every QGraphicsItem* before
+    // repopulating the scene. Any raw pointers we're holding in drag
+    // snapshots (dragStart_ / rulerDragStart_ / labelDragStart_)
+    // become dangling the moment we call build(). If a drag is in
+    // progress when something triggers a rebuild (undo/redo, context
+    // menu action, tool op) the next mouseMove will segfault on
+    // s.item->scenePos(). Cancel any in-flight drag here so callers
+    // don't have to remember. Mid-drag rebuild → drag aborts cleanly.
+    dragStart_.clear();
+    rulerDragStart_.clear();
+    labelDragStart_.clear();
+    liveSnapActive_ = false;
     builder_->build(*map_);
     viewport()->update();
     emit selectionChanged();
