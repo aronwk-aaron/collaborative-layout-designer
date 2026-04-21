@@ -234,6 +234,13 @@ vanilla, vanilla can read them. This section is the human backstop
 for paths the round-trip corpus doesn't cover (new features, fresh
 files built from scratch).
 
+**Running vanilla BlueBrick on Linux/macOS**: the repo ships
+[`scripts/run-vanilla-bluebrick.sh`](../scripts/run-vanilla-bluebrick.sh)
+— pass it a `.bbm` and it launches BlueBrick.exe under plain `wine`
+or (with `PROTON=1`) Proton-GE. Point `BLUEBRICK_EXE=/path` at a
+custom install location, or stash the BlueBrick.1.9.2 folder under
+`~/Documents/` / `~/Applications/` / `/opt/` for auto-detection.
+
 **Minimum smoke set** — do these before every release tag:
 
 - [ ] On Windows with BlueBrick 1.9.2 installed, save a fresh
