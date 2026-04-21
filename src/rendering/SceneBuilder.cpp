@@ -238,6 +238,20 @@ void addBrickLayer(const core::LayerBrick& L, LayerSink& sink, parts::PartsLibra
             for (int ci = 0; ci < nConns; ++ci) {
                 const auto& c = meta->connections[ci];
                 if (c.type.isEmpty()) continue;
+                // Only render dots for STANDARD connection types
+                // (0=none, 1=rail, 2=road, 3=monorail standard, 4=monorail
+                // short curve — per the BlueBrickParts XML comment on
+                // 2865.8.xml). Custom library-specific types like
+                // "bricktracks_lever" tag internal non-user-facing joints
+                // (switch stand to switch), and sets often leave them
+                // geometrically unpaired. Rendering them as free red
+                // dots just clutters the view with markers the user
+                // can't act on — vanilla BlueBrick hides them.
+                {
+                    bool ok;
+                    c.type.toInt(&ok);
+                    if (!ok) continue;
+                }
                 const bool linked =
                     ci < static_cast<int>(brick.connections.size())
                     && !brick.connections[ci].linkedToId.isEmpty();
