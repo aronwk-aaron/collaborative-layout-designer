@@ -65,8 +65,6 @@ jobs:
         uses: jurplel/install-qt-action@v4
         with:
           version: '6.7.*'
-          modules: 'qtlanguageserver'
-          tools: 'tools_linguist'
           cache: true
 
       - name: Install dependencies (Linux)
