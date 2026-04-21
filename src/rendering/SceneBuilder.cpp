@@ -618,6 +618,43 @@ void addRulerLayer(const core::LayerRuler& L, LayerSink& sink, int layerIndex,
                 selectableLine->setData(kBrickDataKind,       QStringLiteral("ruler"));
             }
 
+            // Vanilla BlueBrick draws perpendicular tick caps on each end
+            // of a ruler when the distance isn't shown AND the ruler is
+            // shorter than 4 studs — without the caps, a very short
+            // ruler reads as "just a short line" with no indication of
+            // where it begins and ends. The caps are 4 studs long,
+            // centred on each endpoint, perpendicular to the ruler
+            // direction. Matches the `needToDrawArrowForSmallDistance`
+            // branch of LayerRulerItem.cs::draw.
+            const double lenStuds = std::hypot(p2Stud.x() - p1Stud.x(),
+                                                p2Stud.y() - p1Stud.y());
+            const bool drawEndCaps = !r.displayDistance && lenStuds < 4.0 && len > 0.001;
+            if (drawEndCaps) {
+                // Perpendicular unit vector (same sign as vanilla's
+                // offsetNormalizedVector). Caps extend 4 studs in each
+                // direction = 8 studs total width.
+                const QPointF perp(dir.y() / len, -dir.x() / len);
+                const double capPx = studToPx(4.0);
+                QPen capPen(r.guidelineColor.color);
+                capPen.setWidthF(std::max(0.5f, r.guidelineThickness));
+                capPen.setCosmetic(true);
+                QList<qreal> dashes;
+                for (float d : r.guidelineDashPattern) if (d > 0) dashes.append(d);
+                if (dashes.size() >= 2) capPen.setDashPattern(dashes);
+                auto addCap = [&](QPointF p){
+                    const QPointF a = p + perp * capPx;
+                    const QPointF b = p - perp * capPx;
+                    auto* cap = new QGraphicsLineItem(a.x(), a.y(), b.x(), b.y());
+                    cap->setPen(capPen);
+                    cap->setData(kBrickDataLayerIndex, layerIndex);
+                    cap->setData(kBrickDataGuid,       r.guid);
+                    cap->setData(kBrickDataKind,       QStringLiteral("ruler"));
+                    sink.add(cap);
+                };
+                addCap(offsetP1);
+                addCap(offsetP2);
+            }
+
             // Dashed guidelines from the anchor points to the offset line's
             // matching endpoints — only when allowOffset actually moves the
             // line away from the anchors. Matches vanilla's penForGuideline.
