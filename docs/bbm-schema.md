@@ -2,6 +2,17 @@
 
 This document describes the vanilla BlueBrick `.bbm` save format as derived from the upstream C# source at [`Lswbanban/BlueBrick`](https://github.com/Lswbanban/BlueBrick) (commit checked into `.reference/BlueBrick/`). It is the canonical specification the fork must read and write byte-faithfully.
 
+**Also in this directory:**
+
+- [`bbm-schema.xsd`](bbm-schema.xsd) — formal XSD for the `.bbm` XML
+  format. Documentation, not a strict validator (see caveats in the
+  XSD header). Good for diff tools and IDE autocomplete.
+- [`bbm-cld-schema.md`](bbm-cld-schema.md) — prose doc for the
+  sibling `.bbm.cld` sidecar (fork-only metadata: modules, anchored
+  labels, venues).
+- [`bbm-cld-schema.json`](bbm-cld-schema.json) — JSON Schema (draft-07)
+  for the same sidecar.
+
 The schema isn't formally documented upstream — the C# `System.Xml.Serialization.XmlSerializer` output, driven by `Map.WriteXml` and each `Layer` subclass's `WriteXml`, **is** the format.
 
 ## Wire-level facts

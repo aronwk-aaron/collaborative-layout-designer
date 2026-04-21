@@ -190,8 +190,21 @@ QWidget* buildAppearanceTab(QDialog* parent) {
         "Higher = bigger label. Scene rebuilds on dialog close."));
     form->addRow(QObject::tr("Module label size:"), moduleLabelSpin);
 
+    auto* venueLabelSpin = new QSpinBox(w);
+    venueLabelSpin->setRange(10, 96);
+    venueLabelSpin->setSingleStep(2);
+    venueLabelSpin->setSuffix(QObject::tr(" px"));
+    venueLabelSpin->setValue(
+        s.value(QStringLiteral("venue/labelPx"), 28).toInt());
+    venueLabelSpin->setToolTip(QObject::tr(
+        "Font size for venue edge labels (wall / door / open segment "
+        "measurements). Pixel size — stays legible at the typical venue "
+        "zoom. Scene rebuilds on dialog close."));
+    form->addRow(QObject::tr("Venue label size:"), venueLabelSpin);
+
     QObject::connect(parent, &QDialog::accepted, w,
-        [gridChk, connDotsChk, highlightChk, watermarkChk, moduleFrameSpin, moduleLabelSpin]{
+        [gridChk, connDotsChk, highlightChk, watermarkChk,
+         moduleFrameSpin, moduleLabelSpin, venueLabelSpin]{
             QSettings s;
             s.setValue(QStringLiteral("appearance/showGrid"), gridChk->isChecked());
             s.setValue(QStringLiteral("appearance/alwaysShowConnections"), connDotsChk->isChecked());
@@ -199,6 +212,7 @@ QWidget* buildAppearanceTab(QDialog* parent) {
             s.setValue(QStringLiteral("appearance/exportWatermark"), watermarkChk->isChecked());
             s.setValue(QStringLiteral("view/moduleFrameThickness"), moduleFrameSpin->value());
             s.setValue(QStringLiteral("view/moduleLabelPercent"),   moduleLabelSpin->value());
+            s.setValue(QStringLiteral("venue/labelPx"),             venueLabelSpin->value());
         });
     return w;
 }

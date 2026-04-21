@@ -3,6 +3,7 @@
 #include <QHash>
 #include <QPixmap>
 #include <QPointF>
+#include <QPolygonF>
 #include <QString>
 #include <QStringList>
 
@@ -22,6 +23,12 @@ struct PartConnectionPoint {
     QString type;
     QPointF position;
     double  angleDegrees = 0.0;
+    // Electric-plug index: 0 or 1 marks one of the two rails on a 9V
+    // track piece, -1 (the default) means this connection carries no
+    // electrical signal (e.g. plain rails, roads, monorails). When two
+    // connected bricks both have electricPlug != -1 on their joined
+    // connections, they form an edge in the electric-circuit graph.
+    int     electricPlug = -1;
 };
 
 // One entry in the parts library. Matches the BlueBrick file-naming convention:
@@ -38,6 +45,16 @@ struct PartDescription {
     QString text;
 };
 
+// A single child of a set (<group>). BlueBrick's SubPart carries a
+// subpart key (matches another part's library key), a local position in
+// studs (offset from the set's reference origin), and an orientation
+// in degrees.
+struct PartSubPart {
+    QString subKey;           // e.g. "TS_TRACK18S.8"
+    QPointF position;         // studs, in set-local coords
+    double  angleDegrees = 0.0;
+};
+
 struct PartMetadata {
     QString  partNumber;
     QString  colorCode;
@@ -48,6 +65,9 @@ struct PartMetadata {
     QString  sortingKey;
     QList<PartDescription>     descriptions;
     QList<PartConnectionPoint> connections;  // from <ConnexionList> in part XML
+    // Populated only when kind == Group — the parts that make up the
+    // set (from <SubPartList> in the XML).
+    QList<PartSubPart>         subparts;
 };
 
 class PartsLibrary {
@@ -70,12 +90,23 @@ public:
     // part isn't indexed or its .gif is missing.
     QPixmap pixmap(const QString& key);
 
+    // Convex hull of the part's opaque pixels, in part-local STUD coords
+    // (origin at the pixmap centre, x right, y down). Cached per-key.
+    // Empty QPolygonF if the part has no pixmap or no opaque pixels —
+    // callers fall back to the brick's displayArea rect in that case.
+    //
+    // Used for selection-shape hit testing and the "Display Hulls"
+    // render toggle so irregular parts (curves, switches) outline
+    // their real silhouette rather than a loose bounding rect.
+    QPolygonF hullPolygonStuds(const QString& key);
+
     void clear();
 
 private:
     QStringList searchPaths_;
     QHash<QString, PartMetadata> index_;
     QHash<QString, QPixmap>      pixmapCache_;
+    QHash<QString, QPolygonF>    hullCache_;
 };
 
 }

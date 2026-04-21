@@ -1,0 +1,413 @@
+// File I/O + autosave + recent files + export part list.
+// Split out of MainWindow.cpp so the main window's core lifecycle and
+// dock wiring stay readable. Every definition here is a member of the
+// class declared in MainWindow.h — we're just spreading the out-of-line
+// bodies across translation units.
+
+#include "MainWindow.h"
+
+#include "LayerPanel.h"
+#include "MapView.h"
+#include "ModulesPanel.h"
+#include "PartsBrowser.h"
+
+#include "../core/Ids.h"
+#include "../core/LayerBrick.h"
+#include "../core/Map.h"
+#include "../parts/PartsLibrary.h"
+#include "../saveload/BbmReader.h"
+#include "../saveload/BbmWriter.h"
+#include "../saveload/SidecarIO.h"
+
+#include <QAction>
+#include <QByteArray>
+#include <QCloseEvent>
+#include <QCoreApplication>
+#include <QDateTime>
+#include <QDir>
+#include <QFile>
+#include <QFileDialog>
+#include <QFileInfo>
+#include <QHash>
+#include <QMenu>
+#include <QMessageBox>
+#include <QSettings>
+#include <QStandardPaths>
+#include <QStatusBar>
+#include <QTime>
+#include <QUndoStack>
+
+#include <atomic>
+
+namespace cld::ui {
+
+namespace {
+constexpr const char* kLastFileKey   = "recent/lastFile";
+constexpr const char* kRecentListKey = "recent/list";
+constexpr int         kRecentMax     = 12;
+
+// 5-second throttle for the undo-stack-triggered autosave — near-realtime
+// crash protection without thrashing the disk on bursts of edits.
+std::atomic<qint64> gLastAutosaveMs{0};
+constexpr qint64 kAutosaveThrottleMs = 5000;
+}  // namespace
+
+// ---------- Title -----------------------------------------------------------
+
+void MainWindow::updateTitle() {
+    const QString name = currentFilePath_.isEmpty()
+        ? tr("[untitled]")
+        : QFileInfo(currentFilePath_).fileName();
+    const bool dirty = !mapView_->undoStack()->isClean();
+    setWindowTitle(tr("%1%2 — Collaborative Layout Designer")
+                       .arg(name, dirty ? QStringLiteral(" *") : QString()));
+}
+
+// ---------- Open / Save / New ----------------------------------------------
+
+bool MainWindow::openFile(const QString& path) {
+    if (!maybeSave()) return false;
+    auto result = saveload::readBbm(path);
+    if (!result.ok()) {
+        QMessageBox::warning(this, tr("Open failed"),
+            tr("%1\n\n%2").arg(path, result.error));
+        return false;
+    }
+    if (!result.error.isEmpty()) {
+        statusBar()->showMessage(tr("Loaded with warnings: %1").arg(result.error), 5000);
+    }
+
+    // Sidecar: optional. Hash-check the .bbm bytes to flag drift (user edited
+    // the .bbm in vanilla BlueBrick between our writes).
+    const QString sidecarPath = saveload::sidecarPathFor(path);
+    if (QFile::exists(sidecarPath)) {
+        QFile bf(path);
+        QByteArray bbmBytes;
+        if (bf.open(QIODevice::ReadOnly)) bbmBytes = bf.readAll();
+        auto sres = saveload::readSidecar(sidecarPath, bbmBytes, result.map->sidecar);
+        if (sres.ok && sres.hashMismatch) {
+            statusBar()->showMessage(
+                tr("Sidecar hash mismatch — .bbm was modified externally. Fork-only metadata preserved but may drift."), 8000);
+        } else if (!sres.ok) {
+            statusBar()->showMessage(tr("Sidecar load failed: %1").arg(sres.error), 5000);
+        }
+    }
+
+    const int layerCount = static_cast<int>(result.map->layers().size());
+    const int nbItems = result.map->nbItems;
+    mapView_->loadMap(std::move(result.map));
+    layerPanel_->setMap(mapView_->currentMap(), mapView_->builder());
+    modulesPanel_->setMap(mapView_->currentMap());
+    currentFilePath_ = path;
+    mapView_->undoStack()->setClean();
+    cleanUndoIndex_ = 0;
+    updateTitle();
+    statusBar()->showMessage(tr("Opened %1 — %2 layers, %3 items")
+                                 .arg(path).arg(layerCount).arg(nbItems));
+    QSettings().setValue(QString::fromLatin1(kLastFileKey), path);
+    pushRecentFile(path);
+    return true;
+}
+
+void MainWindow::onOpen() {
+    const QString path = QFileDialog::getOpenFileName(
+        this, tr("Open BlueBrick map"), {},
+        tr("BlueBrick map (*.bbm);;All files (*)"));
+    if (!path.isEmpty()) openFile(path);
+}
+
+bool MainWindow::writeMapTo(const QString& path) {
+    auto* map = mapView_->currentMap();
+    if (!map) return false;
+    auto res = saveload::writeBbm(*map, path);
+    if (!res.ok) {
+        QMessageBox::warning(this, tr("Save failed"), res.error);
+        return false;
+    }
+
+    // Sidecar: always write when the map carries fork-only metadata; clean up
+    // any stale sidecar if the map no longer has any.
+    const QString sidecarPath = saveload::sidecarPathFor(path);
+    if (!map->sidecar.isEmpty()) {
+        QFile bf(path);
+        if (bf.open(QIODevice::ReadOnly)) {
+            const QByteArray bbmBytes = bf.readAll();
+            QString err;
+            if (!saveload::writeSidecar(sidecarPath, bbmBytes, map->sidecar, &err)) {
+                QMessageBox::warning(this, tr("Sidecar save failed"),
+                    tr("The .bbm saved successfully but the sidecar failed:\n%1").arg(err));
+            }
+        }
+    } else if (QFile::exists(sidecarPath)) {
+        QFile::remove(sidecarPath);
+    }
+
+    currentFilePath_ = path;
+    mapView_->undoStack()->setClean();
+    updateTitle();
+    statusBar()->showMessage(tr("Saved %1").arg(path), 3000);
+    QSettings().setValue(QString::fromLatin1(kLastFileKey), path);
+    pushRecentFile(path);
+    // Manual save supersedes any autosave for the session.
+    QFile::remove(autosavePath());
+    return true;
+}
+
+bool MainWindow::onSave() {
+    if (!mapView_->currentMap()) return false;
+    if (currentFilePath_.isEmpty()) return onSaveAs();
+    return writeMapTo(currentFilePath_);
+}
+
+bool MainWindow::onSaveAs() {
+    if (!mapView_->currentMap()) return false;
+    const QString path = QFileDialog::getSaveFileName(
+        this, tr("Save BlueBrick map"), currentFilePath_,
+        tr("BlueBrick map (*.bbm)"));
+    if (path.isEmpty()) return false;
+    return writeMapTo(path);
+}
+
+bool MainWindow::maybeSave() {
+    if (!mapView_->currentMap() || mapView_->undoStack()->isClean()) return true;
+    const auto btn = QMessageBox::question(
+        this, tr("Unsaved changes"),
+        tr("The current layout has unsaved changes. Save before continuing?"),
+        QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel);
+    if (btn == QMessageBox::Save)    return onSave();
+    if (btn == QMessageBox::Discard) return true;
+    return false;
+}
+
+void MainWindow::closeEvent(QCloseEvent* e) {
+    if (!maybeSave()) { e->ignore(); return; }
+    // Persist window geometry + dock layout for the next launch.
+    QSettings s;
+    s.beginGroup(QStringLiteral("ui"));
+    s.setValue(QStringLiteral("geometry"), saveGeometry());
+    s.setValue(QStringLiteral("state"),    saveState());
+    s.endGroup();
+    e->accept();
+}
+
+void MainWindow::onNew() {
+    if (!maybeSave()) return;
+
+    // If the user configured a "new map template" file in Preferences
+    // (general/newMapTemplate), load that as the starting point — vanilla
+    // BlueBrick's StartNewFileUsingDefaultTemplate parity.
+    const QString templatePath =
+        QSettings().value(QStringLiteral("general/newMapTemplate")).toString();
+    if (!templatePath.isEmpty() && QFile::exists(templatePath)) {
+        auto res = saveload::readBbm(templatePath);
+        if (res.ok() && res.map) {
+            mapView_->loadMap(std::move(res.map));
+            layerPanel_->setMap(mapView_->currentMap(), mapView_->builder());
+            modulesPanel_->setMap(mapView_->currentMap());
+            currentFilePath_.clear();
+            mapView_->undoStack()->clear();
+            mapView_->undoStack()->setClean();
+            updateTitle();
+            statusBar()->showMessage(tr("New layout from template %1").arg(templatePath), 3000);
+            return;
+        }
+    }
+
+    auto blank = std::make_unique<core::Map>();
+    // Seed with a single brick layer so drop-onto-map works out of the box.
+    auto layer = std::make_unique<core::LayerBrick>();
+    layer->guid = core::newBbmId();
+    layer->name = tr("Bricks");
+    blank->layers().push_back(std::move(layer));
+    blank->nbItems = 0;
+    mapView_->loadMap(std::move(blank));
+    layerPanel_->setMap(mapView_->currentMap(), mapView_->builder());
+    modulesPanel_->setMap(mapView_->currentMap());
+    currentFilePath_.clear();
+    mapView_->undoStack()->clear();
+    mapView_->undoStack()->setClean();
+    updateTitle();
+    statusBar()->showMessage(tr("New layout"), 3000);
+}
+
+// ---------- Part-list export / About --------------------------------------
+
+void MainWindow::onExportPartList() {
+    auto* map = mapView_->currentMap();
+    if (!map) return;
+    // Aggregate part counts across every brick layer. Output format mirrors
+    // vanilla's ExportPartList: "part number, count".
+    QHash<QString, int> counts;
+    for (const auto& L : map->layers()) {
+        if (!L || L->kind() != core::LayerKind::Brick) continue;
+        for (const auto& b : static_cast<const core::LayerBrick&>(*L).bricks) {
+            counts[b.partNumber]++;
+        }
+    }
+    if (counts.isEmpty()) {
+        QMessageBox::information(this, tr("Export part list"),
+            tr("The current layout contains no bricks."));
+        return;
+    }
+    const QString path = QFileDialog::getSaveFileName(
+        this, tr("Export part list"),
+        currentFilePath_.isEmpty()
+            ? QStringLiteral("parts.csv")
+            : QFileInfo(currentFilePath_).baseName() + ".csv",
+        tr("CSV (*.csv);;Text (*.txt)"));
+    if (path.isEmpty()) return;
+    QFile f(path);
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QMessageBox::warning(this, tr("Export failed"),
+            tr("Cannot write %1: %2").arg(path, f.errorString()));
+        return;
+    }
+    QStringList keys = counts.keys(); std::sort(keys.begin(), keys.end());
+    f.write("PartNumber,Count\n");
+    int total = 0;
+    for (const QString& k : keys) {
+        f.write(QStringLiteral("%1,%2\n").arg(k).arg(counts[k]).toUtf8());
+        total += counts[k];
+    }
+    f.close();
+    statusBar()->showMessage(tr("Exported %1 unique parts, %2 total, to %3")
+        .arg(keys.size()).arg(total).arg(path), 5000);
+}
+
+void MainWindow::onAbout() {
+    QMessageBox::about(this, tr("About Collaborative Layout Designer"),
+        tr("<h3>Collaborative Layout Designer</h3>"
+           "<p>Cross-platform C++/Qt 6 fork of <b>BlueBrick</b> by Alban Nanty and contributors.</p>"
+           "<p>Adds cross-layer modules, anchored text labels, and event venues on top of the "
+           "vanilla <i>.bbm</i> format (extra metadata stored in a sidecar <i>.bbm.cld</i> so "
+           "vanilla BlueBrick 1.9.2 keeps opening our files).</p>"
+           "<p>Licensed under GPL-3.0 — same as upstream BlueBrick.</p>"
+           "<p>Parts library: %1 parts indexed.</p>")
+        .arg(parts_.partCount()));
+}
+
+// ---------- Recent files ---------------------------------------------------
+
+void MainWindow::rebuildRecentMenu() {
+    if (!recentMenu_) return;
+    recentMenu_->clear();
+    const QStringList list = QSettings().value(kRecentListKey).toStringList();
+    for (const QString& p : list) {
+        QAction* act = recentMenu_->addAction(QFileInfo(p).fileName());
+        act->setToolTip(p);
+        connect(act, &QAction::triggered, this, [this, p]{ openFile(p); });
+    }
+    if (list.isEmpty()) {
+        auto* empty = recentMenu_->addAction(tr("(no recent files)"));
+        empty->setEnabled(false);
+    } else {
+        recentMenu_->addSeparator();
+        auto* clear = recentMenu_->addAction(tr("Clear Menu"));
+        connect(clear, &QAction::triggered, this, [this]{
+            QSettings().remove(QString::fromLatin1(kRecentListKey));
+            rebuildRecentMenu();
+        });
+    }
+}
+
+void MainWindow::pushRecentFile(const QString& path) {
+    QSettings s;
+    QStringList list = s.value(kRecentListKey).toStringList();
+    list.removeAll(path);
+    list.prepend(path);
+    while (list.size() > kRecentMax) list.removeLast();
+    s.setValue(kRecentListKey, list);
+    rebuildRecentMenu();
+}
+
+// ---------- Autosave + restore ---------------------------------------------
+
+QString MainWindow::autosavePath() {
+    const QString dir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    QDir().mkpath(dir);
+    return dir + QStringLiteral("/autosave.bbm");
+}
+
+void MainWindow::performAutosave() {
+    if (!mapView_->currentMap() || mapView_->undoStack()->isClean()) return;
+    const QString path = autosavePath();
+    auto res = saveload::writeBbm(*mapView_->currentMap(), path);
+    if (res.ok) {
+        // Record the original file alongside so the startup prompt can
+        // mention the source filename.
+        QSettings().setValue(QStringLiteral("autosave/sourceFile"), currentFilePath_);
+        statusBar()->showMessage(tr("Autosaved (%1)").arg(QTime::currentTime().toString("HH:mm:ss")), 2000);
+    }
+}
+
+// Called on every undo-stack mutation. Rate-limits so rapid edits don't
+// thrash the disk; the cap means at most ~5 s of work is at risk on a crash.
+void MainWindow::performAutosaveThrottled() {
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    const qint64 last = gLastAutosaveMs.load(std::memory_order_relaxed);
+    if (now - last < kAutosaveThrottleMs) return;
+    gLastAutosaveMs.store(now, std::memory_order_relaxed);
+    performAutosave();
+}
+
+bool MainWindow::restoreAutosaveIfAny(const QString& lastFile) {
+    const QString path = autosavePath();
+    if (!QFile::exists(path)) return false;
+    const QFileInfo ai(path);
+    if (!lastFile.isEmpty()) {
+        const QFileInfo li(lastFile);
+        if (li.exists() && li.lastModified() >= ai.lastModified()) return false;
+    }
+    const QString source = QSettings().value(QStringLiteral("autosave/sourceFile")).toString();
+    const auto btn = QMessageBox::question(
+        this, tr("Restore autosave?"),
+        tr("An unsaved layout from the last session was recovered:\n%1\n\n"
+           "Original file: %2\n"
+           "Restore it?")
+            .arg(path, source.isEmpty() ? tr("(new file)") : source),
+        QMessageBox::Yes | QMessageBox::No);
+    if (btn != QMessageBox::Yes) return false;
+
+    // Load the autosave content directly into the map. Bypassing
+    // openFile(path) means openFile doesn't set currentFilePath_ to the
+    // autosave file itself — we want the title / Ctrl+S target / Recent
+    // Files entry to all reflect the ORIGINAL file, but with the
+    // autosave's unsaved content on top.
+    auto result = saveload::readBbm(path);
+    if (!result.ok()) {
+        QMessageBox::warning(this, tr("Restore failed"),
+            tr("Couldn't read the autosave: %1").arg(result.error));
+        return false;
+    }
+    // Merge the ORIGINAL file's sidecar (if any) rather than the autosave's,
+    // so anchored labels / modules / venues are preserved.
+    if (!source.isEmpty()) {
+        const QString sidecarPath = saveload::sidecarPathFor(source);
+        if (QFile::exists(sidecarPath)) {
+            QFile bf(source);
+            QByteArray bbmBytes;
+            if (bf.open(QIODevice::ReadOnly)) bbmBytes = bf.readAll();
+            (void)saveload::readSidecar(sidecarPath, bbmBytes, result.map->sidecar);
+        }
+    }
+
+    mapView_->loadMap(std::move(result.map));
+    layerPanel_->setMap(mapView_->currentMap(), mapView_->builder());
+    modulesPanel_->setMap(mapView_->currentMap());
+
+    // Point at the original file so Ctrl+S overwrites the right place. We
+    // leave the undo stack NOT clean so the title shows the dirty
+    // asterisk — the user must know the recovered content still needs
+    // a save to persist to the original file.
+    currentFilePath_ = source;
+    if (!source.isEmpty()) pushRecentFile(source);
+    updateTitle();
+
+    statusBar()->showMessage(source.isEmpty()
+        ? tr("Restored unsaved layout from autosave")
+        : tr("Restored unsaved changes on top of %1").arg(source),
+        5000);
+    return true;
+}
+
+}  // namespace cld::ui

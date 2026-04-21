@@ -15,12 +15,19 @@ add_library(cld_edit STATIC
     RulerCommands.h
     VenueCommands.cpp
     VenueCommands.h
+    VenueValidator.cpp
+    VenueValidator.h
+    Connectivity.cpp
+    Connectivity.h
+    Budget.cpp
+    Budget.h
 )
 
 target_include_directories(cld_edit PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)
 target_link_libraries(cld_edit
     PUBLIC
         cld_core
+        cld_parts
         Qt6::Core
         Qt6::Widgets     # QUndoCommand lives in QtWidgets
 )

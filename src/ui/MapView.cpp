@@ -10,6 +10,7 @@
 #include "../core/Map.h"
 #include "../core/TextCell.h"
 #include "../edit/AreaCommands.h"
+#include "../edit/Connectivity.h"
 #include "../edit/EditCommands.h"
 #include "../edit/RulerCommands.h"
 #include "../edit/LabelCommands.h"
@@ -18,6 +19,9 @@
 #include "../core/Venue.h"
 #include "../parts/PartsLibrary.h"
 #include "../rendering/SceneBuilder.h"
+#include "ConnectionSnap.h"
+#include "MapViewInternal.h"
+#include "SelectionOverlay.h"
 #include "EditDialogs.h"
 #include "ModuleLibraryPanel.h"   // kModuleDragMimeType
 #include "PartsBrowser.h"         // kPartMimeType
@@ -25,7 +29,6 @@
 #include "../edit/ModuleCommands.h"
 #include "../saveload/BbmReader.h"
 
-#include <QContextMenuEvent>
 #include <QDragEnterEvent>
 #include <QDragMoveEvent>
 #include <QDropEvent>
@@ -34,7 +37,6 @@
 #include <QInputDialog>
 #include <QKeyEvent>
 #include <QLineEdit>
-#include <QMenu>
 #include <QMessageBox>
 #include <QMimeData>
 #include <QMouseEvent>
@@ -53,131 +55,20 @@
 
 namespace cld::ui {
 
-namespace {
+using detail::kBrickDataLayerIndex;
+using detail::kBrickDataGuid;
+using detail::kBrickDataKind;
+using detail::isBrickItem;
+using detail::isTextItem;
+using detail::isRulerItem;
+using detail::isLabelItem;
+using detail::isVenueItem;
+using detail::studToPx;
 
+namespace {
 constexpr double kMinZoom = 0.02;
 constexpr double kMaxZoom = 40.0;
-
-// Keep these in sync with SceneBuilder.cpp (anonymous namespace).
-constexpr int kBrickDataLayerIndex = 0;
-constexpr int kBrickDataGuid       = 1;
-constexpr int kBrickDataKind       = 2;
-
-bool isBrickItem(const QGraphicsItem* it) {
-    return it && it->data(kBrickDataKind).toString() == QStringLiteral("brick");
-}
-
-bool isTextItem(const QGraphicsItem* it) {
-    return it && it->data(kBrickDataKind).toString() == QStringLiteral("text");
-}
-
-bool isRulerItem(const QGraphicsItem* it) {
-    return it && it->data(kBrickDataKind).toString() == QStringLiteral("ruler");
-}
-
-bool isLabelItem(const QGraphicsItem* it) {
-    return it && it->data(kBrickDataKind).toString() == QStringLiteral("label");
-}
-
-bool isVenueItem(const QGraphicsItem* it) {
-    return it && it->data(kBrickDataKind).toString() == QStringLiteral("venue");
-}
-
-double studToPx() { return rendering::SceneBuilder::kPixelsPerStud; }
-
-// Forward declarations for helpers defined further down so the MapView
-// constructor (which hands a lambda into SceneBuilder::setLiveConnectionSnapHook)
-// can refer to them.
-struct ConnectionSnapResult {
-    bool    applied = false;
-    QPointF newCenter;
-    float   newOrientation = 0.0f;
-};
-ConnectionSnapResult computeConnectionSnap(
-    const core::Map& map, parts::PartsLibrary& lib,
-    const QSet<QString>& movingGuids, const QString& draggedPart,
-    float draggedOrientation, QPointF draggedCenter, double thresholdStuds,
-    const core::Brick* draggedBrick = nullptr);
-
 }  // namespace
-
-// Dedicated overlay item: a single scene item that paints the selection
-// outline around every currently-selected brick/text/ruler. Living in the
-// scene itself guarantees it actually renders — it's just another
-// QGraphicsItem that Qt paints in its normal pass. Huge z-value so it's
-// always on top of everything else. Updated from refreshSelectionOverlay()
-// whenever scene()->selectionChanged fires.
-class SelectionOverlay : public QGraphicsItem {
-public:
-    SelectionOverlay() {
-        setZValue(1e9);
-        setFlag(QGraphicsItem::ItemIsSelectable, false);
-        setFlag(QGraphicsItem::ItemIsMovable,    false);
-    }
-
-    // Bounding rect tracks the union of outline polys so this item doesn't
-    // inflate scene()->itemsBoundingRect() (which drives fitInView).
-    QRectF boundingRect() const override { return bounds_; }
-
-    void paint(QPainter* p, const QStyleOptionGraphicsItem*, QWidget*) override {
-        if (polys_.isEmpty()) return;
-        p->save();
-        p->setRenderHint(QPainter::Antialiasing, true);
-
-        // Normal selection = black + yellow double stroke.
-        // Live-snapped selection = black + bright green, plus a big green
-        // ring at the connection point so the user sees exactly where
-        // the lock happened.
-        const QColor inColor = snapActive_ ? QColor(80, 255, 120)
-                                            : QColor(255, 215, 0);
-        const QColor fillColor = snapActive_ ? QColor(80, 255, 120, 90)
-                                              : QColor(255, 215, 0, 80);
-        QPen outer(QColor(0, 0, 0, 230)); outer.setWidthF(5.0); outer.setCosmetic(true);
-        outer.setJoinStyle(Qt::MiterJoin);
-        QPen inner(inColor); inner.setWidthF(2.5); inner.setCosmetic(true);
-        inner.setJoinStyle(Qt::MiterJoin);
-        const QBrush fill(fillColor);
-
-        for (const QPolygonF& poly : polys_) {
-            p->setPen(outer); p->setBrush(Qt::NoBrush); p->drawPolygon(poly);
-            p->setPen(inner); p->setBrush(fill);        p->drawPolygon(poly);
-        }
-
-        // Connection-lock ring at the snap point.
-        if (snapActive_) {
-            QPen ring(QColor(20, 180, 80)); ring.setWidthF(3.0); ring.setCosmetic(true);
-            p->setPen(ring);
-            p->setBrush(QColor(80, 255, 120, 80));
-            p->drawEllipse(snapPoint_, 10.0, 10.0);
-        }
-        p->restore();
-    }
-
-    void setOutlines(QList<QPolygonF> polys) {
-        prepareGeometryChange();
-        polys_ = std::move(polys);
-        QRectF total;
-        for (const QPolygonF& poly : polys_) {
-            total = total.united(poly.boundingRect());
-        }
-        if (snapActive_) total = total.united(QRectF(snapPoint_ - QPointF(12, 12), QSizeF(24, 24)));
-        bounds_ = total.isEmpty() ? QRectF() : total.adjusted(-6, -6, 6, 6);
-        update();
-    }
-
-    void setSnapState(bool active, QPointF snapPoint) {
-        prepareGeometryChange();
-        snapActive_ = active;
-        snapPoint_  = snapPoint;
-        update();
-    }
-
-private:
-    QList<QPolygonF> polys_;
-    QRectF bounds_;
-    bool   snapActive_ = false;
-    QPointF snapPoint_;
-};
 
 MapView::MapView(parts::PartsLibrary& parts, QWidget* parent)
     : QGraphicsView(parent), parts_(parts) {
@@ -193,6 +84,20 @@ MapView::MapView(parts::PartsLibrary& parts, QWidget* parent)
     // SmartViewportUpdate leaves when the item's bounding rect in scene
     // coords changes more than its local rect signals.
     setViewportUpdateMode(QGraphicsView::FullViewportUpdate);
+    // No scrollbars: pan is middle-button drag. Visible scrollbars would
+    // steal wheel events (breaking zoom when the cursor is over them) and
+    // can take keyboard focus. The internal scroll-position machinery is
+    // still used by mouseMoveEvent's pan code via scrollBar()->setValue().
+    setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    horizontalScrollBar()->setFocusPolicy(Qt::NoFocus);
+    verticalScrollBar()->setFocusPolicy(Qt::NoFocus);
+    // Install ourselves as an event filter on the viewport. The filter
+    // routes wheel events straight into our wheelEvent() and consumes
+    // them so QAbstractScrollArea's base class never gets to pan the
+    // viewport via the (invisible) scrollbars. Without this, trackpad
+    // wheels ended up zooming AND panning vertically at the same time.
+    viewport()->installEventFilter(this);
 
     auto* scene = new QGraphicsScene(this);
     scene->setBackgroundBrush(QColor(100, 149, 237));
@@ -246,55 +151,9 @@ MapView::MapView(parts::PartsLibrary& parts, QWidget* parent)
 
     builder_ = std::make_unique<rendering::SceneBuilder>(*scene, parts_);
 
-    // Install the live connection-priority snap hook. Vanilla's
-    // getMovedSnapPoint does the same thing on every mouse-move: find the
-    // nearest free connection of matching type and, if close enough, snap
-    // there instead of to the grid. We only handle position in the live
-    // hook (drop-time rotation is done in commitDragIfMoved); this keeps
-    // the live feel "magnetic" without the complexity of rotating an item
-    // mid-drag.
-    rendering::SceneBuilder::setLiveConnectionSnapHook(
-        [this](QGraphicsItem* item, QPointF proposedScenePos) -> std::optional<QPointF> {
-            if (!map_ || !item) { liveSnapActive_ = false; return std::nullopt; }
-            const QString guid = item->data(kBrickDataGuid).toString();
-            const int li       = item->data(kBrickDataLayerIndex).toInt();
-            if (guid.isEmpty() || li < 0 ||
-                li >= static_cast<int>(map_->layers().size())) { liveSnapActive_ = false; return std::nullopt; }
-            auto* L = map_->layers()[li].get();
-            if (!L || L->kind() != core::LayerKind::Brick) { liveSnapActive_ = false; return std::nullopt; }
-
-            // Multi-select drag: only the "anchor" item (the one under the
-            // mouse grab, which we approximate as the first item in the
-            // dragStart snapshot) runs the connection search. The other
-            // selected siblings translate by Qt's built-in multi-drag
-            // delta, so the group moves rigidly AND can still snap to a
-            // connection via the anchor. This matches BlueBrick's
-            // mCurrentBrickUnderMouse-anchored getMovedSnapPoint flow.
-            if (this->scene()->selectedItems().size() > 1) {
-                if (dragStart_.empty() || dragStart_.front().item != item) {
-                    return std::nullopt;
-                }
-            }
-
-            const core::LayerBrick& BL = static_cast<const core::LayerBrick&>(*L);
-            const core::Brick* b = nullptr;
-            for (const auto& br : BL.bricks) if (br.guid == guid) { b = &br; break; }
-            if (!b) { liveSnapActive_ = false; return std::nullopt; }
-
-            const double px = rendering::SceneBuilder::kPixelsPerStud;
-            const QPointF proposedCentreStuds(proposedScenePos.x() / px,
-                                                proposedScenePos.y() / px);
-            QSet<QString> moving; moving.insert(guid);
-            const double threshold = std::max(4.0, snapStepStuds_);
-            auto snap = computeConnectionSnap(*map_, parts_, moving,
-                                              b->partNumber, b->orientation,
-                                              proposedCentreStuds, threshold, b);
-            if (!snap.applied) { liveSnapActive_ = false; return std::nullopt; }
-            liveSnapActive_ = true;
-            liveSnapPointScene_ = QPointF(snap.newCenter.x() * px, snap.newCenter.y() * px);
-            viewport()->update();
-            return liveSnapPointScene_;
-        });
+    // No per-item live snap hook: connection snap runs as a single rigid
+    // group shift in MapView::mouseMoveEvent after Qt has moved each item
+    // by the drag delta. See applyLiveConnectionSnap().
 
     undoStack_ = std::make_unique<QUndoStack>(this);
     // Every undo / redo mutates core::Map; the scene items were built before
@@ -302,6 +161,11 @@ MapView::MapView(parts::PartsLibrary& parts, QWidget* parent)
     // reflect the restored state. Without this, Ctrl+Z appears to do nothing.
     connect(undoStack_.get(), &QUndoStack::indexChanged, this, [this](int){
         if (!map_) return;
+        // Recompute every brick's linkedToId against current world
+        // positions before rebuilding the scene. Otherwise a brick moved
+        // away from its partner keeps the old link, which makes the
+        // connection appear "occupied" to snap + display.
+        edit::rebuildConnectivity(*map_, parts_);
         // Snapshot the currently-selected (layer, guid, kind) triples before
         // the rebuild wipes the scene so we can reselect the same logical
         // items on the rebuilt pixmaps. Without this, moving a brick
@@ -347,10 +211,6 @@ MapView::~MapView() {
     // survivors that may already be mid-destruction. Disconnect from
     // the scene signals BEFORE any of that runs.
     if (scene()) scene()->disconnect(this);
-    // Clear the static connection-snap hook so its `this`-capturing
-    // lambda can't outlive us and deref a dangling MapView pointer
-    // during any late itemChange tick.
-    rendering::SceneBuilder::setLiveConnectionSnapHook({});
 }
 
 void MapView::loadMap(std::unique_ptr<core::Map> map) {
@@ -359,6 +219,12 @@ void MapView::loadMap(std::unique_ptr<core::Map> map) {
     if (!map_) { builder_->clear(); return; }
 
     scene()->setBackgroundBrush(map_->backgroundColor.color);
+    // Freshly-loaded .bbm may have stale linkedToId values (the file
+    // stores the last known state, which can disagree with current world
+    // positions after e.g. external edits). Rebuild the connection graph
+    // from positions before first render so snap + dot markers are
+    // correct from the start.
+    edit::rebuildConnectivity(*map_, parts_);
     builder_->build(*map_);
     // Give the view a much bigger scene rect than the current content so
     // the user can pan well outside the existing bricks to add new ones
@@ -386,451 +252,61 @@ void MapView::rebuildScene() {
     emit selectionChanged();
 }
 
+bool MapView::eventFilter(QObject* obj, QEvent* ev) {
+    // Intercept wheel events on the viewport so they go through our
+    // zoom-only wheelEvent() and never fall through to the base class
+    // (which would pan via scrollbars). Returning true marks the event
+    // as handled.
+    if (obj == viewport() && ev->type() == QEvent::Wheel) {
+        wheelEvent(static_cast<QWheelEvent*>(ev));
+        return true;
+    }
+    return QGraphicsView::eventFilter(obj, ev);
+}
+
 void MapView::wheelEvent(QWheelEvent* e) {
-    // Proportional to the wheel's actual angle delta so a single "notch"
-    // produces a small change and a hard scroll still moves fast. Mouse
-    // wheels typically report 120 units per notch; smoother high-res
-    // trackpad scrolls report smaller values. The base factor here
-    // (1.0015^delta_y) yields ~1.20× for a full 120-unit notch —
-    // noticeably gentler than the old fixed 1.15× step, and fractional
+    // The wheel is ZOOM ONLY. We always accept the event so
+    // QAbstractScrollArea's base class doesn't fall through to
+    // scrollbar-driven pan — that made horizontal trackpad gestures
+    // and "wheel with no vertical delta" events slide the map around,
+    // which the user never wants here. Middle-click drag is the only
+    // pan mechanism.
+    //
+    // Step size: proportional to angleDelta (120 units per notch on a
+    // classic mouse wheel; smaller numbers for high-res trackpads). The
+    // base factor 1.0015^delta_y yields ~1.20× for a full notch —
+    // noticeably gentler than a fixed 1.15× step, and fractional
     // increments feel continuous instead of twitchy.
     const double rawDelta = e->angleDelta().y();
-    if (rawDelta == 0.0) { e->ignore(); return; }
+    e->accept();   // swallow every wheel event regardless — no pan fallthrough
+    if (rawDelta == 0.0) return;
     constexpr double kBase = 1.0015;
-    const double step = std::pow(kBase, rawDelta);
+    // High-res trackpads (especially on macOS) can emit angle deltas
+    // >1000 in a single event. 1.0015^1000 ≈ 4.5e6 — one wheel tick
+    // blowing through the whole zoom range and yanking the anchored
+    // scene point far off-screen. Cap the delta per event so no
+    // single wheel event can zoom more than ~2× either direction.
+    // Users still accumulate fast zoom across multiple events; we
+    // just don't fly across the map in one frame.
+    constexpr double kMaxAbsDeltaPerEvent = 480.0;   // ~2× at 1.0015 base
+    const double clampedDelta = std::clamp(rawDelta,
+                                           -kMaxAbsDeltaPerEvent,
+                                            kMaxAbsDeltaPerEvent);
+    const double step = std::pow(kBase, clampedDelta);
     const double current = transform().m11();
     const double next = std::clamp(current * step, kMinZoom, kMaxZoom);
     const double actualStep = next / current;
-    if (std::abs(actualStep - 1.0) < 1e-5) { e->accept(); return; }
+    if (std::abs(actualStep - 1.0) < 1e-5) return;
     scale(actualStep, actualStep);
-    e->accept();
 }
 
-void MapView::drawBackground(QPainter* painter, const QRectF& rect) {
-    QGraphicsView::drawBackground(painter, rect);
-    if (!map_) return;
 
-    for (const auto& layer : map_->layers()) {
-        if (layer->kind() != core::LayerKind::Grid || !layer->visible) continue;
-        const auto& g = static_cast<const core::LayerGrid&>(*layer);
-        if (!g.displayGrid && !g.displaySubGrid) continue;
-
-        const double gridPx = g.gridSizeInStud * rendering::SceneBuilder::kPixelsPerStud;
-        const double subPx  = gridPx / std::max(g.subDivisionNumber, 2);
-
-        const double left   = std::floor(rect.left()   / subPx) * subPx;
-        const double right  = rect.right();
-        const double top    = std::floor(rect.top()    / subPx) * subPx;
-        const double bottom = rect.bottom();
-
-        if (g.displaySubGrid) {
-            QPen subPen(g.subGridColor.color);
-            subPen.setCosmetic(true);
-            subPen.setWidthF(g.subGridThickness);
-            painter->setPen(subPen);
-            for (double x = left; x < right; x += subPx)
-                painter->drawLine(QPointF(x, top), QPointF(x, bottom));
-            for (double y = top; y < bottom; y += subPx)
-                painter->drawLine(QPointF(left, y), QPointF(right, y));
-        }
-        if (g.displayGrid) {
-            QPen gridPen(g.gridColor.color);
-            gridPen.setCosmetic(true);
-            gridPen.setWidthF(g.gridThickness);
-            painter->setPen(gridPen);
-            const double firstX = std::floor(rect.left() / gridPx) * gridPx;
-            const double firstY = std::floor(rect.top()  / gridPx) * gridPx;
-            for (double x = firstX; x < right; x += gridPx)
-                painter->drawLine(QPointF(x, top), QPointF(x, bottom));
-            for (double y = firstY; y < bottom; y += gridPx)
-                painter->drawLine(QPointF(left, y), QPointF(right, y));
-        }
-        break;
-    }
-}
-
-void MapView::refreshSelectionOverlay() {
-    if (!selectionOverlay_) return;
-    QList<QPolygonF> polys;
-
-    // A ruler can render as multiple scene items (two line segments + a
-    // rotated text label when displayDistance is on). Tagging every piece
-    // with the same guid lets us union their scene bounding rects into a
-    // single highlight instead of drawing one box per segment.
-    QSet<QString> rulerGuidsSeen;
-    for (QGraphicsItem* it : scene()->selectedItems()) {
-        if (!it || it == selectionOverlay_) continue;
-        if (isRulerItem(it)) {
-            const QString guid = it->data(kBrickDataGuid).toString();
-            // Empty guid means the ruler lost its id somewhere and
-            // every ruler would share it — highlighting all of them
-            // together is worse than just highlighting what the user
-            // actually clicked. Fall back to the single-item path.
-            if (!guid.isEmpty()) {
-                if (rulerGuidsSeen.contains(guid)) continue;
-                rulerGuidsSeen.insert(guid);
-                QRectF sbr;
-                for (QGraphicsItem* any : scene()->items()) {
-                    if (!isRulerItem(any)) continue;
-                    if (any->data(kBrickDataGuid).toString() != guid) continue;
-                    sbr = sbr.united(any->sceneBoundingRect());
-                }
-                if (sbr.width()  < 2.0) sbr.adjust(-3.0, 0.0, 3.0, 0.0);
-                if (sbr.height() < 2.0) sbr.adjust(0.0, -3.0, 0.0, 3.0);
-                if (!sbr.isEmpty()) polys.append(QPolygonF(sbr));
-                continue;
-            }
-            // Empty guid — fall through to the single-item path below so
-            // we highlight only the clicked piece, not every ruler.
-        }
-        const QRectF local = it->boundingRect();
-        const bool localThin = (local.width() < 1.0 || local.height() < 1.0);
-        QPolygonF poly;
-        if (!localThin && !local.isEmpty()) {
-            // Solid rect / pixmap: map the local rect to scene to
-            // preserve rotation for rotated bricks.
-            poly = it->mapToScene(local);
-        } else {
-            // Thin items (lines, zero-height rect, etc.): scene-space
-            // AABB inflated in whichever dimension is near zero.
-            QRectF sbr = it->sceneBoundingRect();
-            if (sbr.width()  < 2.0) sbr.adjust(-3.0, 0.0, 3.0, 0.0);
-            if (sbr.height() < 2.0) sbr.adjust(0.0, -3.0, 0.0, 3.0);
-            if (sbr.isEmpty()) sbr = QRectF(it->mapToScene(QPointF()) - QPointF(6, 6),
-                                             QSizeF(12, 12));
-            poly = QPolygonF(sbr);
-        }
-        polys.append(poly);
-    }
-    auto* ov = static_cast<SelectionOverlay*>(selectionOverlay_);
-    ov->setSnapState(liveSnapActive_, liveSnapPointScene_);
-    ov->setOutlines(std::move(polys));
-}
-
-std::vector<MapView::BrickOriginSnapshot> MapView::selectedBrickSnapshots() const {
-    std::vector<BrickOriginSnapshot> out;
-    if (!map_) return out;
-    for (QGraphicsItem* it : scene()->selectedItems()) {
-        if (!isBrickItem(it)) continue;
-        BrickOriginSnapshot s;
-        s.item = it;
-        s.layerIndex = it->data(kBrickDataLayerIndex).toInt();
-        s.guid       = it->data(kBrickDataGuid).toString();
-        s.scenePosAtPress = it->scenePos();
-        // look up corresponding brick
-        if (s.layerIndex >= 0 && s.layerIndex < static_cast<int>(map_->layers().size())) {
-            auto* L = map_->layers()[s.layerIndex].get();
-            if (L && L->kind() == core::LayerKind::Brick) {
-                auto& BL = static_cast<core::LayerBrick&>(*L);
-                for (const auto& b : BL.bricks) {
-                    if (b.guid == s.guid) {
-                        s.studTopLeftAtPress = b.displayArea.topLeft();
-                        break;
-                    }
-                }
-            }
-        }
-        out.push_back(s);
-    }
-    return out;
-}
-
-void MapView::captureDragStart() {
-    dragStart_       = selectedBrickSnapshots();
-    rulerDragStart_.clear();
-    labelDragStart_.clear();
-    if (!map_) return;
-    QSet<QString> rulerSeen;
-    QSet<QString> labelSeen;
-    for (QGraphicsItem* it : scene()->selectedItems()) {
-        if (isRulerItem(it)) {
-            const QString guid = it->data(kBrickDataGuid).toString();
-            if (guid.isEmpty() || rulerSeen.contains(guid)) continue;
-            rulerSeen.insert(guid);
-            RulerDragSnapshot r;
-            r.anyPiece = it;
-            r.layerIndex = it->data(kBrickDataLayerIndex).toInt();
-            r.guid = guid;
-            r.scenePosAtPress = it->scenePos();
-            rulerDragStart_.push_back(r);
-        } else if (isLabelItem(it)) {
-            const QString lid = it->data(kBrickDataGuid).toString();
-            if (lid.isEmpty() || labelSeen.contains(lid)) continue;
-            labelSeen.insert(lid);
-            LabelDragSnapshot l;
-            l.item = it;
-            l.labelId = lid;
-            l.scenePosAtPress = it->scenePos();
-            labelDragStart_.push_back(l);
-        }
-    }
-}
-
-namespace {
-
-// Rotate a 2D point around the origin by `degrees` (clockwise to match Qt
-// convention used by QGraphicsItem::setRotation).
-QPointF rotatePoint(QPointF p, double degrees) {
-    const double r = degrees * M_PI / 180.0;
-    const double c = std::cos(r), s = std::sin(r);
-    return { p.x() * c - p.y() * s, p.x() * s + p.y() * c };
-}
-
-// (ConnectionSnapResult + declaration are forward-declared near the top
-// of this file so MapView's constructor can refer to the helper.)
-
-// Look for a connection point on any brick OTHER than those in `movingGuids`
-// that's close (in world stud coords) to one of the dragged brick's
-// connection points. If found, compute the orientation + centre that makes
-// the two connections align (angles opposite, positions coincident).
-// Threshold: 4 studs — close enough to feel intentional.
-ConnectionSnapResult computeConnectionSnap(
-    const core::Map& map,
-    parts::PartsLibrary& lib,
-    const QSet<QString>& movingGuids,
-    const QString& draggedPart,
-    float   draggedOrientation,
-    QPointF draggedCenter,
-    double  thresholdStuds,
-    const core::Brick* draggedBrick /* = nullptr */) {
-
-    ConnectionSnapResult out;
-
-    auto meta = lib.metadata(draggedPart);
-    if (!meta || meta->connections.isEmpty()) return out;
-
-    double  bestDist = thresholdStuds;
-    QPointF bestTargetWorld;
-    double  bestTargetAngle = 0.0;
-    QPointF bestDraggedLocal;
-    double  bestDraggedLocalAngle = 0.0;
-
-    // Only free connections count as snap partners. Vanilla BlueBrick
-    // filters via mFreeConnectionPoints; we cross-reference the brick
-    // instance's ConnectionPoint list (which stores linkedToId per
-    // connection) against the part library's connection-index list.
-    // Dragged side: if draggedBrick is given, any of its already-linked
-    // connections are ineligible too. For existing in-map moves this
-    // prevents re-snapping a connection that's currently holding the
-    // group together. For new-part drops we pass nullptr and every
-    // dragged-side connection is considered free.
-    auto isDraggedConnFree = [draggedBrick, &movingGuids](int connIdx) -> bool {
-        if (!draggedBrick) return true;
-        if (connIdx < 0 || connIdx >= static_cast<int>(draggedBrick->connections.size()))
-            return true;  // part has more library connections than brick instance tracks
-        return draggedBrick->connections[connIdx].linkedToId.isEmpty();
-        (void)movingGuids;
-    };
-
-    // Static side: gather world connection points from all non-dragged bricks.
-    for (const auto& layerPtr : map.layers()) {
-        if (!layerPtr || layerPtr->kind() != core::LayerKind::Brick) continue;
-        const auto& bl = static_cast<const core::LayerBrick&>(*layerPtr);
-        for (const auto& b : bl.bricks) {
-            if (movingGuids.contains(b.guid)) continue;
-            auto tmeta = lib.metadata(b.partNumber);
-            if (!tmeta) continue;
-            const QPointF tCentre = b.displayArea.center();
-            const int targetConnCount = tmeta->connections.size();
-            for (int tci = 0; tci < targetConnCount; ++tci) {
-                const auto& tc = tmeta->connections[tci];
-                // Skip already-linked target connections — user asked
-                // specifically to only snap to OPEN connection points.
-                if (tci < static_cast<int>(b.connections.size()) &&
-                    !b.connections[tci].linkedToId.isEmpty()) continue;
-                const QPointF tWorldPos = tCentre + rotatePoint(tc.position, b.orientation);
-                // For each dragged connection, measure distance at the
-                // CURRENT dragged orientation so we only snap when the drop
-                // lands near an existing connection — we don't pull a brick
-                // from the far side of the layout.
-                const int draggedConnCount = meta->connections.size();
-                for (int dci = 0; dci < draggedConnCount; ++dci) {
-                    const auto& dc = meta->connections[dci];
-                    if (dc.type != tc.type || dc.type.isEmpty()) continue;
-                    if (!isDraggedConnFree(dci)) continue;
-                    const QPointF dWorldPos =
-                        draggedCenter + rotatePoint(dc.position, draggedOrientation);
-                    const QPointF diff = dWorldPos - tWorldPos;
-                    const double dist = std::hypot(diff.x(), diff.y());
-                    if (dist < bestDist) {
-                        bestDist = dist;
-                        bestTargetWorld = tWorldPos;
-                        bestTargetAngle = tc.angleDegrees + b.orientation;
-                        bestDraggedLocal = dc.position;
-                        bestDraggedLocalAngle = dc.angleDegrees;
-                    }
-                }
-            }
-        }
-    }
-
-    if (bestDist >= thresholdStuds) return out;
-
-    // Align angles: dragged.localAngle + newOrient == target.worldAngle + 180.
-    double newOrient = bestTargetAngle + 180.0 - bestDraggedLocalAngle;
-    // Normalise to (-180, 180] for tidy storage.
-    while (newOrient >  180.0) newOrient -= 360.0;
-    while (newOrient <= -180.0) newOrient += 360.0;
-    // Solve newCentre: (newCentre + rotate(localConn, newOrient)) == targetWorld.
-    const QPointF newCentre = bestTargetWorld - rotatePoint(bestDraggedLocal, newOrient);
-
-    out.applied = true;
-    out.newCenter = newCentre;
-    out.newOrientation = static_cast<float>(newOrient);
-    return out;
-}
-
-}
-
-void MapView::commitDragIfMoved() {
-    if (!map_) return;
-
-    // Rulers and labels: compute drag delta from any one piece of each
-    // logical item and push a Move* command. Done BEFORE the brick path
-    // so an empty brick snapshot doesn't short-circuit the ruler/label
-    // commits. Wrapped in a single macro so a mixed drag undoes as one.
-    if (!rulerDragStart_.empty() || !labelDragStart_.empty()) {
-        const double pxToStud = 1.0 / studToPx();
-        std::vector<std::tuple<int, QString, QPointF>> rulerCmds;
-        std::vector<std::pair<QString, QPointF>>       labelCmds;
-        for (const auto& r : rulerDragStart_) {
-            if (!r.anyPiece) continue;
-            const QPointF d = r.anyPiece->scenePos() - r.scenePosAtPress;
-            if (std::abs(d.x()) < 0.5 && std::abs(d.y()) < 0.5) continue;
-            rulerCmds.emplace_back(r.layerIndex, r.guid,
-                                    QPointF(d.x() * pxToStud, d.y() * pxToStud));
-        }
-        for (const auto& l : labelDragStart_) {
-            if (!l.item) continue;
-            const QPointF d = l.item->scenePos() - l.scenePosAtPress;
-            if (std::abs(d.x()) < 0.5 && std::abs(d.y()) < 0.5) continue;
-            labelCmds.emplace_back(l.labelId,
-                                    QPointF(d.x() * pxToStud, d.y() * pxToStud));
-        }
-        if (!rulerCmds.empty() || !labelCmds.empty()) {
-            undoStack_->beginMacro(tr("Drag"));
-            for (const auto& [li, g, d] : rulerCmds) {
-                undoStack_->push(new edit::MoveRulerItemCommand(*map_, li, g, d));
-            }
-            for (const auto& [id, d] : labelCmds) {
-                undoStack_->push(new edit::MoveAnchoredLabelCommand(*map_, id, d));
-            }
-            undoStack_->endMacro();
-        }
-        rulerDragStart_.clear();
-        labelDragStart_.clear();
-    }
-
-    if (dragStart_.empty()) return;
-
-    const double px = studToPx();
-
-    // Group-level delta: Qt's multi-drag translates every selected movable
-    // item by the same vector, so the group moves rigidly. We derive the
-    // drag delta from whichever entry the user grabbed (treating the first
-    // as the anchor) and apply the same delta to every entry — no per-
-    // brick divergence. This matches BlueBrick's behaviour: dragging a
-    // selection moves it as a whole, and any snap (connection or grid)
-    // applies to the anchor's position with the same translation
-    // replicated across the group.
-    std::vector<edit::MoveBricksCommand::Entry> entries;
-    QPointF groupDelta(0, 0);
-    bool haveDelta = false;
-    for (const auto& s : dragStart_) {
-        if (!s.item) continue;
-        if (!haveDelta) {
-            const QPointF d = s.item->scenePos() - s.scenePosAtPress;
-            if (std::abs(d.x()) < 0.5 && std::abs(d.y()) < 0.5) { dragStart_.clear(); return; }
-            groupDelta = QPointF(d.x() / px, d.y() / px);
-            haveDelta = true;
-        }
-        edit::MoveBricksCommand::Entry e;
-        e.ref.layerIndex = s.layerIndex;
-        e.ref.guid = s.guid;
-        e.beforeTopLeft = s.studTopLeftAtPress;
-        e.afterTopLeft  = s.studTopLeftAtPress + groupDelta;
-        entries.push_back(e);
-    }
-    if (entries.empty()) { dragStart_.clear(); return; }
-
-    // Connection snap (group-aware). Using the first entry as the anchor,
-    // we look for a nearby compatible connection. If one fires, compute
-    // the extra translation needed to align the anchor's connection and
-    // apply that same extra to EVERY entry so the group keeps its shape.
-    bool connectionSnapped = false;
-    std::optional<edit::RotateBricksCommand::Entry> connectionRotate;
-    {
-        const auto& anchor = entries.front();
-        if (auto* L = map_->layers()[anchor.ref.layerIndex].get();
-            L && L->kind() == core::LayerKind::Brick) {
-            const auto& BL = static_cast<const core::LayerBrick&>(*L);
-            for (const auto& b : BL.bricks) {
-                if (b.guid != anchor.ref.guid) continue;
-                const QPointF proposedCentre = anchor.afterTopLeft
-                    + QPointF(b.displayArea.width() / 2.0, b.displayArea.height() / 2.0);
-                QSet<QString> moving;
-                for (const auto& e : entries) moving.insert(e.ref.guid);
-                const double threshold = std::max(4.0, snapStepStuds_);
-                auto snap = computeConnectionSnap(*map_, parts_, moving,
-                                                   b.partNumber, b.orientation,
-                                                   proposedCentre, threshold, &b);
-                if (snap.applied) {
-                    const QPointF anchorNewTopLeft = snap.newCenter
-                        - QPointF(b.displayArea.width() / 2.0, b.displayArea.height() / 2.0);
-                    const QPointF extra = anchorNewTopLeft - anchor.afterTopLeft;
-                    for (auto& e : entries) e.afterTopLeft += extra;
-                    // Rotation is only applied for single-brick drags.
-                    // Group rotation would need to pivot around the
-                    // anchor brick's connection point and rotate every
-                    // sibling; skipped for now in the interest of
-                    // predictable group translation.
-                    if (entries.size() == 1 && std::abs(snap.newOrientation - b.orientation) > 0.01f) {
-                        edit::RotateBricksCommand::Entry re;
-                        re.ref = anchor.ref;
-                        re.beforeOrientation = b.orientation;
-                        re.afterOrientation  = snap.newOrientation;
-                        connectionRotate = re;
-                    }
-                    connectionSnapped = true;
-                }
-                break;
-            }
-        }
-    }
-
-    // Grid snap (group-aware): snap the anchor's top-left to the grid and
-    // translate every entry by the same extra delta. Preserves the
-    // group's relative positions. Only applies when connection snap
-    // didn't fire.
-    if (snapStepStuds_ > 0.0 && !connectionSnapped) {
-        const QPointF tl = entries.front().afterTopLeft;
-        const QPointF snapped(std::round(tl.x() / snapStepStuds_) * snapStepStuds_,
-                              std::round(tl.y() / snapStepStuds_) * snapStepStuds_);
-        const QPointF extra = snapped - tl;
-        if (!extra.isNull()) {
-            for (auto& e : entries) e.afterTopLeft += extra;
-        }
-    }
-
-    dragStart_.clear();
-    if (!entries.empty()) {
-        if (connectionRotate) {
-            undoStack_->beginMacro(tr("Snap to connection"));
-            undoStack_->push(new edit::MoveBricksCommand(*map_, std::move(entries)));
-            undoStack_->push(new edit::RotateBricksCommand(*map_, { *connectionRotate }));
-            undoStack_->endMacro();
-        } else {
-            undoStack_->push(new edit::MoveBricksCommand(*map_, std::move(entries)));
-        }
-    }
-
-    if (auto* mw = window())
-        if (auto* sb = mw->findChild<QStatusBar*>())
-            sb->showMessage(connectionSnapped ? tr("Connection snap")
-                                              : tr("Moved"), 1500);
-}
+// MapView drag mechanics (selectedBrickSnapshots, captureDragStart, snap
+// computations, commitDragIfMoved) live in MapViewDrag.cpp. Clipboard
+// ops live in MapViewClipboard.cpp.
 
 void MapView::mousePressEvent(QMouseEvent* e) {
+    lastMouseScenePos_ = mapToScene(e->pos());
     if (e->button() == Qt::MiddleButton) {
         panning_ = true;
         panAnchor_ = e->pos();
@@ -899,10 +375,17 @@ void MapView::mousePressEvent(QMouseEvent* e) {
         return;
     }
     QGraphicsView::mousePressEvent(e);
-    if (e->button() == Qt::LeftButton) captureDragStart();
+    if (e->button() == Qt::LeftButton) {
+        captureDragStart();
+        // Master-brick snap anchor (BlueBrick-style): remember WHICH brick
+        // was clicked and which of its connections was nearest. That one
+        // connection is the sole snap lead for the whole drag.
+        captureGrabAnchor(lastMouseScenePos_);
+    }
 }
 
 void MapView::mouseMoveEvent(QMouseEvent* e) {
+    lastMouseScenePos_ = mapToScene(e->pos());
     // While dragging a selected brick, cursor hint "drop here to delete" when
     // the pointer leaves the viewport (over any dock — typically the Parts
     // panel on the left). Restore on re-entry so in-scene dragging keeps the
@@ -910,6 +393,28 @@ void MapView::mouseMoveEvent(QMouseEvent* e) {
     if (!dragStart_.empty() && (e->buttons() & Qt::LeftButton)) {
         if (!viewport()->rect().contains(e->pos())) setCursor(Qt::ForbiddenCursor);
         else                                         unsetCursor();
+    }
+
+    // Live ruler tooltip: while dragging in one of the ruler tools,
+    // show the current length (linear) or radius (circular) in the
+    // status bar so the user knows how long the ruler will be before
+    // they release.
+    if (drawingRuler_ && (e->buttons() & Qt::LeftButton)) {
+        const double pxPerStud = rendering::SceneBuilder::kPixelsPerStud;
+        const QPointF endScene = mapToScene(e->pos());
+        const QPointF dStuds((endScene.x() - rulerStart_.x()) / pxPerStud,
+                             (endScene.y() - rulerStart_.y()) / pxPerStud);
+        const double lenStuds = std::hypot(dStuds.x(), dStuds.y());
+        const double lenMm = lenStuds * 8.0;
+        QString unit;
+        if (lenMm >= 1000) unit = QStringLiteral("%1 m").arg(lenMm / 1000.0, 0, 'f', 2);
+        else               unit = QStringLiteral("%1 mm").arg(lenMm, 0, 'f', 0);
+        if (auto* mw = window())
+            if (auto* sb = mw->findChild<QStatusBar*>())
+                sb->showMessage(tool_ == Tool::DrawLinearRuler
+                    ? tr("Ruler length: %1 studs  (%2)").arg(lenStuds, 0, 'f', 1).arg(unit)
+                    : tr("Ruler radius: %1 studs  (%2)").arg(lenStuds, 0, 'f', 1).arg(unit),
+                    1200);
     }
 
     // Continue a paint/erase stroke as long as the left button is held down
@@ -957,6 +462,13 @@ void MapView::mouseMoveEvent(QMouseEvent* e) {
         return;
     }
     QGraphicsView::mouseMoveEvent(e);
+    // After Qt has translated every selected movable item by the mouse
+    // delta, run connection snap as a single rigid group shift. This
+    // guarantees connections win over the per-item grid snap and keeps
+    // a multi-brick group perfectly aligned while snapping.
+    if (!dragStart_.empty() && (e->buttons() & Qt::LeftButton)) {
+        applyLiveConnectionSnap();
+    }
 }
 
 void MapView::mouseReleaseEvent(QMouseEvent* e) {
@@ -971,6 +483,7 @@ void MapView::mouseReleaseEvent(QMouseEvent* e) {
     // any other dock), treat it as a delete rather than a move.
     if (e->button() == Qt::LeftButton && !dragStart_.empty()
         && !viewport()->rect().contains(e->pos())) {
+        clearGrabAnchor();
         dragStart_.clear();
         QGraphicsView::mouseReleaseEvent(e);
         deleteSelected();
@@ -1029,6 +542,7 @@ void MapView::mouseReleaseEvent(QMouseEvent* e) {
     QGraphicsView::mouseReleaseEvent(e);
     if (e->button() == Qt::LeftButton) {
         commitDragIfMoved();
+        clearGrabAnchor();
         // Drag is done; clear the "live snap active" indicator so the
         // selection outline returns to its normal yellow colour.
         liveSnapActive_ = false;
@@ -1297,6 +811,77 @@ void MapView::addPartAtScenePos(const QString& partKey, QPointF sceneCenterPx) {
     }
     if (targetLayer < 0) return;
 
+    // Sets (PartKind::Group): the XML enumerates SubPartList children.
+    // Expand the set into one brick per subpart placed at
+    //   setCentre + rotatePoint(subpart.localPos, 0) in stud coords
+    // and automatically wrap the new bricks in a sidecar Module so the
+    // user can move the whole thing as a unit. All under a single undo
+    // macro.
+    {
+        const auto meta = parts_.metadata(partKey);
+        if (meta && meta->kind == parts::PartKind::Group && !meta->subparts.isEmpty()) {
+            const double pxPerStud = rendering::SceneBuilder::kPixelsPerStud;
+            const QPointF centreStuds(sceneCenterPx.x() / pxPerStud,
+                                        sceneCenterPx.y() / pxPerStud);
+            undoStack_->beginMacro(tr("Place set %1").arg(partKey));
+            std::vector<edit::CreateModuleCommand::Member> members;
+            for (const auto& sp : meta->subparts) {
+                auto subMeta = parts_.metadata(sp.subKey);
+                double wStuds = 2.0, hStuds = 2.0;
+                if (subMeta && !subMeta->gifFilePath.isEmpty()) {
+                    QPixmap pm(subMeta->gifFilePath);
+                    if (!pm.isNull()) {
+                        wStuds = pm.width()  / pxPerStud;
+                        hStuds = pm.height() / pxPerStud;
+                    }
+                }
+                // Verified against real BlueBrick .set.xml files (e.g.
+                // BrickTracks/SET R104 RY3 LEFT.set.xml): the <position>
+                // is the subpart's CENTER in set-local stud coords, with
+                // the first subpart's centre at (0, 0) and subsequent
+                // offsets relative to that anchor. Compute the
+                // displayArea top-left by subtracting half-size.
+                const QPointF subCentre = centreStuds + sp.position;
+                // Set files occasionally store angles > 360° (e.g.
+                // 697.5°, 708.75°) where the set designer cumulatively
+                // rotated the subpart in BlueBrick's editor. Wrap into
+                // (-180, 180] so serialization stays tidy and angle
+                // comparisons downstream behave.
+                double orientDeg = sp.angleDegrees;
+                orientDeg = std::fmod(orientDeg, 360.0);
+                if (orientDeg >  180.0) orientDeg -= 360.0;
+                if (orientDeg <= -180.0) orientDeg += 360.0;
+                core::Brick b;
+                b.guid = core::newBbmId();
+                b.partNumber = sp.subKey;
+                b.displayArea = QRectF(subCentre.x() - wStuds / 2.0,
+                                       subCentre.y() - hStuds / 2.0,
+                                       wStuds, hStuds);
+                b.orientation = static_cast<float>(orientDeg);
+                members.push_back({ targetLayer, b.guid });
+                undoStack_->push(new edit::AddBrickCommand(*map_, targetLayer, std::move(b)));
+            }
+            // Name the module after the set's description, falling back
+            // to the set key. Creates the module as a single undoable
+            // step so Ctrl+Z unwinds the whole placement.
+            QString setName = partKey;
+            for (const auto& d : meta->descriptions) {
+                if (d.language == QStringLiteral("en")) { setName = d.text; break; }
+            }
+            if (!members.empty()) {
+                undoStack_->push(new edit::CreateModuleCommand(
+                    *map_, setName, std::move(members)));
+            }
+            undoStack_->endMacro();
+            rebuildScene();
+            if (auto* mw = window())
+                if (auto* sb = mw->findChild<QStatusBar*>())
+                    sb->showMessage(tr("Placed set: %1 (%2 parts)")
+                        .arg(setName).arg(meta->subparts.size()), 3000);
+            return;
+        }
+    }
+
     QPixmap pm = parts_.pixmap(partKey);
     const double pxPerStud = rendering::SceneBuilder::kPixelsPerStud;
     const double widthStuds  = pm.isNull() ? 2.0 : pm.width()  / pxPerStud;
@@ -1308,15 +893,18 @@ void MapView::addPartAtScenePos(const QString& partKey, QPointF sceneCenterPx) {
     // Try connection snap at drop time (vanilla parity: dropping near an
     // existing compatible connection locks the new part to it). This runs
     // BEFORE grid snap so connections always take priority.
-    QSet<QString> moving;  // nothing is moving; just searches other bricks
-    const double threshold = std::max(4.0, snapStepStuds_);
-    auto snap = computeConnectionSnap(*map_, parts_, moving,
-                                       partKey, orientation,
-                                       centreStuds, threshold);
+    const double threshold = connectionSnapThresholdStuds();
+    auto snap = newPartPlacementSnap(*map_, parts_, partKey,
+                                     centreStuds, orientation, threshold);
     bool connectionSnapped = false;
     if (snap.applied) {
-        centreStuds = snap.newCenter;
-        orientation = snap.newOrientation;
+        // New-part placement rotates to align with the connection.
+        if (snap.newOrientation) {
+            centreStuds += snap.rotationAlignedTranslationStuds;
+            orientation = *snap.newOrientation;
+        } else {
+            centreStuds += snap.translationStuds;
+        }
         connectionSnapped = true;
     } else if (snapStepStuds_ > 0.0) {
         // Grid snap the TOP-LEFT (matches drag-commit semantics), then
@@ -1347,249 +935,12 @@ void MapView::addPartAtScenePos(const QString& partKey, QPointF sceneCenterPx) {
                     : tr("Placed: %1").arg(partKey), 2000);
 }
 
-void MapView::contextMenuEvent(QContextMenuEvent* e) {
-    // If the right-click happens on an item that is not part of the existing
-    // selection, clear the selection and select that one item so the menu's
-    // actions act on what the user clicked.
-    if (auto* under = itemAt(e->pos())) {
-        if (!under->isSelected()) {
-            scene()->clearSelection();
-            under->setSelected(true);
-        }
-    }
-
-    QMenu menu(this);
-    const auto sel = scene()->selectedItems();
-    const bool hasSel = !sel.isEmpty();
-    // Categorise: is the selection pure-text, pure-brick, or mixed.
-    int brickCount = 0, textCount = 0;
-    for (QGraphicsItem* it : sel) {
-        if (isBrickItem(it)) ++brickCount;
-        else if (isTextItem(it)) ++textCount;
-    }
-    const bool onlyText  = textCount > 0 && brickCount == 0;
-    const bool onlyBrick = brickCount > 0 && textCount == 0;
-    const bool singleText = onlyText && sel.size() == 1;
-
-    if (hasSel) {
-        // Properties... opens the type-appropriate dialog for a single item.
-        if (sel.size() == 1) {
-            QGraphicsItem* only = sel.front();
-            const int li = only->data(kBrickDataLayerIndex).toInt();
-            const QString guid = only->data(kBrickDataGuid).toString();
-            if (isBrickItem(only)) {
-                auto* prop = menu.addAction(tr("Properties..."));
-                connect(prop, &QAction::triggered, [this, li, guid]{
-                    if (editBrickDialog(this, *map_, li, guid, parts_, *undoStack_))
-                        rebuildScene();
-                });
-            } else if (isRulerItem(only)) {
-                auto* prop = menu.addAction(tr("Properties..."));
-                connect(prop, &QAction::triggered, [this, li, guid]{
-                    if (editRulerDialog(this, *map_, li, guid, *undoStack_))
-                        rebuildScene();
-                });
-            } else if (isTextItem(only)) {
-                auto* prop = menu.addAction(tr("Properties..."));
-                connect(prop, &QAction::triggered, [this, li, guid]{
-                    if (editTextDialog(this, *map_, li, guid, *undoStack_))
-                        rebuildScene();
-                });
-            }
-        }
-        if (singleText) {
-            auto* edit = menu.addAction(tr("Edit Text..."));
-            connect(edit, &QAction::triggered, [this]{ editSelectedTextContent(); });
-        }
-
-        auto* ccw = menu.addAction(tr("Rotate CCW"));
-        connect(ccw, &QAction::triggered,
-                [this]{ rotateSelected(static_cast<float>(-rotationStepDegrees_)); });
-        auto* cw = menu.addAction(tr("Rotate CW"));
-        connect(cw, &QAction::triggered,
-                [this]{ rotateSelected(static_cast<float>(rotationStepDegrees_)); });
-        menu.addSeparator();
-
-        if (onlyBrick) {
-            auto* bringFront = menu.addAction(tr("Bring to Front"));
-            connect(bringFront, &QAction::triggered, [this]{ bringSelectionToFront(); });
-            auto* sendBack = menu.addAction(tr("Send to Back"));
-            connect(sendBack, &QAction::triggered, [this]{ sendSelectionToBack(); });
-            menu.addSeparator();
-
-            if (sel.size() >= 2) {
-                auto* grp = menu.addAction(tr("Group"));
-                connect(grp, &QAction::triggered, [this]{ groupSelection(); });
-            }
-            auto* ungrp = menu.addAction(tr("Ungroup"));
-            connect(ungrp, &QAction::triggered, [this]{ ungroupSelection(); });
-            auto* selPath = menu.addAction(tr("Select Path"));
-            connect(selPath, &QAction::triggered, [this]{ selectPath(); });
-            menu.addSeparator();
-
-            auto* cut = menu.addAction(tr("Cut"));
-            connect(cut, &QAction::triggered, [this]{ cutSelection(); });
-            auto* copy = menu.addAction(tr("Copy"));
-            connect(copy, &QAction::triggered, [this]{ copySelection(); });
-            auto* dup = menu.addAction(tr("Duplicate"));
-            connect(dup, &QAction::triggered, [this]{ duplicateSelection(); });
-            menu.addSeparator();
-        }
-
-        auto* del = menu.addAction(tr("Delete"));
-        del->setShortcut(Qt::Key_Delete);
-        connect(del, &QAction::triggered, [this]{ deleteSelected(); });
-        menu.addSeparator();
-    } else {
-        // Empty-area menu: offer paste and quick-add actions tied to the
-        // current cursor position.
-        if (!clipboard_.empty()) {
-            auto* paste = menu.addAction(tr("Paste"));
-            connect(paste, &QAction::triggered, [this]{ pasteClipboard(); });
-            menu.addSeparator();
-        }
-        const QPointF scenePos = mapToScene(e->pos());
-        auto* addText = menu.addAction(tr("Add Text Here..."));
-        connect(addText, &QAction::triggered, [this, scenePos]{
-            if (!map_) return;
-            bool ok = false;
-            const QString text = QInputDialog::getText(
-                this, tr("Add text"), tr("Label text:"),
-                QLineEdit::Normal, {}, &ok);
-            if (!ok || text.isEmpty()) return;
-            addTextAtScenePos(text, scenePos);
-        });
-        menu.addSeparator();
-    }
-
-    auto* undo = menu.addAction(tr("Undo"));
-    undo->setEnabled(undoStack_->canUndo());
-    connect(undo, &QAction::triggered, undoStack_.get(), &QUndoStack::undo);
-    auto* redo = menu.addAction(tr("Redo"));
-    redo->setEnabled(undoStack_->canRedo());
-    connect(redo, &QAction::triggered, undoStack_.get(), &QUndoStack::redo);
-
-    menu.exec(e->globalPos());
-    e->accept();
-}
 
 void MapView::setSnapStepStuds(double studs) {
     snapStepStuds_ = studs;
     // Propagate to the rendering side so item-level ItemPositionChange snaps
     // bricks live while dragging (in addition to commit-time snap on release).
     rendering::SceneBuilder::setLiveSnapStepStuds(studs);
-}
-
-void MapView::copySelection() {
-    clipboard_.clear();
-    if (!map_) return;
-    // scene->selectedItems() returns items in no particular order. If we
-    // copied in that order, pasting would scramble back-to-front
-    // z-ordering within the source layer. Instead collect the selected
-    // guids and walk each brick layer's vector in order — that preserves
-    // the within-layer z-order (earlier in the vector = further back)
-    // across copy + paste.
-    QSet<QString> selectedGuids;
-    for (QGraphicsItem* it : scene()->selectedItems()) {
-        if (isBrickItem(it)) selectedGuids.insert(it->data(kBrickDataGuid).toString());
-    }
-    if (selectedGuids.isEmpty()) return;
-    for (const auto& L : map_->layers()) {
-        if (!L || L->kind() != core::LayerKind::Brick) continue;
-        for (const auto& b : static_cast<const core::LayerBrick&>(*L).bricks) {
-            if (selectedGuids.contains(b.guid)) {
-                clipboard_.push_back({ L->name, b });
-            }
-        }
-    }
-}
-
-void MapView::cutSelection() {
-    copySelection();
-    deleteSelected();
-}
-
-void MapView::pasteClipboard() {
-    if (!map_ || clipboard_.empty()) return;
-
-    // Compute the clipboard group's own centre (stud coords) across every
-    // entry regardless of source layer, so the paste group stays rigid.
-    const double pxPerStud = rendering::SceneBuilder::kPixelsPerStud;
-    QPoint viewPos = viewport()->mapFromGlobal(QCursor::pos());
-    QPointF targetSceneCentrePx;
-    if (viewport()->rect().contains(viewPos)) {
-        targetSceneCentrePx = mapToScene(viewPos);
-    } else {
-        targetSceneCentrePx = mapToScene(viewport()->rect().center());
-    }
-    const QPointF targetCentreStuds(targetSceneCentrePx.x() / pxPerStud,
-                                     targetSceneCentrePx.y() / pxPerStud);
-    QPointF srcCentre;
-    for (const auto& src : clipboard_) srcCentre += src.brick.displayArea.center();
-    srcCentre /= clipboard_.size();
-    const QPointF translation = targetCentreStuds - srcCentre;
-
-    // Group clipboard entries by source layer name so each group lands on
-    // a matching layer in the current map (creating one if none exists).
-    // Preserves the original layering — a multi-layer copy pastes back as
-    // a multi-layer set, not flattened to a single layer.
-    QHash<QString, std::vector<core::Brick>> byLayer;
-    QStringList layerOrder;    // stable iteration order
-    QSet<QString> newGuids;
-    for (const auto& src : clipboard_) {
-        core::Brick b = src.brick;
-        b.guid = core::newBbmId();
-        newGuids.insert(b.guid);
-        b.displayArea.translate(translation);
-        b.myGroupId.clear();
-        const QString key = src.sourceLayerName.isEmpty()
-            ? QStringLiteral("Bricks") : src.sourceLayerName;
-        if (!byLayer.contains(key)) layerOrder << key;
-        byLayer[key].push_back(std::move(b));
-    }
-
-    auto findOrCreateLayer = [this](const QString& name) -> int {
-        for (int i = 0; i < static_cast<int>(map_->layers().size()); ++i) {
-            auto* L = map_->layers()[i].get();
-            if (L && L->kind() == core::LayerKind::Brick && L->name == name) return i;
-        }
-        // No match — create a new brick layer with that name.
-        auto L = std::make_unique<core::LayerBrick>();
-        L->guid = core::newBbmId();
-        L->name = name.isEmpty() ? QStringLiteral("Bricks") : name;
-        const int idx = static_cast<int>(map_->layers().size());
-        map_->layers().push_back(std::move(L));
-        return idx;
-    };
-
-    undoStack_->beginMacro(tr("Paste (%1 bricks across %2 layer(s))")
-                               .arg(clipboard_.size()).arg(layerOrder.size()));
-    for (const QString& name : layerOrder) {
-        const int li = findOrCreateLayer(name);
-        if (li < 0) continue;
-        auto& bricks = byLayer[name];
-        undoStack_->push(new edit::AddBricksCommand(*map_, li, std::move(bricks)));
-    }
-    undoStack_->endMacro();
-    // endMacro fires undoStack.indexChanged, which rebuilds the scene AND
-    // restores prior selection by guid. We then clear that and re-select
-    // only the freshly-pasted bricks — the indexChanged handler's
-    // re-selection is a no-op in practice (nothing was selected before)
-    // but we do it explicitly here so "pasted bricks are active" UX
-    // survives any future restore path.
-    emit layersChanged();
-    scene()->clearSelection();
-    for (QGraphicsItem* it : scene()->items()) {
-        if (!isBrickItem(it)) continue;
-        if (newGuids.contains(it->data(kBrickDataGuid).toString())) {
-            it->setSelected(true);
-        }
-    }
-}
-
-void MapView::duplicateSelection() {
-    copySelection();
-    pasteClipboard();
 }
 
 void MapView::selectAll() {

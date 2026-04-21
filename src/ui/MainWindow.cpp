@@ -13,12 +13,14 @@
 #include "ModuleLibraryPanel.h"
 #include "ModulesPanel.h"
 #include "PartsBrowser.h"
+#include "PartUsagePanel.h"
 
 #include "../core/Map.h"
 #include "../parts/PartsLibrary.h"
 #include "../core/Brick.h"
 #include "../core/Ids.h"
 #include "../core/Layer.h"
+#include "../core/LayerArea.h"
 #include "../core/LayerBrick.h"
 #include "../core/LayerGrid.h"
 #include "../core/AnchoredLabel.h"
@@ -27,6 +29,10 @@
 #include "../edit/LabelCommands.h"
 #include "../edit/LayerCommands.h"
 #include "../edit/ModuleCommands.h"
+#include "../edit/Budget.h"
+#include "../edit/VenueValidator.h"
+
+#include <atomic>
 #include "../saveload/BbmReader.h"
 #include "../saveload/BbmWriter.h"
 #include "../saveload/SidecarIO.h"
@@ -186,6 +192,33 @@ MainWindow::MainWindow(parts::PartsLibrary& parts, QWidget* parent)
             form->addRow(showCellIdx);
         }
 
+        // Brick-layer specific section — mirrors LayerBrickOptionForm.cs
+        // (DisplayBrickElevation + a stud-spacing grid override). Since
+        // we don't have per-brick-layer snap overrides yet, this just
+        // covers the one bool.
+        QCheckBox* brickElev = nullptr;
+        if (layer.kind() == core::LayerKind::Brick) {
+            auto& B = static_cast<core::LayerBrick&>(layer);
+            form->addRow(new QLabel(QStringLiteral("<b>%1</b>").arg(tr("Brick layer")), &dlg));
+            brickElev = new QCheckBox(tr("Display brick elevation labels"), &dlg);
+            brickElev->setChecked(B.displayBrickElevation);
+            form->addRow(brickElev);
+        }
+
+        // Area-layer specific section — cell size (in studs).
+        QSpinBox* areaCell = nullptr;
+        if (layer.kind() == core::LayerKind::Area) {
+            auto& A = static_cast<core::LayerArea&>(layer);
+            form->addRow(new QLabel(QStringLiteral("<b>%1</b>").arg(tr("Area layer")), &dlg));
+            areaCell = new QSpinBox(&dlg);
+            areaCell->setRange(1, 256); areaCell->setSuffix(tr(" studs"));
+            areaCell->setValue(A.areaCellSizeInStud);
+            form->addRow(tr("Paint cell size:"), areaCell);
+            form->addRow(new QLabel(
+                tr("Changing cell size on a layer with painted cells will leave\n"
+                   "existing cells at their old indexing — paint over to clean up."), &dlg));
+        }
+
         auto* bb = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
         form->addRow(bb);
         connect(bb, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
@@ -211,6 +244,14 @@ MainWindow::MainWindow(parts::PartsLibrary& parts, QWidget* parent)
             G.displaySubGrid = showSub->isChecked();
             G.displayCellIndex = showCellIdx->isChecked();
         }
+        if (layer.kind() == core::LayerKind::Brick && brickElev) {
+            static_cast<core::LayerBrick&>(layer).displayBrickElevation
+                = brickElev->isChecked();
+        }
+        if (layer.kind() == core::LayerKind::Area && areaCell) {
+            static_cast<core::LayerArea&>(layer).areaCellSizeInStud
+                = areaCell->value();
+        }
         mapView_->rebuildScene();
         layerPanel_->setMap(map, mapView_->builder());
     });
@@ -224,6 +265,9 @@ MainWindow::MainWindow(parts::PartsLibrary& parts, QWidget* parent)
     addDockWidget(Qt::RightDockWidgetArea, modulesPanel_);
     moduleLibraryPanel_ = new ModuleLibraryPanel(this);
     addDockWidget(Qt::RightDockWidgetArea, moduleLibraryPanel_);
+    partUsagePanel_ = new PartUsagePanel(parts_, this);
+    addDockWidget(Qt::RightDockWidgetArea, partUsagePanel_);
+    partUsagePanel_->bindMapView(mapView_);
     connect(moduleLibraryPanel_, &ModuleLibraryPanel::moduleImportRequested,
             this, &MainWindow::onImportModuleFromLibraryPath);
     connect(modulesPanel_, &ModulesPanel::moduleDeleteRequested, this, [this](const QString& id){
@@ -653,6 +697,14 @@ MainWindow::MainWindow(parts::PartsLibrary& parts, QWidget* parent)
             this, [this](int){ updateTitle(); });
     connect(mapView_->undoStack(), &QUndoStack::cleanChanged,
             this, [this](bool){ updateTitle(); });
+    // Any undo-stack change can add or remove a module (set expansion,
+    // Group-into-Module, import-as-module, flatten, clone, rename,
+    // plus undo/redo of any of those). Refresh the panel off the stack
+    // so every path stays consistent without each call site remembering.
+    connect(mapView_->undoStack(), &QUndoStack::indexChanged,
+            this, [this](int){
+        if (modulesPanel_) modulesPanel_->setMap(mapView_->currentMap());
+    });
 
     // Permanent right-side status label showing map dimensions in studs,
     // modules (96 studs), and meters (1 stud = 8 mm). Upstream shows the same
@@ -684,6 +736,82 @@ MainWindow::MainWindow(parts::PartsLibrary& parts, QWidget* parent)
         selLabel->setText(n == 0 ? tr("no selection")
                                  : tr("selected: %1").arg(n));
     });
+
+    // Venue-validator readout — counts walkway-buffer / outside-outline /
+    // obstacle-overlap violations. Clicking the label opens a modeless
+    // list dialog. Non-blocking: we never stop the user placing a brick
+    // that trips a rule, just surface the warning count.
+    QLabel* venueLabel = new QLabel(this);
+    venueLabel->setCursor(Qt::PointingHandCursor);
+    statusBar()->addPermanentWidget(venueLabel);
+    auto refreshVenueStatus = [this, venueLabel]{
+        auto* map = mapView_->currentMap();
+        if (!map || !map->sidecar.venue || !map->sidecar.venue->enabled) {
+            venueLabel->clear();
+            venueLabel->setToolTip({});
+            return;
+        }
+        const auto violations = edit::validateVenue(*map);
+        if (violations.isEmpty()) {
+            venueLabel->setText(tr("Venue: OK"));
+            venueLabel->setStyleSheet(QStringLiteral("color: #2a7d2a;"));
+            venueLabel->setToolTip(tr("No layout problems against the current venue"));
+        } else {
+            venueLabel->setText(tr("Venue: %1 issue(s)").arg(violations.size()));
+            venueLabel->setStyleSheet(QStringLiteral("color: #cc6600; font-weight: bold;"));
+            QStringList lines;
+            for (const auto& v : violations) {
+                lines.append(QStringLiteral("• ") + v.description);
+                if (lines.size() >= 12) { lines.append(QStringLiteral("…")); break; }
+            }
+            venueLabel->setToolTip(lines.join(QChar('\n')));
+        }
+    };
+    connect(mapView_->undoStack(), &QUndoStack::indexChanged,
+            this, [refreshVenueStatus](int){ refreshVenueStatus(); });
+    connect(mapView_, &MapView::layersChanged, this,
+            [refreshVenueStatus]{ refreshVenueStatus(); });
+    QTimer::singleShot(0, this, refreshVenueStatus);
+
+    // Budget status readout — mirrors the venue one but sources from
+    // the last-loaded .bbb file (QSettings key budget/lastFile, set by
+    // BudgetDialog). Silent when no budget is active.
+    QLabel* budgetLabel = new QLabel(this);
+    statusBar()->addPermanentWidget(budgetLabel);
+    auto refreshBudgetStatus = [this, budgetLabel]{
+        auto* map = mapView_->currentMap();
+        const QString path = QSettings().value(QStringLiteral("budget/lastFile")).toString();
+        if (!map || path.isEmpty()) {
+            budgetLabel->clear();
+            budgetLabel->setToolTip({});
+            return;
+        }
+        const auto limits = edit::readBudgetFile(path);
+        if (limits.isEmpty()) {
+            budgetLabel->clear();
+            budgetLabel->setToolTip({});
+            return;
+        }
+        const auto violations = edit::checkBudget(*map, limits);
+        if (violations.isEmpty()) {
+            budgetLabel->setText(tr("Budget: OK"));
+            budgetLabel->setStyleSheet(QStringLiteral("color: #2a7d2a;"));
+            budgetLabel->setToolTip(tr("Every budgeted part is within its limit"));
+        } else {
+            budgetLabel->setText(tr("Budget: %1 over").arg(violations.size()));
+            budgetLabel->setStyleSheet(QStringLiteral("color: #a03030; font-weight: bold;"));
+            QStringList lines;
+            for (const auto& v : violations) {
+                lines.append(tr("• %1: %2 / %3  (+%4)")
+                    .arg(v.partNumber).arg(v.used).arg(v.limit).arg(v.overBy));
+                if (lines.size() >= 15) { lines.append(QStringLiteral("…")); break; }
+            }
+            budgetLabel->setToolTip(lines.join(QChar('\n')));
+        }
+    };
+    connect(mapView_->undoStack(), &QUndoStack::indexChanged,
+            this, [refreshBudgetStatus](int){ refreshBudgetStatus(); });
+    QTimer::singleShot(0, this, refreshBudgetStatus);
     connect(mapView_, &MapView::layersChanged, this, [this]{
         layerPanel_->setMap(mapView_->currentMap(), mapView_->builder());
     });
@@ -695,6 +823,12 @@ MainWindow::MainWindow(parts::PartsLibrary& parts, QWidget* parent)
     autosaveTimer_->setInterval(60 * 1000);
     connect(autosaveTimer_, &QTimer::timeout, this, &MainWindow::performAutosave);
     autosaveTimer_->start();
+    // Also autosave on every undo-stack change, throttled so rapid
+    // edits don't hit the disk more than once every 5 seconds. This
+    // caps crash-related data loss to that window — which is good
+    // enough without needing async-signal-safe signal handlers.
+    connect(mapView_->undoStack(), &QUndoStack::indexChanged,
+            this, [this](int){ performAutosaveThrottled(); });
 
     statusBar()->showMessage(
         tr("Parts library: %1 parts indexed").arg(parts_.partCount()));
@@ -705,6 +839,7 @@ MainWindow::MainWindow(parts::PartsLibrary& parts, QWidget* parent)
     partsBrowser_->setObjectName(QStringLiteral("dock.parts"));
     modulesPanel_->setObjectName(QStringLiteral("dock.modules"));
     moduleLibraryPanel_->setObjectName(QStringLiteral("dock.moduleLibrary"));
+    partUsagePanel_->setObjectName(QStringLiteral("dock.partUsage"));
     QSettings s;
     s.beginGroup(QStringLiteral("ui"));
     const QByteArray geom = s.value(QStringLiteral("geometry")).toByteArray();
@@ -716,650 +851,6 @@ MainWindow::MainWindow(parts::PartsLibrary& parts, QWidget* parent)
 
 MainWindow::~MainWindow() = default;
 
-void MainWindow::setupMenus() {
-    auto* file = menuBar()->addMenu(tr("&File"));
-    auto* newAct = file->addAction(tr("&New"));
-    newAct->setShortcut(QKeySequence::New);
-    connect(newAct, &QAction::triggered, this, &MainWindow::onNew);
-
-    auto* openAct = file->addAction(tr("&Open..."));
-    openAct->setShortcut(QKeySequence::Open);
-    connect(openAct, &QAction::triggered, this, &MainWindow::onOpen);
-
-    recentMenu_ = file->addMenu(tr("Open &Recent"));
-    rebuildRecentMenu();
-
-    auto* saveAct = file->addAction(tr("&Save"));
-    saveAct->setShortcut(QKeySequence::Save);
-    connect(saveAct, &QAction::triggered, this, &MainWindow::onSave);
-
-    auto* saveAsAct = file->addAction(tr("Save &As..."));
-    saveAsAct->setShortcut(QKeySequence::SaveAs);
-    connect(saveAsAct, &QAction::triggered, this, &MainWindow::onSaveAs);
-
-    file->addSeparator();
-    auto* exportAct = file->addAction(tr("Export as &Image..."));
-    connect(exportAct, &QAction::triggered, this, [this]{
-        if (!mapView_->currentMap()) return;
-        auto* scene = mapView_->scene();
-        const QRectF bounds = scene->itemsBoundingRect().adjusted(-20, -20, 20, 20);
-        if (bounds.isEmpty()) {
-            QMessageBox::information(this, tr("Export"), tr("The map is empty."));
-            return;
-        }
-        // Rich ExportImageForm.cs parity: width, keep-aspect/height, watermark,
-        // background fill, transparent background, antialias, path. Each
-        // setting is persisted under export/* so the next export remembers
-        // the user's preferences.
-        QSettings s;
-        QDialog dlg(this);
-        dlg.setWindowTitle(tr("Export image"));
-        auto* form = new QFormLayout(&dlg);
-        auto* pathEdit = new QLineEdit(
-            currentFilePath_.isEmpty()
-                ? s.value(QStringLiteral("export/path")).toString()
-                : QFileInfo(currentFilePath_).baseName() + QStringLiteral(".png"), &dlg);
-        auto* browseBtn = new QPushButton(tr("..."), &dlg);
-        auto* pathRow = new QHBoxLayout(); pathRow->addWidget(pathEdit); pathRow->addWidget(browseBtn);
-        auto* pathWrap = new QWidget(&dlg); pathWrap->setLayout(pathRow);
-        form->addRow(tr("Output file:"), pathWrap);
-        connect(browseBtn, &QPushButton::clicked, &dlg, [pathEdit, &dlg]{
-            const QString p = QFileDialog::getSaveFileName(&dlg, tr("Export map as image"),
-                pathEdit->text(), tr("PNG (*.png);;JPEG (*.jpg *.jpeg)"));
-            if (!p.isEmpty()) pathEdit->setText(p);
-        });
-
-        auto* widthSpin = new QSpinBox(&dlg);
-        widthSpin->setRange(128, 16384);
-        widthSpin->setValue(s.value(QStringLiteral("export/width"), 1600).toInt());
-        form->addRow(tr("Width (px):"), widthSpin);
-        auto* keepAspect = new QCheckBox(tr("Keep aspect ratio (height auto)"), &dlg);
-        keepAspect->setChecked(s.value(QStringLiteral("export/keepAspect"), true).toBool());
-        form->addRow(keepAspect);
-        auto* heightSpin = new QSpinBox(&dlg);
-        heightSpin->setRange(64, 16384);
-        heightSpin->setValue(s.value(QStringLiteral("export/height"), 1200).toInt());
-        heightSpin->setEnabled(!keepAspect->isChecked());
-        connect(keepAspect, &QCheckBox::toggled, heightSpin, [heightSpin](bool on){
-            heightSpin->setEnabled(!on);
-        });
-        form->addRow(tr("Height (px):"), heightSpin);
-
-        auto* watermarkChk = new QCheckBox(tr("Embed general-info watermark"), &dlg);
-        watermarkChk->setChecked(s.value(QStringLiteral("export/watermark"), false).toBool());
-        form->addRow(watermarkChk);
-        auto* transparentChk = new QCheckBox(tr("Transparent background"), &dlg);
-        transparentChk->setChecked(s.value(QStringLiteral("export/transparent"), false).toBool());
-        form->addRow(transparentChk);
-        auto* antialiasChk = new QCheckBox(tr("Antialias"), &dlg);
-        antialiasChk->setChecked(s.value(QStringLiteral("export/antialias"), true).toBool());
-        form->addRow(antialiasChk);
-
-        auto* bb = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
-        form->addRow(bb);
-        connect(bb, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
-        connect(bb, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
-        if (dlg.exec() != QDialog::Accepted) return;
-        const QString path = pathEdit->text();
-        if (path.isEmpty()) return;
-
-        const int width  = widthSpin->value();
-        const int height = keepAspect->isChecked()
-            ? std::max(64, static_cast<int>(width * (bounds.height() / bounds.width())))
-            : heightSpin->value();
-        QImage img(width, height,
-                   transparentChk->isChecked() ? QImage::Format_ARGB32 : QImage::Format_RGB32);
-        img.fill(transparentChk->isChecked()
-                     ? Qt::transparent
-                     : mapView_->currentMap()->backgroundColor.color);
-        {
-            QPainter p(&img);
-            if (antialiasChk->isChecked()) {
-                p.setRenderHint(QPainter::Antialiasing);
-                p.setRenderHint(QPainter::SmoothPixmapTransform);
-            }
-            scene->render(&p, QRectF(0, 0, width, height), bounds,
-                          keepAspect->isChecked() ? Qt::KeepAspectRatio : Qt::IgnoreAspectRatio);
-            if (watermarkChk->isChecked()) {
-                const auto* m = mapView_->currentMap();
-                const QString stamp = tr("%1 / %2 / %3").arg(m->author, m->lug, m->event);
-                QFont f; f.setPointSize(std::max(8, height / 60));
-                p.setFont(f);
-                p.setPen(QColor(0, 0, 0, 140));
-                p.drawText(QRectF(0, 0, width, height).adjusted(10, 0, -10, -10),
-                           Qt::AlignRight | Qt::AlignBottom, stamp);
-            }
-        }
-        if (!img.save(path)) {
-            QMessageBox::warning(this, tr("Export failed"), tr("Could not write %1").arg(path));
-            return;
-        }
-        // Persist every field for next time.
-        s.setValue(QStringLiteral("export/path"),        path);
-        s.setValue(QStringLiteral("export/width"),       width);
-        s.setValue(QStringLiteral("export/height"),      height);
-        s.setValue(QStringLiteral("export/keepAspect"),  keepAspect->isChecked());
-        s.setValue(QStringLiteral("export/watermark"),   watermarkChk->isChecked());
-        s.setValue(QStringLiteral("export/transparent"), transparentChk->isChecked());
-        s.setValue(QStringLiteral("export/antialias"),   antialiasChk->isChecked());
-        statusBar()->showMessage(tr("Exported %1x%2 to %3").arg(width).arg(height).arg(path), 5000);
-    });
-
-    file->addSeparator();
-    auto* quit = file->addAction(tr("&Quit"));
-    quit->setShortcut(QKeySequence::Quit);
-    connect(quit, &QAction::triggered, this, &QMainWindow::close);
-
-    auto* edit = menuBar()->addMenu(tr("&Edit"));
-    undoAct_ = mapView_->undoStack()->createUndoAction(this, tr("&Undo"));
-    undoAct_->setShortcut(QKeySequence::Undo);
-    edit->addAction(undoAct_);
-    redoAct_ = mapView_->undoStack()->createRedoAction(this, tr("&Redo"));
-    redoAct_->setShortcut(QKeySequence::Redo);
-    edit->addAction(redoAct_);
-    edit->addSeparator();
-    auto* del = edit->addAction(tr("&Delete"));
-    del->setShortcut(Qt::Key_Delete);
-    connect(del, &QAction::triggered, [this]{ mapView_->deleteSelected(); });
-    auto* rotCCW = edit->addAction(tr("Rotate &CCW"));
-    rotCCW->setShortcut(Qt::Key_R);
-    connect(rotCCW, &QAction::triggered, [this]{
-        mapView_->rotateSelected(static_cast<float>(-mapView_->rotationStepDegrees()));
-    });
-    auto* rotCW = edit->addAction(tr("Rotate C&W"));
-    rotCW->setShortcut(QKeySequence(tr("Shift+R")));
-    connect(rotCW, &QAction::triggered, [this]{
-        mapView_->rotateSelected(static_cast<float>(mapView_->rotationStepDegrees()));
-    });
-
-    edit->addSeparator();
-    auto* cutAct = edit->addAction(tr("Cu&t"));
-    cutAct->setShortcut(QKeySequence::Cut);
-    connect(cutAct, &QAction::triggered, [this]{ mapView_->cutSelection(); });
-
-    auto* copyAct = edit->addAction(tr("&Copy"));
-    copyAct->setShortcut(QKeySequence::Copy);
-    connect(copyAct, &QAction::triggered, [this]{ mapView_->copySelection(); });
-
-    auto* pasteAct = edit->addAction(tr("&Paste"));
-    pasteAct->setShortcut(QKeySequence::Paste);
-    connect(pasteAct, &QAction::triggered, [this]{ mapView_->pasteClipboard(); });
-
-    auto* dupAct = edit->addAction(tr("&Duplicate"));
-    dupAct->setShortcut(QKeySequence(tr("Ctrl+D")));
-    connect(dupAct, &QAction::triggered, [this]{ mapView_->duplicateSelection(); });
-
-    edit->addSeparator();
-    auto* selAllAct = edit->addAction(tr("Select &All"));
-    selAllAct->setShortcut(QKeySequence::SelectAll);
-    connect(selAllAct, &QAction::triggered, [this]{ mapView_->selectAll(); });
-
-    auto* selNoneAct = edit->addAction(tr("Deselect All"));
-    selNoneAct->setShortcut(QKeySequence(tr("Ctrl+Shift+A")));
-    connect(selNoneAct, &QAction::triggered, [this]{ mapView_->deselectAll(); });
-
-    auto* findAct = edit->addAction(tr("&Find && Replace..."));
-    findAct->setShortcut(QKeySequence::Find);
-    connect(findAct, &QAction::triggered, this, [this]{
-        // Modeless: construct, show, let the user close it later. The dialog
-        // deletes itself on close via the WA_DeleteOnClose attribute.
-        auto* dlg = new FindDialog(*mapView_, this);
-        dlg->setAttribute(Qt::WA_DeleteOnClose);
-        dlg->show();
-    });
-
-    auto* selPathAct = edit->addAction(tr("Select &Path"));
-    selPathAct->setShortcut(QKeySequence(tr("Ctrl+P")));
-    selPathAct->setToolTip(tr("Extend selection to every brick connected to current selection"));
-    connect(selPathAct, &QAction::triggered, [this]{ mapView_->selectPath(); });
-
-    edit->addSeparator();
-    // Move Step submenu — nudge selection by the current snap step (or a
-    // specific override). Mirrors BlueBrick's Edit > Transform > Move Step.
-    auto* moveStepMenu = edit->addMenu(tr("&Move Step"));
-    auto addNudge = [this, moveStepMenu](const QString& label, double dx, double dy){
-        auto* a = moveStepMenu->addAction(label);
-        connect(a, &QAction::triggered, this, [this, dx, dy]{
-            mapView_->nudgeSelected(dx, dy);
-        });
-    };
-    addNudge(tr("Up"),    0.0, -1.0);
-    addNudge(tr("Down"),  0.0,  1.0);
-    addNudge(tr("Left"), -1.0,  0.0);
-    addNudge(tr("Right"), 1.0,  0.0);
-
-    auto* groupAct = edit->addAction(tr("&Group"));
-    groupAct->setShortcut(QKeySequence(tr("Ctrl+G")));
-    connect(groupAct, &QAction::triggered, [this]{ mapView_->groupSelection(); });
-    auto* ungroupAct = edit->addAction(tr("&Ungroup"));
-    ungroupAct->setShortcut(QKeySequence(tr("Ctrl+Shift+G")));
-    connect(ungroupAct, &QAction::triggered, [this]{ mapView_->ungroupSelection(); });
-
-    edit->addSeparator();
-    auto* addTextAct = edit->addAction(tr("Add &Text..."));
-    addTextAct->setShortcut(QKeySequence(tr("Ctrl+T")));
-    connect(addTextAct, &QAction::triggered, this, [this]{
-        if (!mapView_->currentMap()) return;
-        bool ok = false;
-        const QString text = QInputDialog::getText(
-            this, tr("Add text"), tr("Label text:"),
-            QLineEdit::Normal, {}, &ok);
-        if (ok && !text.isEmpty()) mapView_->addTextAtViewCenter(text);
-    });
-
-    edit->addSeparator();
-    auto* toFrontAct = edit->addAction(tr("Bring to &Front"));
-    toFrontAct->setShortcut(QKeySequence(tr("Ctrl+Shift+]")));
-    connect(toFrontAct, &QAction::triggered, [this]{ mapView_->bringSelectionToFront(); });
-
-    auto* toBackAct = edit->addAction(tr("Send to &Back"));
-    toBackAct->setShortcut(QKeySequence(tr("Ctrl+Shift+[")));
-    connect(toBackAct, &QAction::triggered, [this]{ mapView_->sendSelectionToBack(); });
-
-    edit->addSeparator();
-    auto* addLabel = edit->addAction(tr("Add &Anchored Label..."));
-    addLabel->setShortcut(QKeySequence(tr("Ctrl+L")));
-    connect(addLabel, &QAction::triggered, this, [this]{
-        auto* map = mapView_->currentMap();
-        if (!map) return;
-        // If a single brick is selected, anchor to it; otherwise anchor to the
-        // view centre in world coords.
-        QString targetId;
-        core::AnchorKind kind = core::AnchorKind::World;
-        QPointF offsetStuds;
-        auto sel = mapView_->scene()->selectedItems();
-        if (sel.size() == 1 && sel[0]->data(2).toString() == QStringLiteral("brick")) {
-            targetId = sel[0]->data(1).toString();
-            kind = core::AnchorKind::Brick;
-            offsetStuds = QPointF(2.0, -2.0);  // small initial offset from centre
-        } else {
-            const QPointF scenePos = mapView_->mapToScene(mapView_->viewport()->rect().center());
-            offsetStuds = QPointF(scenePos.x() / 8.0, scenePos.y() / 8.0);
-        }
-        bool ok = false;
-        const QString text = QInputDialog::getText(
-            this, tr("Anchored label"), tr("Label text:"),
-            QLineEdit::Normal, {}, &ok);
-        if (!ok || text.isEmpty()) return;
-
-        core::AnchoredLabel L;
-        L.id = core::newBbmId();
-        L.text = text;
-        L.color = core::ColorSpec::fromKnown(QColor(Qt::black), QStringLiteral("Black"));
-        L.kind = kind;
-        L.targetId = targetId;
-        L.offset = offsetStuds;
-        mapView_->undoStack()->push(new edit::AddAnchoredLabelCommand(*map, std::move(L)));
-        mapView_->rebuildScene();
-    });
-
-    auto* view = menuBar()->addMenu(tr("&View"));
-    auto* zIn = view->addAction(tr("Zoom &In"));
-    zIn->setShortcut(QKeySequence::ZoomIn);
-    connect(zIn, &QAction::triggered, this, &MainWindow::onZoomIn);
-
-    auto* zOut = view->addAction(tr("Zoom &Out"));
-    zOut->setShortcut(QKeySequence::ZoomOut);
-    connect(zOut, &QAction::triggered, this, &MainWindow::onZoomOut);
-
-    auto* fit = view->addAction(tr("&Fit to View"));
-    fit->setShortcut(QKeySequence(Qt::Key_F));
-    connect(fit, &QAction::triggered, this, &MainWindow::onFitToView);
-
-    view->addSeparator();
-    // Dock / toolbar visibility toggles — upstream View menu parity.
-    auto addDockToggle = [view](QDockWidget* d, const QString& label){
-        auto* act = view->addAction(label);
-        act->setCheckable(true);
-        act->setChecked(d->isVisible());
-        QObject::connect(act, &QAction::toggled, d, &QDockWidget::setVisible);
-        QObject::connect(d, &QDockWidget::visibilityChanged, act, &QAction::setChecked);
-    };
-    addDockToggle(partsBrowser_,       tr("&Parts Panel"));
-    addDockToggle(layerPanel_,         tr("&Layers Panel"));
-    addDockToggle(modulesPanel_,       tr("&Modules Panel"));
-    addDockToggle(moduleLibraryPanel_, tr("Module Li&brary Panel"));
-
-    view->addSeparator();
-    auto* statusToggle = view->addAction(tr("&Status Bar"));
-    statusToggle->setCheckable(true);
-    statusToggle->setChecked(true);
-    connect(statusToggle, &QAction::toggled, statusBar(), &QStatusBar::setVisible);
-
-    auto* scrollToggle = view->addAction(tr("Map &Scroll Bars"));
-    scrollToggle->setCheckable(true);
-    scrollToggle->setChecked(true);
-    connect(scrollToggle, &QAction::toggled, this, [this](bool on){
-        const Qt::ScrollBarPolicy p = on ? Qt::ScrollBarAsNeeded : Qt::ScrollBarAlwaysOff;
-        mapView_->setHorizontalScrollBarPolicy(p);
-        mapView_->setVerticalScrollBarPolicy(p);
-    });
-
-    view->addSeparator();
-    // Scene-level render toggles — each writes through QSettings so the
-    // choice sticks across launches. SceneBuilder reads these on rebuild
-    // to honour the current preference.
-    auto addRenderToggle = [this, view](const QString& label, const QString& settingsKey, bool defaultOn){
-        auto* act = view->addAction(label);
-        act->setCheckable(true);
-        QSettings s;
-        act->setChecked(s.value(settingsKey, defaultOn).toBool());
-        connect(act, &QAction::toggled, this, [this, settingsKey](bool on){
-            QSettings().setValue(settingsKey, on);
-            mapView_->rebuildScene();
-        });
-    };
-    addRenderToggle(tr("&Electric Circuits"),       QStringLiteral("view/electricCircuits"),    false);
-    addRenderToggle(tr("Connection &Points"),       QStringLiteral("view/connectionPoints"),    false);
-    addRenderToggle(tr("Ruler Attach P&oints"),      QStringLiteral("view/rulerAttachPoints"),   false);
-    addRenderToggle(tr("&Watermark"),                QStringLiteral("view/watermark"),           true);
-    addRenderToggle(tr("Brick &Hulls"),              QStringLiteral("view/brickHulls"),          false);
-    addRenderToggle(tr("Brick E&levation Labels"),   QStringLiteral("view/brickElevation"),      false);
-    addRenderToggle(tr("&Module Names"),              QStringLiteral("view/moduleNames"),         true);
-
-    auto* tools = menuBar()->addMenu(tr("&Tools"));
-    auto* libAct = tools->addAction(tr("Manage Parts &Libraries..."));
-    connect(libAct, &QAction::triggered, this, &MainWindow::onManageLibraries);
-    auto* reloadAct = tools->addAction(tr("&Reload Parts Library"));
-    connect(reloadAct, &QAction::triggered, this, &MainWindow::onReloadLibrary);
-    tools->addSeparator();
-    auto* partListAct = tools->addAction(tr("Export &Part List (CSV)..."));
-    connect(partListAct, &QAction::triggered, this, &MainWindow::onExportPartList);
-    tools->addSeparator();
-    auto* prefsAct = tools->addAction(tr("&Preferences..."));
-    prefsAct->setShortcut(QKeySequence::Preferences);
-    connect(prefsAct, &QAction::triggered, this, [this]{
-        PreferencesDialog dlg(this);
-        dlg.exec();
-        // Re-apply editing-related settings the user may have changed.
-        QSettings s; s.beginGroup(QStringLiteral("editing"));
-        mapView_->setSnapStepStuds(s.value(QStringLiteral("snapStepStuds"), 0.0).toDouble());
-        mapView_->setRotationStepDegrees(s.value(QStringLiteral("rotationStepDegrees"), 90.0).toDouble());
-        s.endGroup();
-        // Re-point the Module Library panel at whatever folder the user
-        // just chose, otherwise its cached path_ stays stale and
-        // save-to-library + library listing use the old folder.
-        const QString libDir = QSettings().value(QStringLiteral("modules/libraryPath")).toString();
-        if (!libDir.isEmpty() && libDir != moduleLibraryPanel_->libraryPath()) {
-            moduleLibraryPanel_->setLibraryPath(libDir);
-        }
-        // Rebuild the scene so settings that affect rendering (module
-        // frame thickness, selection tint, etc.) take effect immediately.
-        mapView_->rebuildScene();
-    });
-
-    // ----- Map menu -----
-    auto* mapMenu = menuBar()->addMenu(tr("&Map"));
-    auto* bgAct = mapMenu->addAction(tr("Background &Colour..."));
-    connect(bgAct, &QAction::triggered, this, [this]{
-        auto* m = mapView_->currentMap();
-        if (!m) return;
-        QColor init = m->backgroundColor.color;
-        const QColor c = QColorDialog::getColor(init, this, tr("Background colour"),
-                                                 QColorDialog::ShowAlphaChannel);
-        if (!c.isValid()) return;
-        mapView_->undoStack()->push(new edit::ChangeBackgroundColorCommand(
-            *m, core::ColorSpec::fromArgb(c)));
-        mapView_->rebuildScene();
-        mapView_->scene()->setBackgroundBrush(c);
-    });
-    auto* infoAct = mapMenu->addAction(tr("General &Info..."));
-    connect(infoAct, &QAction::triggered, this, [this]{
-        auto* m = mapView_->currentMap();
-        if (!m) return;
-        QDialog dlg(this);
-        dlg.setWindowTitle(tr("Map information"));
-        auto* form = new QFormLayout(&dlg);
-        auto* authorE = new QLineEdit(m->author, &dlg);
-        auto* lugE    = new QLineEdit(m->lug, &dlg);
-        auto* eventE  = new QLineEdit(m->event, &dlg);
-        auto* dateE   = new QDateEdit(m->date, &dlg); dateE->setCalendarPopup(true);
-        auto* commentE = new QPlainTextEdit(m->comment, &dlg);
-        commentE->setMinimumHeight(100);
-        form->addRow(tr("Author:"),  authorE);
-        form->addRow(tr("LUG:"),     lugE);
-        form->addRow(tr("Event:"),   eventE);
-        form->addRow(tr("Date:"),    dateE);
-        form->addRow(tr("Comment:"), commentE);
-        auto* bb = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
-        form->addRow(bb);
-        connect(bb, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
-        connect(bb, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
-        if (dlg.exec() != QDialog::Accepted) return;
-        edit::ChangeGeneralInfoCommand::Info next{
-            authorE->text(), lugE->text(), eventE->text(),
-            dateE->date(), commentE->toPlainText()
-        };
-        mapView_->undoStack()->push(new edit::ChangeGeneralInfoCommand(*m, std::move(next)));
-    });
-
-    mapMenu->addSeparator();
-    auto* venueMenu = mapMenu->addMenu(tr("&Venue"));
-    auto* drawOutlineAct = venueMenu->addAction(tr("Draw &Outline..."));
-    drawOutlineAct->setToolTip(tr("Click points on the map to build the venue outline. "
-                                    "Right-click or Enter finishes; Escape cancels."));
-    connect(drawOutlineAct, &QAction::triggered, this, [this]{
-        if (!mapView_->currentMap()) return;
-        mapView_->setTool(MapView::Tool::DrawVenueOutline);
-        statusBar()->showMessage(
-            tr("Click points to outline the venue. Right-click / Enter to finish, Escape to cancel."),
-            8000);
-    });
-    auto* drawByDimsAct = venueMenu->addAction(tr("Draw Outline by &Dimensions..."));
-    drawByDimsAct->setToolTip(tr("Build the venue outline by entering lengths + angles "
-                                   "instead of clicking points on the map."));
-    connect(drawByDimsAct, &QAction::triggered, this, [this]{
-        auto* m = mapView_->currentMap();
-        if (!m) return;
-        VenueDimensionsDialog dlg(this);
-        if (dlg.exec() != QDialog::Accepted) return;
-        const auto poly  = dlg.polygon();
-        const auto metas = dlg.segments();
-        if (poly.size() < 3) return;
-        core::Venue v = m->sidecar.venue.value_or(core::Venue{});
-        v.enabled = true;
-        v.edges.clear();
-        for (int i = 0; i < poly.size(); ++i) {
-            core::VenueEdge e;
-            e.polyline = { poly[i], poly[(i + 1) % poly.size()] };
-            // Use the per-segment kind + label chosen in the dialog;
-            // fall back to Wall if the metas list is shorter than the
-            // polygon (shouldn't happen, defensive).
-            if (i < metas.size()) {
-                e.kind  = metas[i].kind;
-                e.label = metas[i].label;
-            } else {
-                e.kind  = core::EdgeKind::Wall;
-            }
-            v.edges.push_back(e);
-        }
-        mapView_->undoStack()->push(new edit::SetVenueCommand(*m, std::make_optional(v)));
-        mapView_->rebuildScene();
-        statusBar()->showMessage(
-            tr("Venue outline built from %1 segments").arg(poly.size()), 3000);
-    });
-
-    auto* drawObstacleAct = venueMenu->addAction(tr("Add &Obstacle..."));
-    drawObstacleAct->setToolTip(tr("Click points to add an obstacle polygon (pillar, column)."));
-    connect(drawObstacleAct, &QAction::triggered, this, [this]{
-        if (!mapView_->currentMap() || !mapView_->currentMap()->sidecar.venue) {
-            QMessageBox::information(this, tr("Add obstacle"),
-                tr("Draw the venue outline first."));
-            return;
-        }
-        mapView_->setTool(MapView::Tool::DrawVenueObstacle);
-        statusBar()->showMessage(
-            tr("Click points to outline an obstacle. Right-click / Enter to finish, Escape to cancel."),
-            8000);
-    });
-    venueMenu->addSeparator();
-    auto* editVenueAct = venueMenu->addAction(tr("&Edit Venue Properties..."));
-    connect(editVenueAct, &QAction::triggered, this, [this]{
-        auto* m = mapView_->currentMap();
-        if (!m) return;
-        VenueDialog dlg(m->sidecar.venue, this);
-        if (dlg.exec() != QDialog::Accepted) return;
-        if (dlg.cleared()) {
-            mapView_->undoStack()->push(new edit::SetVenueCommand(*m, std::nullopt));
-        } else {
-            mapView_->undoStack()->push(new edit::SetVenueCommand(*m, dlg.result()));
-        }
-        mapView_->rebuildScene();
-    });
-    auto* clearVenueAct = venueMenu->addAction(tr("&Clear Venue"));
-    connect(clearVenueAct, &QAction::triggered, this, [this]{
-        auto* m = mapView_->currentMap();
-        if (!m || !m->sidecar.venue) return;
-        const auto btn = QMessageBox::question(this, tr("Clear venue"),
-            tr("Remove the venue from this project?"));
-        if (btn != QMessageBox::Yes) return;
-        mapView_->undoStack()->push(new edit::SetVenueCommand(*m, std::nullopt));
-        mapView_->rebuildScene();
-    });
-
-    venueMenu->addSeparator();
-
-    // Save / Load library. Venues are per-project (Map::sidecar.venue is
-    // one optional), but we let the user stash a venue as a standalone
-    // .cld-venue file in a library folder so it can be reused across
-    // projects. List shows every .cld-venue in the configured folder.
-    auto venueLibraryFolder = []() -> QString {
-        QString dir = QSettings().value(QStringLiteral("venue/libraryPath")).toString();
-        if (dir.isEmpty()) {
-            dir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)
-                  + QStringLiteral("/venues");
-            QSettings().setValue(QStringLiteral("venue/libraryPath"), dir);
-        }
-        QDir().mkpath(dir);
-        return dir;
-    };
-
-    auto sanitizeFilename = [](QString n) -> QString {
-        static const QRegularExpression bad(QStringLiteral(R"([<>:"/\\|?*\x00-\x1F])"));
-        n.replace(bad, QStringLiteral("_"));
-        while (n.startsWith(QLatin1Char('.')) || n.startsWith(QLatin1Char(' '))) n.remove(0, 1);
-        while (n.endsWith(QLatin1Char('.'))  || n.endsWith(QLatin1Char(' ')))  n.chop(1);
-        if (n.isEmpty()) n = QStringLiteral("Venue");
-        return n;
-    };
-
-    auto* saveVenueAct = venueMenu->addAction(tr("&Save Venue to Library..."));
-    connect(saveVenueAct, &QAction::triggered, this,
-            [this, venueLibraryFolder, sanitizeFilename]{
-        auto* m = mapView_->currentMap();
-        if (!m || !m->sidecar.venue) {
-            QMessageBox::information(this, tr("Save venue"),
-                tr("There's no venue on this project yet."));
-            return;
-        }
-        const QString dir = venueLibraryFolder();
-        bool ok = false;
-        const QString defName = m->sidecar.venue->name.isEmpty() ? tr("Venue")
-                                                                   : m->sidecar.venue->name;
-        const QString raw = QInputDialog::getText(this, tr("Save venue to library"),
-            tr("Venue name (filename):"), QLineEdit::Normal, defName, &ok);
-        if (!ok || raw.isEmpty()) return;
-        const QString target = QDir(dir).filePath(sanitizeFilename(raw)
-                                                    + QStringLiteral(".cld-venue"));
-        if (QFile::exists(target)) {
-            const auto btn = QMessageBox::question(this, tr("Save venue"),
-                tr("%1 already exists. Overwrite?").arg(target));
-            if (btn != QMessageBox::Yes) return;
-        }
-        QString err;
-        if (!saveload::writeVenueFile(target, *m->sidecar.venue, &err)) {
-            QMessageBox::warning(this, tr("Save venue"),
-                tr("Could not write %1: %2").arg(target, err));
-            return;
-        }
-        statusBar()->showMessage(tr("Saved venue to %1").arg(target), 4000);
-    });
-
-    auto* loadVenueAct = venueMenu->addAction(tr("Load Venue from &Library..."));
-    connect(loadVenueAct, &QAction::triggered, this, [this, venueLibraryFolder]{
-        auto* m = mapView_->currentMap();
-        if (!m) return;
-        const QString dir = venueLibraryFolder();
-        QDir d(dir);
-        const QStringList files = d.entryList({ QStringLiteral("*.cld-venue") },
-                                                QDir::Files, QDir::Name | QDir::IgnoreCase);
-        if (files.isEmpty()) {
-            QMessageBox::information(this, tr("Load venue"),
-                tr("No saved venues in %1.").arg(dir));
-            return;
-        }
-        QStringList displayNames;
-        for (const QString& f : files) displayNames << QFileInfo(f).completeBaseName();
-        bool ok = false;
-        const QString picked = QInputDialog::getItem(this, tr("Load venue from library"),
-            tr("Choose a saved venue:"), displayNames, 0, false, &ok);
-        if (!ok || picked.isEmpty()) return;
-        const QString path = d.filePath(picked + QStringLiteral(".cld-venue"));
-        QString err;
-        auto venue = saveload::readVenueFile(path, &err);
-        if (!venue) {
-            QMessageBox::warning(this, tr("Load venue"),
-                tr("Could not read %1: %2").arg(path, err));
-            return;
-        }
-        if (m->sidecar.venue) {
-            const auto btn = QMessageBox::question(this, tr("Replace venue"),
-                tr("This project already has a venue. Replace it?"));
-            if (btn != QMessageBox::Yes) return;
-        }
-        mapView_->undoStack()->push(new edit::SetVenueCommand(*m, venue));
-        mapView_->rebuildScene();
-        statusBar()->showMessage(tr("Loaded venue '%1'").arg(picked), 3000);
-    });
-
-    auto* openVenueFileAct = venueMenu->addAction(tr("Load Venue from &File..."));
-    connect(openVenueFileAct, &QAction::triggered, this, [this]{
-        auto* m = mapView_->currentMap();
-        if (!m) return;
-        const QString path = QFileDialog::getOpenFileName(this, tr("Load venue file"), {},
-            tr("Venue (*.cld-venue);;All files (*)"));
-        if (path.isEmpty()) return;
-        QString err;
-        auto venue = saveload::readVenueFile(path, &err);
-        if (!venue) {
-            QMessageBox::warning(this, tr("Load venue"),
-                tr("Could not read %1: %2").arg(path, err));
-            return;
-        }
-        if (m->sidecar.venue) {
-            const auto btn = QMessageBox::question(this, tr("Replace venue"),
-                tr("This project already has a venue. Replace it?"));
-            if (btn != QMessageBox::Yes) return;
-        }
-        mapView_->undoStack()->push(new edit::SetVenueCommand(*m, venue));
-        mapView_->rebuildScene();
-    });
-
-    menuBar()->addMenu(tr("&Layers"));
-
-    auto* budgetMenu = menuBar()->addMenu(tr("&Budget"));
-    auto* budgetDlg = budgetMenu->addAction(tr("Open Budget &Editor..."));
-    connect(budgetDlg, &QAction::triggered, this, [this]{
-        if (!mapView_->currentMap()) return;
-        auto* dlg = new BudgetDialog(*mapView_->currentMap(), this);
-        dlg->setAttribute(Qt::WA_DeleteOnClose);
-        dlg->show();
-    });
-
-    auto* modules = menuBar()->addMenu(tr("&Modules"));
-    auto* createModAct = modules->addAction(tr("Create from &Selection..."));
-    connect(createModAct, &QAction::triggered, this, &MainWindow::onCreateModuleFromSelection);
-    auto* importModAct = modules->addAction(tr("&Import .bbm as Module..."));
-    connect(importModAct, &QAction::triggered, this, &MainWindow::onImportBbmAsModule);
-    auto* saveModAct = modules->addAction(tr("&Save Selection as Module..."));
-    connect(saveModAct, &QAction::triggered, this, &MainWindow::onSaveSelectionAsModule);
-
-    auto* help = menuBar()->addMenu(tr("&Help"));
-    auto* aboutAct = help->addAction(tr("&About CLD..."));
-    connect(aboutAct, &QAction::triggered, this, &MainWindow::onAbout);
-    auto* aboutQtAct = help->addAction(tr("About &Qt..."));
-    connect(aboutQtAct, &QAction::triggered, qApp, &QApplication::aboutQt);
-}
 
 void MainWindow::onCreateModuleFromSelection() {
     auto* map = mapView_->currentMap();
@@ -1543,383 +1034,6 @@ void MainWindow::onImportBbmAsModule() {
         tr("Imported %1 bricks as module '%2'").arg(imported).arg(name), 4000);
 }
 
-void MainWindow::updateTitle() {
-    const QString name = currentFilePath_.isEmpty()
-        ? tr("[untitled]")
-        : QFileInfo(currentFilePath_).fileName();
-    const bool dirty = !mapView_->undoStack()->isClean();
-    setWindowTitle(tr("%1%2 — Collaborative Layout Designer")
-                       .arg(name, dirty ? QStringLiteral(" *") : QString()));
-}
-
-bool MainWindow::openFile(const QString& path) {
-    if (!maybeSave()) return false;
-    auto result = saveload::readBbm(path);
-    if (!result.ok()) {
-        QMessageBox::warning(this, tr("Open failed"),
-            tr("%1\n\n%2").arg(path, result.error));
-        return false;
-    }
-    if (!result.error.isEmpty()) {
-        statusBar()->showMessage(tr("Loaded with warnings: %1").arg(result.error), 5000);
-    }
-
-    // Sidecar: optional. Hash-check the .bbm bytes to flag drift (user edited
-    // the .bbm in vanilla BlueBrick between our writes).
-    const QString sidecarPath = saveload::sidecarPathFor(path);
-    if (QFile::exists(sidecarPath)) {
-        QFile bf(path);
-        QByteArray bbmBytes;
-        if (bf.open(QIODevice::ReadOnly)) bbmBytes = bf.readAll();
-        auto sres = saveload::readSidecar(sidecarPath, bbmBytes, result.map->sidecar);
-        if (sres.ok && sres.hashMismatch) {
-            statusBar()->showMessage(
-                tr("Sidecar hash mismatch — .bbm was modified externally. Fork-only metadata preserved but may drift."), 8000);
-        } else if (!sres.ok) {
-            statusBar()->showMessage(tr("Sidecar load failed: %1").arg(sres.error), 5000);
-        }
-    }
-
-    const int layerCount = static_cast<int>(result.map->layers().size());
-    const int nbItems = result.map->nbItems;
-    mapView_->loadMap(std::move(result.map));
-    layerPanel_->setMap(mapView_->currentMap(), mapView_->builder());
-    modulesPanel_->setMap(mapView_->currentMap());
-    currentFilePath_ = path;
-    mapView_->undoStack()->setClean();
-    cleanUndoIndex_ = 0;
-    updateTitle();
-    statusBar()->showMessage(tr("Opened %1 — %2 layers, %3 items")
-                                 .arg(path).arg(layerCount).arg(nbItems));
-    QSettings().setValue(QString::fromLatin1(kLastFileKey), path);
-    pushRecentFile(path);
-    return true;
-}
-
-void MainWindow::onOpen() {
-    const QString path = QFileDialog::getOpenFileName(
-        this, tr("Open BlueBrick map"), {},
-        tr("BlueBrick map (*.bbm);;All files (*)"));
-    if (!path.isEmpty()) openFile(path);
-}
-
-bool MainWindow::writeMapTo(const QString& path) {
-    auto* map = mapView_->currentMap();
-    if (!map) return false;
-    auto res = saveload::writeBbm(*map, path);
-    if (!res.ok) {
-        QMessageBox::warning(this, tr("Save failed"), res.error);
-        return false;
-    }
-
-    // Sidecar: always write when the map carries fork-only metadata. Clean up
-    // any stale sidecar if the map no longer has any.
-    const QString sidecarPath = saveload::sidecarPathFor(path);
-    if (!map->sidecar.isEmpty()) {
-        QFile bf(path);
-        if (bf.open(QIODevice::ReadOnly)) {
-            const QByteArray bbmBytes = bf.readAll();
-            QString err;
-            if (!saveload::writeSidecar(sidecarPath, bbmBytes, map->sidecar, &err)) {
-                QMessageBox::warning(this, tr("Sidecar save failed"),
-                    tr("The .bbm saved successfully but the sidecar failed:\n%1").arg(err));
-            }
-        }
-    } else if (QFile::exists(sidecarPath)) {
-        QFile::remove(sidecarPath);
-    }
-
-    currentFilePath_ = path;
-    mapView_->undoStack()->setClean();
-    updateTitle();
-    statusBar()->showMessage(tr("Saved %1").arg(path), 3000);
-    QSettings().setValue(QString::fromLatin1(kLastFileKey), path);
-    pushRecentFile(path);
-    // Manual save supersedes any autosave for the session.
-    QFile::remove(autosavePath());
-    return true;
-}
-
-bool MainWindow::onSave() {
-    if (!mapView_->currentMap()) return false;
-    if (currentFilePath_.isEmpty()) return onSaveAs();
-    return writeMapTo(currentFilePath_);
-}
-
-bool MainWindow::onSaveAs() {
-    if (!mapView_->currentMap()) return false;
-    const QString path = QFileDialog::getSaveFileName(
-        this, tr("Save BlueBrick map"), currentFilePath_,
-        tr("BlueBrick map (*.bbm)"));
-    if (path.isEmpty()) return false;
-    return writeMapTo(path);
-}
-
-bool MainWindow::maybeSave() {
-    if (!mapView_->currentMap() || mapView_->undoStack()->isClean()) return true;
-    const auto btn = QMessageBox::question(
-        this, tr("Unsaved changes"),
-        tr("The current layout has unsaved changes. Save before continuing?"),
-        QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel);
-    if (btn == QMessageBox::Save)    return onSave();
-    if (btn == QMessageBox::Discard) return true;
-    return false;
-}
-
-void MainWindow::closeEvent(QCloseEvent* e) {
-    if (!maybeSave()) { e->ignore(); return; }
-    // Persist window geometry + dock layout for the next launch.
-    QSettings s;
-    s.beginGroup(QStringLiteral("ui"));
-    s.setValue(QStringLiteral("geometry"), saveGeometry());
-    s.setValue(QStringLiteral("state"),    saveState());
-    s.endGroup();
-    e->accept();
-}
-
-void MainWindow::onManageLibraries() {
-    QStringList current;
-    const QString vendored = defaultVendoredPartsRoot();
-    if (!vendored.isEmpty() && QDir(vendored).exists()) current << vendored;
-    current += loadUserLibraryPaths();
-
-    LibraryPathsDialog dlg(current, this);
-    if (dlg.exec() != QDialog::Accepted) return;
-
-    QStringList newPaths = dlg.paths();
-    // Persist the user additions — filter out the vendored path so it isn't
-    // duplicated on next launch.
-    QStringList userOnly;
-    for (const QString& p : newPaths) {
-        if (p != vendored) userOnly << p;
-    }
-    saveUserLibraryPaths(userOnly);
-    rescanLibrary(newPaths);
-    partsBrowser_->rebuild();
-    statusBar()->showMessage(
-        tr("Reloaded library: %1 parts across %2 path(s)")
-            .arg(parts_.partCount()).arg(newPaths.size()), 4000);
-}
-
-void MainWindow::rescanLibrary(const QStringList& paths) {
-    parts_.clear();
-    for (const QString& p : paths) parts_.addSearchPath(p);
-    parts_.scan();
-}
-
-QStringList MainWindow::loadUserLibraryPaths() const {
-    QSettings s;
-    s.beginGroup(LibraryPathsDialog::kSettingsGroup);
-    const QStringList v = s.value(LibraryPathsDialog::kSettingsKey).toStringList();
-    s.endGroup();
-    return v;
-}
-
-void MainWindow::saveUserLibraryPaths(const QStringList& paths) {
-    QSettings s;
-    s.beginGroup(LibraryPathsDialog::kSettingsGroup);
-    s.setValue(LibraryPathsDialog::kSettingsKey, paths);
-    s.endGroup();
-}
-
-QString MainWindow::defaultVendoredPartsRoot() const {
-    const QString exeDir = QCoreApplication::applicationDirPath();
-    for (const QString& rel : { QStringLiteral("/../../../parts/BlueBrickParts/parts"),
-                                 QStringLiteral("/parts/BlueBrickParts/parts"),
-                                 QStringLiteral("/BlueBrickParts/parts") }) {
-        if (QDir(exeDir + rel).exists()) return QDir(exeDir + rel).absolutePath();
-    }
-    return {};
-}
-
-void MainWindow::onNew() {
-    if (!maybeSave()) return;
-
-    // If the user configured a "new map template" file in Preferences
-    // (Settings.general/newMapTemplate), load that as the starting point —
-    // vanilla BlueBrick's StartNewFileUsingDefaultTemplate parity.
-    const QString templatePath =
-        QSettings().value(QStringLiteral("general/newMapTemplate")).toString();
-    if (!templatePath.isEmpty() && QFile::exists(templatePath)) {
-        auto res = saveload::readBbm(templatePath);
-        if (res.ok() && res.map) {
-            mapView_->loadMap(std::move(res.map));
-            layerPanel_->setMap(mapView_->currentMap(), mapView_->builder());
-            modulesPanel_->setMap(mapView_->currentMap());
-            currentFilePath_.clear();
-            mapView_->undoStack()->clear();
-            mapView_->undoStack()->setClean();
-            updateTitle();
-            statusBar()->showMessage(tr("New layout from template %1").arg(templatePath), 3000);
-            return;
-        }
-    }
-
-    auto blank = std::make_unique<core::Map>();
-    // Seed with a single brick layer so drop-onto-map works out of the box.
-    auto layer = std::make_unique<core::LayerBrick>();
-    layer->guid = core::newBbmId();
-    layer->name = tr("Bricks");
-    blank->layers().push_back(std::move(layer));
-    blank->nbItems = 0;
-    mapView_->loadMap(std::move(blank));
-    layerPanel_->setMap(mapView_->currentMap(), mapView_->builder());
-    modulesPanel_->setMap(mapView_->currentMap());
-    currentFilePath_.clear();
-    mapView_->undoStack()->clear();
-    mapView_->undoStack()->setClean();
-    updateTitle();
-    statusBar()->showMessage(tr("New layout"), 3000);
-}
-
-void MainWindow::onReloadLibrary() {
-    QStringList allPaths;
-    const QString vendored = defaultVendoredPartsRoot();
-    if (!vendored.isEmpty() && QDir(vendored).exists()) allPaths << vendored;
-    for (const QString& p : loadUserLibraryPaths()) {
-        if (!allPaths.contains(p) && QDir(p).exists()) allPaths << p;
-    }
-    rescanLibrary(allPaths);
-    partsBrowser_->rebuild();
-    mapView_->rebuildScene();
-    statusBar()->showMessage(
-        tr("Reloaded library: %1 parts across %2 path(s)")
-            .arg(parts_.partCount()).arg(allPaths.size()), 4000);
-}
-
-void MainWindow::onExportPartList() {
-    auto* map = mapView_->currentMap();
-    if (!map) return;
-    // Aggregate part counts across every brick layer. Output format mirrors
-    // vanilla's ExportPartList: "part number, count".
-    QHash<QString, int> counts;
-    for (const auto& L : map->layers()) {
-        if (!L || L->kind() != core::LayerKind::Brick) continue;
-        for (const auto& b : static_cast<const core::LayerBrick&>(*L).bricks) {
-            counts[b.partNumber]++;
-        }
-    }
-    if (counts.isEmpty()) {
-        QMessageBox::information(this, tr("Export part list"),
-            tr("The current layout contains no bricks."));
-        return;
-    }
-    const QString path = QFileDialog::getSaveFileName(
-        this, tr("Export part list"),
-        currentFilePath_.isEmpty()
-            ? QStringLiteral("parts.csv")
-            : QFileInfo(currentFilePath_).baseName() + ".csv",
-        tr("CSV (*.csv);;Text (*.txt)"));
-    if (path.isEmpty()) return;
-    QFile f(path);
-    if (!f.open(QIODevice::WriteOnly | QIODevice::Text)) {
-        QMessageBox::warning(this, tr("Export failed"),
-            tr("Cannot write %1: %2").arg(path, f.errorString()));
-        return;
-    }
-    // Sort alphabetically for a stable / diffable output.
-    QStringList keys = counts.keys(); std::sort(keys.begin(), keys.end());
-    f.write("PartNumber,Count\n");
-    int total = 0;
-    for (const QString& k : keys) {
-        f.write(QStringLiteral("%1,%2\n").arg(k).arg(counts[k]).toUtf8());
-        total += counts[k];
-    }
-    f.close();
-    statusBar()->showMessage(tr("Exported %1 unique parts, %2 total, to %3")
-        .arg(keys.size()).arg(total).arg(path), 5000);
-}
-
-void MainWindow::onAbout() {
-    QMessageBox::about(this, tr("About Collaborative Layout Designer"),
-        tr("<h3>Collaborative Layout Designer</h3>"
-           "<p>Cross-platform C++/Qt 6 fork of <b>BlueBrick</b> by Alban Nanty and contributors.</p>"
-           "<p>Adds cross-layer modules, anchored text labels, and event venues on top of the "
-           "vanilla <i>.bbm</i> format (extra metadata stored in a sidecar <i>.bbm.cld</i> so "
-           "vanilla BlueBrick 1.9.2 keeps opening our files).</p>"
-           "<p>Licensed under GPL-3.0 — same as upstream BlueBrick.</p>"
-           "<p>Parts library: %1 parts indexed.</p>")
-        .arg(parts_.partCount()));
-}
-
-// Recent-files list: persisted as QStringList under recent/list, capped to 12.
-namespace {
-constexpr const char* kRecentListKey = "recent/list";
-constexpr int kRecentMax = 12;
-}
-
-void MainWindow::rebuildRecentMenu() {
-    if (!recentMenu_) return;
-    recentMenu_->clear();
-    const QStringList list = QSettings().value(kRecentListKey).toStringList();
-    for (const QString& p : list) {
-        QAction* act = recentMenu_->addAction(QFileInfo(p).fileName());
-        act->setToolTip(p);
-        connect(act, &QAction::triggered, this, [this, p]{ openFile(p); });
-    }
-    if (list.isEmpty()) {
-        auto* empty = recentMenu_->addAction(tr("(no recent files)"));
-        empty->setEnabled(false);
-    } else {
-        recentMenu_->addSeparator();
-        auto* clear = recentMenu_->addAction(tr("Clear Menu"));
-        connect(clear, &QAction::triggered, this, [this]{
-            QSettings().remove(QString::fromLatin1(kRecentListKey));
-            rebuildRecentMenu();
-        });
-    }
-}
-
-void MainWindow::pushRecentFile(const QString& path) {
-    QSettings s;
-    QStringList list = s.value(kRecentListKey).toStringList();
-    list.removeAll(path);
-    list.prepend(path);
-    while (list.size() > kRecentMax) list.removeLast();
-    s.setValue(kRecentListKey, list);
-    rebuildRecentMenu();
-}
-
-QString MainWindow::autosavePath() {
-    const QString dir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
-    QDir().mkpath(dir);
-    return dir + QStringLiteral("/autosave.bbm");
-}
-
-void MainWindow::performAutosave() {
-    if (!mapView_->currentMap() || mapView_->undoStack()->isClean()) return;
-    const QString path = autosavePath();
-    auto res = saveload::writeBbm(*mapView_->currentMap(), path);
-    if (res.ok) {
-        // Keep a note of what file the autosave corresponds to so the startup
-        // prompt can mention the original filename.
-        QSettings().setValue(QStringLiteral("autosave/sourceFile"), currentFilePath_);
-        statusBar()->showMessage(tr("Autosaved (%1)").arg(QTime::currentTime().toString("HH:mm:ss")), 2000);
-    }
-}
-
-bool MainWindow::restoreAutosaveIfAny(const QString& lastFile) {
-    const QString path = autosavePath();
-    if (!QFile::exists(path)) return false;
-    const QFileInfo ai(path);
-    if (!lastFile.isEmpty()) {
-        const QFileInfo li(lastFile);
-        if (li.exists() && li.lastModified() >= ai.lastModified()) return false;
-    }
-    const QString source = QSettings().value(QStringLiteral("autosave/sourceFile")).toString();
-    const auto btn = QMessageBox::question(
-        this, tr("Restore autosave?"),
-        tr("An unsaved layout from the last session was recovered:\n%1\n\n"
-           "Original file: %2\n"
-           "Restore it?")
-            .arg(path, source.isEmpty() ? tr("(new file)") : source),
-        QMessageBox::Yes | QMessageBox::No);
-    if (btn != QMessageBox::Yes) return false;
-    openFile(path);
-    currentFilePath_ = source;   // so a subsequent Save overwrites the original
-    updateTitle();
-    return true;
-}
 
 void MainWindow::onZoomIn()  { mapView_->scale(1.2, 1.2); }
 void MainWindow::onZoomOut() { mapView_->scale(1 / 1.2, 1 / 1.2); }

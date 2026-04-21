@@ -1,6 +1,6 @@
 #include "SceneBuilder.h"
+#include "SceneBuilderInternal.h"
 
-#include "../core/AnchoredLabel.h"
 #include "../core/Layer.h"
 #include "../core/LayerArea.h"
 #include "../core/LayerBrick.h"
@@ -8,8 +8,6 @@
 #include "../core/LayerRuler.h"
 #include "../core/LayerText.h"
 #include "../core/Map.h"
-#include "../core/Sidecar.h"
-#include "../core/Venue.h"
 #include "../parts/PartsLibrary.h"
 
 #include <QSettings>
@@ -35,50 +33,28 @@
 
 namespace cld::rendering {
 
+// Pull the shared helpers (kPx, studToPx, LayerSink, kBrickData* keys)
+// from detail:: so the per-layer free helpers below read naturally.
+// SceneBuilderElectric.cpp and SceneBuilderSidecar.cpp do the same.
+using detail::kPx;
+using detail::studToPx;
+using detail::LayerSink;
+using detail::kBrickDataLayerIndex;
+using detail::kBrickDataGuid;
+using detail::kBrickDataKind;
+
 namespace {
-
-constexpr int kPx = SceneBuilder::kPixelsPerStud;
-
-double studToPx(double s) { return s * kPx; }
-
-// Sink passed to each addXxxLayer() helper. We add items directly to the
-// scene here (no QGraphicsItemGroup parent) so hit-testing, selection, and
-// event dispatch can't be intercepted by a container. The sink also
-// remembers every item it spawns so visibility toggles can iterate them,
-// and applies a per-layer baseZ so layer ordering is preserved.
-struct LayerSink {
-    QGraphicsScene& scene;
-    QList<QGraphicsItem*>& items;
-    double baseZ = 0.0;
-    bool   visible = true;
-
-    void add(QGraphicsItem* it) {
-        if (!it) return;
-        // Only set zValue if the caller hasn't already set one (pixmap
-        // items use brick.altitude for z so they self-layer within the
-        // same layer). We bias everything by baseZ so higher layers
-        // outrank lower layers regardless of per-item z.
-        if (it->zValue() == 0.0) it->setZValue(baseZ);
-        else                     it->setZValue(baseZ + it->zValue());
-        it->setVisible(visible);
-        scene.addItem(it);
-        items.append(it);
-    }
-};
-
-// Metadata keys attached to each brick QGraphicsItem via setData(). Used by
-// the edit pipeline to look up the mutated brick on mouse release / key press.
-constexpr int kBrickDataLayerIndex = 0;
-constexpr int kBrickDataGuid       = 1;
-constexpr int kBrickDataKind       = 2;  // value: "brick" to distinguish from other items
 
 // Live snap during drag: when set to >0, QGraphicsPixmapItem / QGraphicsRectItem
 // subclasses round their pos() to multiples of this scene-pixel value on every
 // ItemPositionChange. SceneBuilder exposes a setter (called from MainWindow
 // whenever the snap toolbar changes); the per-item override reads the static.
 double gSnapPx = 0.0;
-// Connection-priority hook installed by MapView. See SceneBuilder.h.
-SceneBuilder::LiveSnapHook gLiveSnapHook;
+// When true, SnappingPixmap / SnappingRect itemChange skips grid snap. Set
+// by MapView for the span of programmatic setPos calls in its live
+// connection-snap shift, so a group-drag translation doesn't get
+// immediately re-snapped back to the grid.
+bool gSuppressItemSnap = false;
 
 // Selection is now painted from MapView::drawForeground so every item kind
 // (pixmap, rect, line, ellipse) gets a consistent, unmistakable highlight
@@ -108,28 +84,23 @@ void setConnectionDotsVisible(QGraphicsItem* parent, bool visible) {
     }
 }
 
+// Grid-snap base for any movable scene item. Connection snap no longer runs
+// here — MapView now drives it globally for the whole drag group so siblings
+// and anchor always translate together. Grid snap stays as a single-item
+// fallback for Qt's built-in per-item drag delta.
 class SnappingPixmap : public QGraphicsPixmapItem {
 public:
     using QGraphicsPixmapItem::QGraphicsPixmapItem;
 protected:
     QVariant itemChange(GraphicsItemChange c, const QVariant& v) override {
-        if (c == ItemPositionChange && (flags() & ItemIsMovable)) {
-            QPointF p = v.toPointF();
-            // Try connection snap FIRST (vanilla's getMovedSnapPoint
-            // connection-priority behavior). For a multi-item drag the
-            // hook runs only for the anchor piece; siblings skip snap
-            // entirely and translate by Qt's rigid delta.
-            if (gLiveSnapHook) {
-                if (auto snapped = gLiveSnapHook(this, p)) {
-                    return *snapped;
-                }
-            }
-            // Grid snap: only for single-selection drags. Multi-selection
-            // groups must translate rigidly so connections within the
-            // group stay intact; drop-time commitDragIfMoved snaps the
-            // whole group as a unit.
+        if (c == ItemPositionChange && !gSuppressItemSnap
+            && gSnapPx > 0.0 && (flags() & ItemIsMovable)) {
+            // Multi-select groups translate rigidly; drop-time commit
+            // snaps the group as a unit, and MapView's live connection
+            // snap handles the "during-drag" group shift.
             const bool multi = scene() && scene()->selectedItems().size() > 1;
-            if (gSnapPx > 0.0 && !multi) {
+            if (!multi) {
+                QPointF p = v.toPointF();
                 p.setX(std::round(p.x() / gSnapPx) * gSnapPx);
                 p.setY(std::round(p.y() / gSnapPx) * gSnapPx);
                 return p;
@@ -147,7 +118,8 @@ public:
     using QGraphicsRectItem::QGraphicsRectItem;
 protected:
     QVariant itemChange(GraphicsItemChange c, const QVariant& v) override {
-        if (c == ItemPositionChange && gSnapPx > 0.0 && (flags() & ItemIsMovable)) {
+        if (c == ItemPositionChange && !gSuppressItemSnap
+            && gSnapPx > 0.0 && (flags() & ItemIsMovable)) {
             const bool multi = scene() && scene()->selectedItems().size() > 1;
             if (multi) return QGraphicsRectItem::itemChange(c, v);
             QPointF p = v.toPointF();
@@ -247,23 +219,39 @@ void addBrickLayer(const core::LayerBrick& L, LayerSink& sink, parts::PartsLibra
         // clearly on any brick colour — user asked for larger/more obvious
         // markers.
         if (meta && !meta->connections.isEmpty()) {
-            // Radius 10px with a 2.5px white ring + red fill so the
-            // markers are unmistakable at any zoom. User asked for
-            // "bigger and more obvious" — this is big.
-            constexpr double kDotRadiusPx = 10.0;
-            for (const auto& c : meta->connections) {
+            // Only render markers for FREE connections — ones whose
+            // linkedToId is empty on the brick instance. A connection
+            // that's already glued to another brick isn't a snap
+            // target, so showing a marker there just clutters the view.
+            //
+            // The active connection (brick.activeConnectionPointIndex)
+            // gets a bigger, brighter gold marker so the user can see at
+            // a glance which end will lead the next snap.
+            constexpr double kDotRadiusPx       = 10.0;
+            constexpr double kActiveRadiusPx    = 13.0;
+            const int nConns    = meta->connections.size();
+            const int activeIdx = brick.activeConnectionPointIndex;
+            for (int ci = 0; ci < nConns; ++ci) {
+                const auto& c = meta->connections[ci];
                 if (c.type.isEmpty()) continue;
+                const bool linked =
+                    ci < static_cast<int>(brick.connections.size())
+                    && !brick.connections[ci].linkedToId.isEmpty();
+                if (linked) continue;
+                const bool isActive = (ci == activeIdx);
+                const double r = isActive ? kActiveRadiusPx : kDotRadiusPx;
                 const QPointF localPx(c.position.x() * kPx, c.position.y() * kPx);
                 auto* dot = new QGraphicsEllipseItem(
-                    localPx.x() - kDotRadiusPx, localPx.y() - kDotRadiusPx,
-                    kDotRadiusPx * 2, kDotRadiusPx * 2, item);
-                QColor col = colorForConnectionType(c.type);
-                QPen pen(QColor(255, 255, 255));
-                pen.setWidthF(2.5);
+                    localPx.x() - r, localPx.y() - r, r * 2, r * 2, item);
+                const QColor fill = isActive
+                    ? QColor(255, 215, 0)              // gold for active
+                    : colorForConnectionType(c.type);   // type colour (red) for other free
+                QPen pen(isActive ? QColor(30, 30, 30) : QColor(255, 255, 255));
+                pen.setWidthF(isActive ? 3.0 : 2.5);
                 pen.setCosmetic(true);
                 dot->setPen(pen);
-                dot->setBrush(QBrush(col));
-                dot->setZValue(1000);
+                dot->setBrush(QBrush(fill));
+                dot->setZValue(isActive ? 1001 : 1000);
                 dot->setData(kBrickDataKind, QStringLiteral("connDot"));
                 dot->setVisible(alwaysShowConns);
             }
@@ -275,14 +263,39 @@ void addBrickLayer(const core::LayerBrick& L, LayerSink& sink, parts::PartsLibra
         // the parent pixmap. Picks up the layer's configured hull color +
         // thickness; falls back to a sensible default if never configured.
         if (displayHulls) {
-            auto* hull = new QGraphicsRectItem(areaPx);
+            // Prefer the part's alpha-derived convex hull (tight fit
+            // around the sprite's opaque pixels) when available; fall
+            // back to the axis-aligned bounding rect for parts with no
+            // pixmap. Rendered in scene coords so it rotates with the
+            // brick's transform just like any child item.
+            QGraphicsItem* hull = nullptr;
+            QPolygonF hullStuds = lib.hullPolygonStuds(brick.partNumber);
+            if (!hullStuds.isEmpty()) {
+                QPolygonF hullPx;
+                hullPx.reserve(hullStuds.size());
+                for (const QPointF& p : hullStuds) {
+                    hullPx.append(QPointF(p.x() * kPx, p.y() * kPx));
+                }
+                auto* poly = new QGraphicsPolygonItem(hullPx);
+                poly->setBrush(Qt::NoBrush);
+                // Attach to the brick item so the polygon rotates along
+                // with it (transform inheritance). Local coords are
+                // centered on the pixmap, matching the hull polygon's
+                // reference frame.
+                poly->setParentItem(item);
+                hull = poly;
+            } else {
+                auto* rect = new QGraphicsRectItem(areaPx);
+                rect->setBrush(Qt::NoBrush);
+                hull = rect;
+                sink.add(rect);
+            }
             QPen p(L.hull.color.color.isValid() ? L.hull.color.color : QColor(0, 0, 0));
             p.setWidthF(L.hull.thickness > 0 ? L.hull.thickness : 1);
             p.setCosmetic(true);
-            hull->setPen(p);
-            hull->setBrush(Qt::NoBrush);
+            if (auto* asPoly = qgraphicsitem_cast<QGraphicsPolygonItem*>(hull)) asPoly->setPen(p);
+            else if (auto* asRect = qgraphicsitem_cast<QGraphicsRectItem*>(hull)) asRect->setPen(p);
             hull->setZValue(brick.altitude + 0.5);
-            sink.add(hull);
         }
 
         // Altitude label centered on the brick — matches vanilla's
@@ -446,13 +459,28 @@ void addRulerLabel(LayerSink& sink, const QString& text,
     sink.add(t);
 }
 
-void addRulerLayer(const core::LayerRuler& L, LayerSink& sink, int layerIndex) {
+void addRulerLayer(const core::LayerRuler& L, LayerSink& sink, int layerIndex,
+                   const QHash<QString, QPointF>& brickCentreByGuid) {
+    // Helper: if a ruler endpoint is attached to a brick, return that
+    // brick's current world centre in stud coords; otherwise fall back
+    // to the ruler's stored point. This is what makes attached rulers
+    // track their bricks when the brick moves — we re-read the centre
+    // every build() instead of trusting the stored point.
+    auto resolveAnchor = [&](const QString& brickId, QPointF fallbackStud) -> QPointF {
+        if (brickId.isEmpty()) return fallbackStud;
+        auto it = brickCentreByGuid.constFind(brickId);
+        if (it == brickCentreByGuid.constEnd()) return fallbackStud;
+        return it.value();
+    };
+
     for (const auto& any : L.rulers) {
         if (any.kind == core::RulerKind::Linear) {
             const auto& r = any.linear;
-            // Anchor points (where the ruler attaches conceptually).
-            const QPointF anchor1(studToPx(r.point1.x()), studToPx(r.point1.y()));
-            const QPointF anchor2(studToPx(r.point2.x()), studToPx(r.point2.y()));
+            // Resolve each endpoint: attached → brick centre, unattached → stored point.
+            const QPointF p1Stud = resolveAnchor(r.attachedBrick1Id, r.point1);
+            const QPointF p2Stud = resolveAnchor(r.attachedBrick2Id, r.point2);
+            const QPointF anchor1(studToPx(p1Stud.x()), studToPx(p1Stud.y()));
+            const QPointF anchor2(studToPx(p2Stud.x()), studToPx(p2Stud.y()));
 
             // The MAIN drawn line is between the *offsetted* points when
             // AllowOffset is on — vanilla moves the visible measure line
@@ -483,7 +511,10 @@ void addRulerLayer(const core::LayerRuler& L, LayerSink& sink, int layerIndex) {
             // when displayDistance is on; otherwise one solid line.
             QGraphicsLineItem* selectableLine = nullptr;
             if (r.displayDistance) {
-                const QPointF delta = r.point2 - r.point1;
+                // Distance uses the RESOLVED endpoints so attached rulers
+                // show the current distance between their bricks, not the
+                // frozen-at-creation distance between stored points.
+                const QPointF delta = p2Stud - p1Stud;
                 const double distStuds = std::hypot(delta.x(), delta.y());
                 const QString text = r.displayUnit
                     ? formatDistance(distStuds, r.unit)
@@ -615,7 +646,9 @@ void addRulerLayer(const core::LayerRuler& L, LayerSink& sink, int layerIndex) {
         } else {
             const auto& r = any.circular;
             const double rPx = studToPx(r.radius);
-            const QPointF cPx(studToPx(r.center.x()), studToPx(r.center.y()));
+            // Resolve centre: attached → brick centre; unattached → stored point.
+            const QPointF cStud = resolveAnchor(r.attachedBrickId, r.center);
+            const QPointF cPx(studToPx(cStud.x()), studToPx(cStud.y()));
 
             auto* el = new QGraphicsEllipseItem(
                 cPx.x() - rPx, cPx.y() - rPx, 2 * rPx, 2 * rPx);
@@ -648,8 +681,8 @@ void SceneBuilder::setLiveSnapStepStuds(double snapStepStuds) {
     gSnapPx = snapStepStuds * kPixelsPerStud;
 }
 
-void SceneBuilder::setLiveConnectionSnapHook(LiveSnapHook hook) {
-    gLiveSnapHook = std::move(hook);
+void SceneBuilder::setSuppressItemSnap(bool suppress) {
+    gSuppressItemSnap = suppress;
 }
 
 SceneBuilder::SceneBuilder(QGraphicsScene& scene, parts::PartsLibrary& parts)
@@ -664,19 +697,33 @@ void SceneBuilder::clear() {
     for (auto* it : venueItems_)        { scene_.removeItem(it); delete it; }
     for (auto* it : worldLabelItems_)   { scene_.removeItem(it); delete it; }
     for (auto* it : moduleLabelItems_)  { scene_.removeItem(it); delete it; }
+    for (auto* it : electricItems_)     { scene_.removeItem(it); delete it; }
     venueItems_.clear();
     worldLabelItems_.clear();
     moduleLabelItems_.clear();
+    electricItems_.clear();
 }
 
 void SceneBuilder::build(const core::Map& map) {
     clear();
+    // Precompute every brick's world centre in studs so attached rulers,
+    // anchored labels, and any future cross-item feature can resolve the
+    // partner position by guid without a linear scan.
+    brickCentreByGuid_.clear();
+    for (const auto& layerPtr : map.layers()) {
+        if (!layerPtr || layerPtr->kind() != core::LayerKind::Brick) continue;
+        const auto& bl = static_cast<const core::LayerBrick&>(*layerPtr);
+        for (const auto& b : bl.bricks) {
+            brickCentreByGuid_.insert(b.guid, b.displayArea.center());
+        }
+    }
     addVenue(map);  // z = -100 so it sits beneath every layer
     for (size_t i = 0; i < map.layers().size(); ++i) {
         addLayer(*map.layers()[i], static_cast<int>(i));
     }
     addAnchoredLabels(map);
     addModuleLabels(map);
+    addElectricCircuits(map);
 }
 
 void SceneBuilder::addLayer(const core::Layer& L, int layerIndex) {
@@ -702,7 +749,8 @@ void SceneBuilder::addLayer(const core::Layer& L, int layerIndex) {
             addAreaLayer(static_cast<const core::LayerArea&>(L), sink);
             break;
         case core::LayerKind::Ruler:
-            addRulerLayer(static_cast<const core::LayerRuler&>(L), sink, layerIndex);
+            addRulerLayer(static_cast<const core::LayerRuler&>(L), sink, layerIndex,
+                          brickCentreByGuid_);
             break;
         case core::LayerKind::AnchoredText:
             break;
@@ -711,465 +759,6 @@ void SceneBuilder::addLayer(const core::Layer& L, int layerIndex) {
     // Apply per-layer transparency by scaling each item's opacity.
     if (opacity < 1.0) {
         for (auto* it : list) it->setOpacity(opacity);
-    }
-}
-
-void SceneBuilder::addVenue(const core::Map& map) {
-    if (!map.sidecar.venue || !map.sidecar.venue->enabled) return;
-    const auto& v = *map.sidecar.venue;
-
-    // Venue items live directly in the scene with a fixed low z so they
-    // render beneath every layer. Tracked in venueItems_ for cleanup.
-    LayerSink sink{ scene_, venueItems_, -100000.0, true };
-
-    // Walkway buffer: draw a translucent band on the INSIDE of every
-    // non-Wall edge (Door + Open). Walls are solid barriers so bricks
-    // can butt right up against them — no buffer needed. The band is
-    // `minWalkwayStuds` thick, on the left-hand side of each segment
-    // (the inside of a counter-clockwise polygon). Drawn BEFORE the
-    // edges so edge strokes render on top.
-    const double walkPx = v.minWalkwayStuds * kPx;
-    if (walkPx > 0.001) {
-        for (const auto& edge : v.edges) {
-            if (edge.kind == core::EdgeKind::Wall) continue;
-            if (edge.polyline.size() < 2) continue;
-            QPainterPath band;
-            // For each pair of consecutive points, add a thin parallel
-            // rectangle (segment + perpendicular offset into the venue).
-            for (int i = 1; i < edge.polyline.size(); ++i) {
-                const QPointF a = edge.polyline[i - 1] * kPx;
-                const QPointF b = edge.polyline[i]     * kPx;
-                const QPointF d = b - a;
-                const double len = std::hypot(d.x(), d.y());
-                if (len < 0.001) continue;
-                const QPointF nIn(-d.y() / len, d.x() / len);  // left-hand normal
-                const QPointF aIn = a + nIn * walkPx;
-                const QPointF bIn = b + nIn * walkPx;
-                QPolygonF quad; quad << a << b << bIn << aIn;
-                band.addPolygon(quad);
-            }
-            auto* bandItem = new QGraphicsPathItem(band);
-            bandItem->setPen(Qt::NoPen);
-            bandItem->setBrush(QBrush(QColor(255, 170, 0, 60),
-                                       Qt::BDiagPattern));
-            sink.add(bandItem);
-        }
-    }
-
-    for (const auto& edge : v.edges) {
-        if (edge.polyline.size() < 2) continue;
-        QPainterPath path;
-        path.moveTo(edge.polyline[0] * kPx);
-        for (int i = 1; i < edge.polyline.size(); ++i) {
-            path.lineTo(edge.polyline[i] * kPx);
-        }
-        auto* item = new QGraphicsPathItem(path);
-        QPen pen;
-        pen.setCosmetic(true);
-        // Beefier venue outline strokes — walls especially need to read as
-        // a bold border against bricks / grid, not a hairline.
-        switch (edge.kind) {
-            case core::EdgeKind::Wall:
-                pen.setColor(QColor(30, 30, 30));
-                pen.setWidthF(7.0);
-                break;
-            case core::EdgeKind::Door:
-                pen.setColor(QColor(0, 160, 0));
-                pen.setStyle(Qt::DashLine);
-                pen.setWidthF(5.0);
-                break;
-            case core::EdgeKind::Open:
-                pen.setColor(QColor(0, 0, 200));
-                pen.setStyle(Qt::DotLine);
-                pen.setWidthF(4.0);
-                break;
-        }
-        item->setPen(pen);
-        // Tag the edge as a venue item so MapView can surface edit /
-        // delete actions when the user clicks it.
-        item->setFlag(QGraphicsItem::ItemIsSelectable, true);
-        item->setData(kBrickDataLayerIndex, -1);
-        item->setData(kBrickDataGuid,       QStringLiteral("venue"));
-        item->setData(kBrickDataKind,       QStringLiteral("venue"));
-        sink.add(item);
-
-        // Measurement label on the OUTSIDE of each segment so the user
-        // sees the real-world length of every wall at a glance. Uses
-        // feet by default; computes the segment's stud length and
-        // converts back via 1 stud = 0.026248 ft.
-        if (edge.polyline.size() >= 2) {
-            const QPointF a = edge.polyline.first();
-            const QPointF b = edge.polyline.last();
-            const QPointF d = b - a;
-            const double lenStuds = std::hypot(d.x(), d.y());
-            if (lenStuds > 0.5) {
-                const double lenFt = lenStuds * 0.026248;
-                const double lenIn = lenFt * 12.0;
-                // Smart formatting: whole feet up to 100 ft, otherwise
-                // show feet with 2 decimals; for very short edges (<1 ft)
-                // switch to inches.
-                QString txt;
-                if (lenFt < 1.0) {
-                    txt = QStringLiteral("%1\"").arg(lenIn, 0, 'f', 1);
-                } else {
-                    txt = QStringLiteral("%1 ft").arg(lenFt, 0, 'f', 2);
-                }
-                if (!edge.label.isEmpty()) {
-                    txt = edge.label + QStringLiteral(" — ") + txt;
-                }
-
-                // Perpendicular "outside" normal. The vertices of a
-                // closed venue polygon go in a consistent winding; we
-                // don't know which side is interior, but the user can
-                // read labels on either side. We default to the
-                // right-hand normal (positive 90° rotation of the
-                // segment direction). Users can rebuild the polygon if
-                // they want them on the other side.
-                const QPointF unit(d.x() / lenStuds, d.y() / lenStuds);
-                const QPointF normal(-unit.y(), unit.x());
-                // Offset enough to clear the stroke thickness (up to
-                // 7 px wall + some padding).
-                constexpr double kLabelOffsetPx = 16.0;
-                const QPointF midStuds = (a + b) * 0.5;
-                const QPointF labelScenePos = midStuds * kPx
-                                              + normal * kLabelOffsetPx;
-
-                auto* lbl = new QGraphicsSimpleTextItem(txt);
-                QFont f(QStringLiteral("Sans"));
-                f.setBold(true);
-                f.setPixelSize(18);
-                lbl->setFont(f);
-                lbl->setBrush(QBrush(QColor(20, 20, 20)));
-                // Rotate the label along the segment so it reads
-                // parallel to the wall. Flip 180° if the natural angle
-                // would be upside-down.
-                double angleDeg = std::atan2(d.y(), d.x()) * 180.0 / M_PI;
-                if (angleDeg > 90.0 || angleDeg < -90.0) angleDeg += 180.0;
-                const QRectF tb = lbl->boundingRect();
-                QTransform tr;
-                tr.translate(labelScenePos.x(), labelScenePos.y());
-                tr.rotate(angleDeg);
-                tr.translate(-tb.width() / 2.0, -tb.height() / 2.0);
-                lbl->setTransform(tr);
-
-                // Semi-transparent white backdrop so the measurement
-                // stays readable against bricks / grid.
-                const QRectF sceneBb = lbl->sceneBoundingRect();
-                auto* bg = new QGraphicsRectItem(sceneBb.adjusted(-3, -1, 3, 1));
-                bg->setPen(Qt::NoPen);
-                bg->setBrush(QBrush(QColor(255, 255, 255, 220)));
-                sink.add(bg);
-                sink.add(lbl);
-            }
-        }
-    }
-    for (const auto& ob : v.obstacles) {
-        if (ob.polygon.size() < 3) continue;
-        QPolygonF poly;
-        for (const auto& p : ob.polygon) poly << p * kPx;
-        auto* item = new QGraphicsPolygonItem(poly);
-        QPen pen(QColor(90, 90, 90));
-        pen.setWidthF(1.0);
-        item->setPen(pen);
-        item->setBrush(QBrush(QColor(120, 120, 120, 100), Qt::BDiagPattern));
-        item->setFlag(QGraphicsItem::ItemIsSelectable, true);
-        item->setData(kBrickDataLayerIndex, -1);
-        item->setData(kBrickDataGuid,       QStringLiteral("venue"));
-        item->setData(kBrickDataKind,       QStringLiteral("venue"));
-        sink.add(item);
-    }
-}
-
-void SceneBuilder::addAnchoredLabels(const core::Map& map) {
-    if (map.sidecar.anchoredLabels.empty()) return;
-
-    // World-anchored labels go directly to the scene; brick/group/module
-    // anchors become children of their target so Qt transform inheritance
-    // moves them for free.
-    LayerSink sink{ scene_, worldLabelItems_, 100000.0, true };
-
-    for (const auto& lbl : map.sidecar.anchoredLabels) {
-        auto* t = new QGraphicsSimpleTextItem(lbl.text);
-        QFont f(lbl.font.familyName, static_cast<int>(lbl.font.sizePt));
-        f.setBold(lbl.font.styleString.contains(QStringLiteral("Bold")));
-        f.setItalic(lbl.font.styleString.contains(QStringLiteral("Italic")));
-        t->setFont(f);
-        t->setBrush(QBrush(lbl.color.color));
-        t->setRotation(lbl.offsetRotation);
-        // Tag the label so MapView can select / edit / delete it. layer
-        // index is always -1 for anchored labels (they live in the
-        // sidecar, not in a Layer).
-        t->setFlag(QGraphicsItem::ItemIsSelectable, true);
-        t->setFlag(QGraphicsItem::ItemIsMovable,    true);
-        t->setData(kBrickDataLayerIndex, -1);
-        t->setData(kBrickDataGuid,       lbl.id);
-        t->setData(kBrickDataKind,       QStringLiteral("label"));
-
-        if (lbl.kind == core::AnchorKind::Brick) {
-            auto it = brickByGuid_.constFind(lbl.targetId);
-            if (it != brickByGuid_.constEnd()) {
-                t->setParentItem(*it);
-                t->setPos(lbl.offset * kPx);
-                continue;
-            }
-            // fall through to world-positioned if anchor not found
-        }
-        // World (or unresolved): position in scene coords.
-        t->setPos(lbl.offset * kPx);
-        sink.add(t);
-    }
-}
-
-void SceneBuilder::addModuleLabels(const core::Map& map) {
-    if (map.sidecar.modules.empty()) return;
-    // User-controlled via View > Module Names. Default = on so the user
-    // sees annotations the first time they import / create a module.
-    QSettings vs;
-    if (!vs.value(QStringLiteral("view/moduleNames"), true).toBool()) return;
-    // Configurable frame thickness + label size (Preferences > Appearance).
-    const double frameThickness = std::clamp(
-        vs.value(QStringLiteral("view/moduleFrameThickness"), 5.0).toDouble(),
-        0.5, 40.0);
-    const double tickThickness  = std::max(1.0, frameThickness * 1.25);
-    // Module label size as a percentage of the module's long axis.
-    // Default 35 % — users can push higher for bolder annotation or
-    // lower for modest labels.
-    const double labelPercent = std::clamp(
-        vs.value(QStringLiteral("view/moduleLabelPercent"), 35.0).toDouble(),
-        5.0, 100.0);
-
-    // Module annotations sit above every layer so they're always
-    // visible. Tagged kind="moduleAnnotation" so they don't intercept
-    // selection — the user interacts with modules via the Modules panel.
-    LayerSink sink{ scene_, moduleLabelItems_, 200000.0, true };
-
-    static const QColor kPalette[] = {
-        QColor(230,  90,  40), QColor( 30, 150, 220), QColor( 60, 180,  90),
-        QColor(180,  90, 200), QColor(220, 160,  30), QColor( 90, 180, 200),
-        QColor(220,  80, 140),
-    };
-
-    // First pass: compute every module's frame rect. We need them up
-    // front so each label can avoid overlapping any other module's
-    // frame when it gets placed outside.
-    struct ModuleEntry { int idx; const core::Module* mod; QRectF framePx; QColor color; };
-    std::vector<ModuleEntry> modules;
-    {
-        int modIdx = 0;
-        for (const auto& mod : map.sidecar.modules) {
-            QRectF bbStuds;
-            for (const auto& L : map.layers()) {
-                if (!L || L->kind() != core::LayerKind::Brick) continue;
-                for (const auto& b : static_cast<const core::LayerBrick&>(*L).bricks) {
-                    if (mod.memberIds.contains(b.guid)) bbStuds = bbStuds.united(b.displayArea);
-                }
-            }
-            if (bbStuds.isEmpty()) { ++modIdx; continue; }
-            constexpr double kInsetStuds = 1.0;
-            const QRectF framePx(
-                (bbStuds.x()      - kInsetStuds) * kPx,
-                (bbStuds.y()      - kInsetStuds) * kPx,
-                (bbStuds.width()  + 2 * kInsetStuds) * kPx,
-                (bbStuds.height() + 2 * kInsetStuds) * kPx);
-            const QColor color = kPalette[modIdx % (sizeof(kPalette) / sizeof(kPalette[0]))];
-            modules.push_back({ modIdx, &mod, framePx, color });
-            ++modIdx;
-        }
-    }
-
-    // Track every label rect we've committed so subsequent labels can
-    // avoid landing on top of them (not just on other modules' frames).
-    std::vector<QRectF> placedLabels;
-
-    for (const auto& me : modules) {
-        const core::Module& mod = *me.mod;
-        const QRectF framePx = me.framePx;
-        const QColor color   = me.color;
-
-        // Double-stroke: solid dark outer + dashed colored inner. Keeps
-        // the frame visible against both light sky-blue map background
-        // and dark brick colors, without making the colored dashed pen
-        // invisible when it crosses similar-hued bricks.
-        auto* frameBack = new QGraphicsRectItem(framePx);
-        QPen backPen(QColor(20, 20, 20));
-        backPen.setWidthF(frameThickness + 3.0);
-        backPen.setCosmetic(true);
-        frameBack->setPen(backPen);
-        frameBack->setBrush(Qt::NoBrush);
-        sink.add(frameBack);
-
-        auto* frame = new QGraphicsRectItem(framePx);
-        QPen framePen(color);
-        framePen.setWidthF(frameThickness);
-        framePen.setCosmetic(true);
-        framePen.setStyle(Qt::DashLine);
-        frame->setPen(framePen);
-        frame->setBrush(Qt::NoBrush);
-        sink.add(frame);
-
-        constexpr double kTickPx = 12.0;
-        auto addCornerTicks = [&](QPointF corner, QPointF dx, QPointF dy) {
-            auto* h = new QGraphicsLineItem(corner.x(), corner.y(),
-                                              corner.x() + dx.x(), corner.y() + dx.y());
-            auto* v = new QGraphicsLineItem(corner.x(), corner.y(),
-                                              corner.x() + dy.x(), corner.y() + dy.y());
-            QPen p(color);
-            p.setWidthF(tickThickness); p.setCosmetic(true);
-            h->setPen(p); v->setPen(p);
-            sink.add(h); sink.add(v);
-        };
-        addCornerTicks(framePx.topLeft(),     QPointF( kTickPx, 0), QPointF(0,  kTickPx));
-        addCornerTicks(framePx.topRight(),    QPointF(-kTickPx, 0), QPointF(0,  kTickPx));
-        addCornerTicks(framePx.bottomLeft(),  QPointF( kTickPx, 0), QPointF(0, -kTickPx));
-        addCornerTicks(framePx.bottomRight(), QPointF(-kTickPx, 0), QPointF(0, -kTickPx));
-
-        // Module name. Default policy: ALWAYS place outside the
-        // module's enclosed area, on whichever side has clear space
-        // (no overlap with other modules). Vertical labels face
-        // the inside — i.e. text top points toward the module — so
-        // the name reads naturally when you look at the module.
-        //
-        // Only fall back to inside when every outside slot would
-        // collide with another module (dense layouts).
-        const QString name = mod.name.isEmpty() ? QStringLiteral("(unnamed module)") : mod.name;
-        const bool portrait = framePx.height() > framePx.width() * 1.1;
-
-        auto* label = new QGraphicsSimpleTextItem(name);
-        QFont lf(QStringLiteral("Sans"));
-        lf.setBold(true);
-        constexpr int kProbePx = 100;
-        lf.setPixelSize(kProbePx);
-        label->setFont(lf);
-        label->setBrush(QBrush(QColor(10, 10, 10)));
-        const QRectF probe = label->boundingRect();
-
-        auto othersOverlap = [&modules, &me, &placedLabels](const QRectF& r) {
-            for (const auto& other : modules) {
-                if (other.mod == me.mod) continue;
-                if (r.intersects(other.framePx)) return true;
-            }
-            for (const QRectF& placed : placedLabels) {
-                if (r.intersects(placed)) return true;
-            }
-            return false;
-        };
-
-        enum class Side { Top, Bottom, Left, Right, Inside };
-        struct Candidate { Side side; QPointF centre; QRectF labelBox; int fontPx; };
-
-        // Label size for outside placement: labelPercent% of the
-        // module's long axis, clamped to a sane readable range.
-        // Users tune labelPercent through Preferences > Appearance.
-        const double longAxis = portrait ? framePx.height() : framePx.width();
-        const int outsidePx = static_cast<int>(
-            std::clamp(longAxis * (labelPercent / 100.0), 16.0, 400.0));
-
-        // Rectangle the label would take at this font size (horizontal
-        // text). Vertical sides swap width/height.
-        lf.setPixelSize(outsidePx);
-        label->setFont(lf);
-        const QRectF outsideText = label->boundingRect();
-
-        auto boxAround = [](QPointF centre, double w, double h) {
-            return QRectF(centre.x() - w / 2.0 - 8.0,
-                          centre.y() - h / 2.0 - 4.0,
-                          w + 16.0, h + 8.0);
-        };
-
-        const double padOut = 16.0;
-        QPointF topC   (framePx.center().x(), framePx.top()    - outsideText.height() / 2.0 - padOut);
-        QPointF botC   (framePx.center().x(), framePx.bottom() + outsideText.height() / 2.0 + padOut);
-        QPointF leftC  (framePx.left()  - outsideText.height() / 2.0 - padOut, framePx.center().y());
-        QPointF rightC (framePx.right() + outsideText.height() / 2.0 + padOut, framePx.center().y());
-
-        // Try the short-axis sides first (labels look best parallel
-        // to the long axis). For landscape modules that's above/
-        // below; for portrait it's left/right. Within each pair, pick
-        // the non-colliding side; if both collide, try the long-axis
-        // sides; if every outside slot collides, fall back to inside.
-        std::vector<Candidate> tries;
-        const double hW = outsideText.width(), hH = outsideText.height();
-        if (portrait) {
-            tries.push_back({ Side::Left,   leftC,   boxAround(leftC,   hH, hW), outsidePx });
-            tries.push_back({ Side::Right,  rightC,  boxAround(rightC,  hH, hW), outsidePx });
-            tries.push_back({ Side::Top,    topC,    boxAround(topC,    hW, hH), outsidePx });
-            tries.push_back({ Side::Bottom, botC,    boxAround(botC,    hW, hH), outsidePx });
-        } else {
-            tries.push_back({ Side::Top,    topC,    boxAround(topC,    hW, hH), outsidePx });
-            tries.push_back({ Side::Bottom, botC,    boxAround(botC,    hW, hH), outsidePx });
-            tries.push_back({ Side::Left,   leftC,   boxAround(leftC,   hH, hW), outsidePx });
-            tries.push_back({ Side::Right,  rightC,  boxAround(rightC,  hH, hW), outsidePx });
-        }
-
-        Side chosenSide = Side::Inside;
-        QPointF centerPx;
-        int finalPx = outsidePx;
-        for (const auto& c : tries) {
-            if (!othersOverlap(c.labelBox)) {
-                chosenSide = c.side;
-                centerPx   = c.centre;
-                finalPx    = c.fontPx;
-                break;
-            }
-        }
-        if (chosenSide == Side::Inside) {
-            // Dense neighbourhood — fall back to centred inside,
-            // scaled to fill the interior so the name is still big.
-            const double interiorW = (portrait ? framePx.height() : framePx.width())  * 0.92;
-            const double interiorH = (portrait ? framePx.width()  : framePx.height()) * 0.55;
-            const double scaleW = (probe.width()  > 0) ? interiorW / probe.width()  : 1.0;
-            const double scaleH = (probe.height() > 0) ? interiorH / probe.height() : 1.0;
-            finalPx = std::max(24, static_cast<int>(kProbePx * std::min(scaleW, scaleH)));
-            centerPx = framePx.center();
-        }
-
-        // Re-set the font at the final size (outsidePx was a probe).
-        lf.setPixelSize(finalPx);
-        label->setFont(lf);
-        const QRectF lbb = label->boundingRect();
-
-        // Rotation: vertical sides (Left/Right + the portrait Inside
-        // case) rotate so the top of the text faces the INTERIOR of
-        // the module. Left-side label → top faces right → rotate -90°.
-        // Right-side label → top faces left → rotate +90°.
-        double rotation = 0.0;
-        const bool needsRotation = chosenSide == Side::Left
-                                    || chosenSide == Side::Right
-                                    || (chosenSide == Side::Inside && portrait);
-        if (needsRotation) {
-            if (chosenSide == Side::Right) rotation =  90.0;   // top → left  (inside)
-            else                            rotation = -90.0;  // top → right (inside) — default
-        }
-
-        QTransform tr;
-        tr.translate(centerPx.x(), centerPx.y());
-        if (rotation != 0.0) tr.rotate(rotation);
-        tr.translate(-lbb.width() / 2.0, -lbb.height() / 2.0);
-        label->setTransform(tr);
-
-        // High-contrast backdrop: solid white fill with a thick
-        // coloured border + subtle drop-shadow-like offset rect for
-        // separation from the map behind. Replaces the previous
-        // alpha-60 translucent tint which washed out against
-        // busy-colored bricks.
-        const QRectF lsbr = label->sceneBoundingRect();
-        const QRectF bgRect = lsbr.adjusted(-8, -4, 8, 4);
-        auto* shadow = new QGraphicsRectItem(bgRect.translated(2, 2));
-        shadow->setPen(Qt::NoPen);
-        shadow->setBrush(QBrush(QColor(0, 0, 0, 80)));
-        sink.add(shadow);
-        auto* bg = new QGraphicsRectItem(bgRect);
-        QPen bgPen(color.darker(130));
-        bgPen.setWidthF(2.0);
-        bgPen.setCosmetic(true);
-        bg->setPen(bgPen);
-        bg->setBrush(QBrush(QColor(255, 255, 255)));
-        sink.add(bg);
-        sink.add(label);
-        // Remember this label's footprint so the next module's label
-        // avoids it — user requested "labels shouldn't overlap other
-        // modules' labels", not just frames.
-        placedLabels.push_back(bgRect);
     }
 }
 

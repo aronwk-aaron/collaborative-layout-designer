@@ -1,6 +1,9 @@
 add_library(cld_rendering STATIC
     SceneBuilder.cpp
     SceneBuilder.h
+    SceneBuilderInternal.h
+    SceneBuilderElectric.cpp
+    SceneBuilderSidecar.cpp
     MapScene.h
 )
 

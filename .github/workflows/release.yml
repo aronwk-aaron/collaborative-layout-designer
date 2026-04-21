@@ -1,38 +1,10 @@
-name: CI
+name: Release
 
 on:
-  pull_request:
-    branches: [main]
+  push:
+    tags: ['v*']
 
 jobs:
-  commit-lint:
-    name: Conventional Commits
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Validate PR commits
-        run: |
-          PATTERN='^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\(.+\))?!?: .+'
-          FAILED=0
-          while IFS= read -r msg; do
-            if ! echo "$msg" | grep -qE "$PATTERN"; then
-              echo "::error::Bad commit message: $msg"
-              echo "  Expected format: type(scope): description"
-              echo "  Types: feat fix docs style refactor perf test build ci chore revert"
-              FAILED=1
-            fi
-          done < <(git log --format='%s' origin/main..HEAD)
-
-          if [ "$FAILED" -eq 1 ]; then
-            echo ""
-            echo "All commits must follow Conventional Commits: https://www.conventionalcommits.org"
-            exit 1
-          fi
-          echo "All commits follow conventional commit format."
-
   build:
     strategy:
       fail-fast: false
@@ -92,9 +64,7 @@ jobs:
         run: |
           mkdir -p dist/collaborative-layout-designer
           cp build/src/app/collaborative-layout-designer dist/collaborative-layout-designer/
-          # Bundle the parts library so the tarball is self-contained.
           cp -r parts/BlueBrickParts dist/collaborative-layout-designer/parts
-          # Bundle compiled translations, if any.
           if ls build/*.qm 1>/dev/null 2>&1; then
             mkdir -p dist/collaborative-layout-designer/translations
             cp build/*.qm dist/collaborative-layout-designer/translations/
@@ -110,14 +80,9 @@ jobs:
           APP=dist/CollaborativeLayoutDesigner.app
           mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
           cp build/src/app/collaborative-layout-designer "$APP/Contents/MacOS/collaborative-layout-designer"
-          # Bundle the parts library inside Resources so the app works
-          # self-contained when dragged out of the zip.
           cp -r parts/BlueBrickParts "$APP/Contents/Resources/BlueBrickParts"
-          if ls build/*.qm 1>/dev/null 2>&1; then
-            mkdir -p "$APP/Contents/MacOS/translations"
-            cp build/*.qm "$APP/Contents/MacOS/translations/"
-          fi
-          cat > "$APP/Contents/Info.plist" << 'PLIST'
+          VERSION="${GITHUB_REF_NAME#v}"
+          cat > "$APP/Contents/Info.plist" << PLIST
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0">
@@ -125,8 +90,8 @@ jobs:
             <key>CFBundleExecutable</key><string>collaborative-layout-designer</string>
             <key>CFBundleName</key><string>Collaborative Layout Designer</string>
             <key>CFBundleIdentifier</key><string>com.collaborative-layout-designer.app</string>
-            <key>CFBundleVersion</key><string>0.1</string>
-            <key>CFBundleShortVersionString</key><string>0.1</string>
+            <key>CFBundleVersion</key><string>${VERSION}</string>
+            <key>CFBundleShortVersionString</key><string>${VERSION}</string>
             <key>LSMinimumSystemVersion</key><string>11.0</string>
             <key>NSHighResolutionCapable</key><true/>
           </dict>
@@ -142,9 +107,7 @@ jobs:
           mkdir -p dist/collaborative-layout-designer
           cp build/src/app/Release/collaborative-layout-designer.exe dist/collaborative-layout-designer/ 2>/dev/null || \
           cp build/src/app/collaborative-layout-designer.exe dist/collaborative-layout-designer/
-          # Bundle Qt runtime + plugins next to the exe.
           windeployqt dist/collaborative-layout-designer/collaborative-layout-designer.exe
-          # Bundle parts library so the zip is self-contained.
           cp -r parts/BlueBrickParts dist/collaborative-layout-designer/parts
           if ls build/*.qm 1>/dev/null 2>&1; then
             mkdir -p dist/collaborative-layout-designer/translations
@@ -159,3 +122,71 @@ jobs:
         with:
           name: ${{ matrix.artifact }}
           path: ${{ matrix.artifact }}.*
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Generate release notes
+        id: notes
+        run: |
+          CURRENT_TAG="${GITHUB_REF#refs/tags/}"
+          PREV_TAG=$(git tag --sort=-creatordate | grep -A1 "^${CURRENT_TAG}$" | tail -1)
+          TAG_MSG=$(git tag -l --format='%(contents)' "$CURRENT_TAG" | head -20)
+
+          {
+            echo 'BODY<<ENDOFNOTES'
+            echo "> ⚠️ **AI-assisted / "vibe-coded" build.** See README for the full"
+            echo "> warning. Keep backups of any \`.bbm\` you care about."
+            echo ""
+
+            if [ -n "$TAG_MSG" ] && [ "$TAG_MSG" != "$CURRENT_TAG" ]; then
+              echo "$TAG_MSG"
+              echo ""
+            fi
+
+            if [ -n "$PREV_TAG" ] && [ "$PREV_TAG" != "$CURRENT_TAG" ]; then
+              RANGE="${PREV_TAG}..${CURRENT_TAG}"
+            else
+              RANGE="HEAD~20..HEAD"
+            fi
+
+            COMMITS=$(git log "$RANGE" --pretty=format:"%s" --no-merges)
+
+            BREAKING=$(echo "$COMMITS"   | grep -E '^[a-z]+(\(.+\))?!: '  | sed 's/^/- /' || true)
+            FEAT=$(echo "$COMMITS"       | grep -E '^feat(\(.+\))?: '    | sed 's/^/- /' || true)
+            FIX=$(echo "$COMMITS"        | grep -E '^fix(\(.+\))?: '     | sed 's/^/- /' || true)
+            PERF=$(echo "$COMMITS"       | grep -E '^perf(\(.+\))?: '    | sed 's/^/- /' || true)
+            DOCS=$(echo "$COMMITS"       | grep -E '^docs(\(.+\))?: '    | sed 's/^/- /' || true)
+            CI_BUILD=$(echo "$COMMITS"   | grep -E '^(ci|build)(\(.+\))?: ' | sed 's/^/- /' || true)
+            OTHER=$(echo "$COMMITS"      | grep -vE '^(feat|fix|perf|docs|ci|build|style|refactor|test|chore|revert)(\(.+\))?!?: ' | sed 's/^/- /' || true)
+
+            if [ -n "$BREAKING" ]; then echo "### ⚠ Breaking Changes";   echo "$BREAKING"; echo ""; fi
+            if [ -n "$FEAT" ];     then echo "### Features";              echo "$FEAT";     echo ""; fi
+            if [ -n "$FIX" ];      then echo "### Bug Fixes";             echo "$FIX";      echo ""; fi
+            if [ -n "$PERF" ];     then echo "### Performance";           echo "$PERF";     echo ""; fi
+            if [ -n "$DOCS" ];     then echo "### Documentation";         echo "$DOCS";     echo ""; fi
+            if [ -n "$CI_BUILD" ]; then echo "### Build & CI";            echo "$CI_BUILD"; echo ""; fi
+            if [ -n "$OTHER" ];    then echo "### Other Changes";         echo "$OTHER";    echo ""; fi
+
+            echo 'ENDOFNOTES'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          body: ${{ steps.notes.outputs.BODY }}

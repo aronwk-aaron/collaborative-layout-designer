@@ -18,6 +18,7 @@
 #include <QLineEdit>
 #include <QMessageBox>
 #include <QPushButton>
+#include <QTimer>
 #include <QUndoStack>
 #include <QVBoxLayout>
 
@@ -67,12 +68,14 @@ FindDialog::FindDialog(MapView& view, QWidget* parent)
         return hay.contains(needle, cs);
     };
 
-    connect(findBtn, &QPushButton::clicked, this, [&view, scope, findE, caseChk, status, matchesText]{
+    // The search pass. Extracted so both the explicit "Find Next" button
+    // and the live-update debounced retrigger can share it.
+    auto runSearch = [&view, scope, findE, caseChk, status, matchesText]{
         auto* map = view.currentMap();
         if (!map) return;
         const Qt::CaseSensitivity cs = caseChk->isChecked() ? Qt::CaseSensitive : Qt::CaseInsensitive;
         const QString needle = findE->text();
-        if (needle.isEmpty()) { status->setText(QObject::tr("Enter a search term.")); return; }
+        if (needle.isEmpty()) { view.deselectAll(); status->clear(); return; }
 
         view.deselectAll();
         int matches = 0;
@@ -101,7 +104,25 @@ FindDialog::FindDialog(MapView& view, QWidget* parent)
             }
         }
         status->setText(QObject::tr("%1 match(es).").arg(matches));
-    });
+    };
+    connect(findBtn, &QPushButton::clicked, this, runSearch);
+
+    // Live-update: debounce at 200 ms so typing doesn't redo the scan on
+    // every keystroke but still feels responsive. Triggered from every
+    // input that affects the result set (text, scope, case).
+    auto* debounce = new QTimer(this);
+    debounce->setSingleShot(true);
+    debounce->setInterval(200);
+    connect(debounce, &QTimer::timeout, this, runSearch);
+    auto schedule = [debounce]{ debounce->start(); };
+    connect(findE, &QLineEdit::textChanged, this, [schedule](const QString&){ schedule(); });
+    connect(scope, &QComboBox::currentIndexChanged, this, [schedule](int){ schedule(); });
+    connect(caseChk, &QCheckBox::toggled, this, [schedule](bool){ schedule(); });
+
+    // Re-run the search whenever the map mutates (e.g. user edits a text
+    // cell while the dialog is open), so the match list stays accurate.
+    connect(view.undoStack(), &QUndoStack::indexChanged, this,
+            [schedule](int){ schedule(); });
 
     auto doReplace = [&view, scope, findE, replaceE, caseChk, status](bool all) {
         auto* map = view.currentMap();

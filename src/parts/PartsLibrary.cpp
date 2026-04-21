@@ -3,7 +3,10 @@
 #include <QDirIterator>
 #include <QFile>
 #include <QFileInfo>
+#include <QImage>
 #include <QXmlStreamReader>
+
+#include <algorithm>
 
 namespace cld::parts {
 
@@ -48,9 +51,25 @@ void readConnexionList(QXmlStreamReader& r, QList<PartConnectionPoint>& out) {
             if      (n == QStringLiteral("type"))     c.type = r.readElementText().trimmed();
             else if (n == QStringLiteral("position")) c.position = readPositionBlock(r);
             else if (n == QStringLiteral("angle"))    c.angleDegrees = r.readElementText().toDouble();
+            else if (n == QStringLiteral("electricPlug")) c.electricPlug = r.readElementText().toInt();
             else r.skipCurrentElement();
         }
         out.push_back(std::move(c));
+    }
+}
+
+void readSubPartList(QXmlStreamReader& r, QList<PartSubPart>& out) {
+    while (r.readNextStartElement()) {
+        if (r.name() != QStringLiteral("SubPart")) { r.skipCurrentElement(); continue; }
+        PartSubPart sp;
+        sp.subKey = r.attributes().value(QStringLiteral("id")).toString();
+        while (r.readNextStartElement()) {
+            const auto n = r.name();
+            if      (n == QStringLiteral("position")) sp.position = readPositionBlock(r);
+            else if (n == QStringLiteral("angle"))    sp.angleDegrees = r.readElementText().toDouble();
+            else r.skipCurrentElement();
+        }
+        out.push_back(std::move(sp));
     }
 }
 
@@ -71,6 +90,7 @@ bool parsePartXml(const QString& xmlPath, PartMetadata& out) {
             else if (n == QStringLiteral("SortingKey")) out.sortingKey = r.readElementText().trimmed();
             else if (n == QStringLiteral("Description")) readDescriptions(r, out.descriptions);
             else if (n == QStringLiteral("ConnexionList")) readConnexionList(r, out.connections);
+            else if (n == QStringLiteral("SubPartList"))   readSubPartList(r, out.subparts);
             else r.skipCurrentElement();
         }
         return !r.hasError();
@@ -151,9 +171,94 @@ QPixmap PartsLibrary::pixmap(const QString& key) {
     return pm;
 }
 
+namespace {
+
+// Andrew's monotone-chain convex hull. Input points may contain duplicates;
+// output is a simple polygon ordered counter-clockwise in image coords
+// (y-down), first point repeated at the end is NOT added — callers treat
+// it as implicitly closed.
+QVector<QPointF> convexHull(QVector<QPointF> pts) {
+    if (pts.size() < 3) return pts;
+    std::sort(pts.begin(), pts.end(),
+              [](QPointF a, QPointF b){
+                  return a.x() == b.x() ? a.y() < b.y() : a.x() < b.x();
+              });
+    const int n = pts.size();
+    QVector<QPointF> hull;
+    hull.reserve(2 * n);
+    auto cross = [](QPointF O, QPointF A, QPointF B){
+        return (A.x() - O.x()) * (B.y() - O.y()) - (A.y() - O.y()) * (B.x() - O.x());
+    };
+    // Lower hull.
+    for (int i = 0; i < n; ++i) {
+        while (hull.size() >= 2 && cross(hull[hull.size() - 2], hull.back(), pts[i]) <= 0)
+            hull.pop_back();
+        hull.push_back(pts[i]);
+    }
+    // Upper hull.
+    const int lower = hull.size() + 1;
+    for (int i = n - 2; i >= 0; --i) {
+        while (hull.size() >= lower && cross(hull[hull.size() - 2], hull.back(), pts[i]) <= 0)
+            hull.pop_back();
+        hull.push_back(pts[i]);
+    }
+    hull.pop_back();  // first point duplicated at end
+    return hull;
+}
+
+}  // namespace
+
+QPolygonF PartsLibrary::hullPolygonStuds(const QString& key) {
+    const QString lk = key.toLower();
+    auto cached = hullCache_.constFind(lk);
+    if (cached != hullCache_.constEnd()) return cached.value();
+
+    QPixmap pm = pixmap(lk);
+    if (pm.isNull()) { hullCache_.insert(lk, {}); return {}; }
+
+    const QImage img = pm.toImage().convertToFormat(QImage::Format_ARGB32);
+    const int w = img.width();
+    const int h = img.height();
+    if (w < 2 || h < 2) { hullCache_.insert(lk, {}); return {}; }
+
+    // Sample opaque pixels on a coarse stride to keep hull computation fast
+    // for big sprites. 2px stride is enough granularity for silhouettes at
+    // BlueBrick's 8 px/stud scale (~¼ stud). Edge pixels are always kept
+    // so the hull touches the exact outline.
+    constexpr int kStride = 2;
+    constexpr int kAlphaThreshold = 32;
+    QVector<QPointF> pts;
+    pts.reserve((w * h) / (kStride * kStride));
+    for (int y = 0; y < h; y += kStride) {
+        const QRgb* line = reinterpret_cast<const QRgb*>(img.constScanLine(y));
+        for (int x = 0; x < w; x += kStride) {
+            if (qAlpha(line[x]) >= kAlphaThreshold) {
+                pts.append(QPointF(x, y));
+            }
+        }
+    }
+    if (pts.size() < 3) { hullCache_.insert(lk, {}); return {}; }
+
+    // Compute hull in pixel coords, then translate to part-local coords
+    // centred on the pixmap (so hullPolygonStuds aligns with the brick
+    // item's setPos(centerPx) + setOffset(-w/2,-h/2) rendering model)
+    // and divide by 8 px/stud.
+    const auto hullPx = convexHull(pts);
+    QPolygonF result;
+    result.reserve(hullPx.size());
+    constexpr double kPxPerStud = 8.0;
+    for (const QPointF& p : hullPx) {
+        result.append(QPointF((p.x() - w / 2.0) / kPxPerStud,
+                              (p.y() - h / 2.0) / kPxPerStud));
+    }
+    hullCache_.insert(lk, result);
+    return result;
+}
+
 void PartsLibrary::clear() {
     index_.clear();
     pixmapCache_.clear();
+    hullCache_.clear();
 }
 
 }

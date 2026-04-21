@@ -80,6 +80,41 @@ DeleteBricksCommand::DeleteBricksCommand(core::Map& map, std::vector<Entry> entr
 }
 
 void DeleteBricksCommand::redo() {
+    // First delete pass: compute, once, which modules are affected so undo
+    // has a complete before-picture. After that, redos re-apply the cached
+    // delta rather than recomputing (the sidecar shape may have changed
+    // during undo/redo cycles, but the original decision stands).
+    if (!moduleDeltaReady_) {
+        QSet<QString> deletedGuids;
+        for (const auto& e : entries_) deletedGuids.insert(e.brick.guid);
+
+        for (int i = static_cast<int>(map_.sidecar.modules.size()) - 1; i >= 0; --i) {
+            const auto& mod = map_.sidecar.modules[i];
+            const QSet<QString> intersection = mod.memberIds & deletedGuids;
+            if (intersection.isEmpty()) continue;
+
+            ModuleEdit edit;
+            edit.id = mod.id;
+            edit.beforeMemberIds = mod.memberIds;
+            edit.afterMemberIds  = mod.memberIds;
+            edit.afterMemberIds.subtract(deletedGuids);
+
+            if (edit.afterMemberIds.isEmpty()) {
+                ModuleRemoval rem;
+                rem.index  = i;
+                rem.module = mod;
+                moduleRemovals_.push_back(std::move(rem));
+            } else {
+                moduleEdits_.push_back(std::move(edit));
+            }
+        }
+        // Removals were pushed high-index-first; undo inserts low-index-first
+        // so keep the vector sorted ascending.
+        std::sort(moduleRemovals_.begin(), moduleRemovals_.end(),
+                  [](const ModuleRemoval& a, const ModuleRemoval& b){ return a.index < b.index; });
+        moduleDeltaReady_ = true;
+    }
+
     for (const auto& e : entries_) {
         if (auto* L = brickLayer(map_, e.layerIndex)) {
             for (auto it = L->bricks.begin(); it != L->bricks.end(); ++it) {
@@ -87,9 +122,35 @@ void DeleteBricksCommand::redo() {
             }
         }
     }
+
+    // Apply module delta: trim edited modules, then drop the emptied ones
+    // (high-index first so the indices stay valid as we erase).
+    for (const auto& ed : moduleEdits_) {
+        for (auto& mod : map_.sidecar.modules) {
+            if (mod.id == ed.id) { mod.memberIds = ed.afterMemberIds; break; }
+        }
+    }
+    for (auto it = moduleRemovals_.rbegin(); it != moduleRemovals_.rend(); ++it) {
+        if (it->index >= 0 && it->index < static_cast<int>(map_.sidecar.modules.size())) {
+            map_.sidecar.modules.erase(map_.sidecar.modules.begin() + it->index);
+        }
+    }
 }
 
 void DeleteBricksCommand::undo() {
+    // Reinsert removed modules at their recorded indices (low-index first
+    // so later insertions don't shift earlier ones).
+    for (const auto& rem : moduleRemovals_) {
+        const int idx = std::min<int>(rem.index, static_cast<int>(map_.sidecar.modules.size()));
+        map_.sidecar.modules.insert(map_.sidecar.modules.begin() + idx, rem.module);
+    }
+    // Restore trimmed memberIds.
+    for (const auto& ed : moduleEdits_) {
+        for (auto& mod : map_.sidecar.modules) {
+            if (mod.id == ed.id) { mod.memberIds = ed.beforeMemberIds; break; }
+        }
+    }
+
     // Restore in original order (forward iteration; insertAt indices were
     // captured before deletion and remain valid if we insert in order).
     for (const auto& e : entries_) {

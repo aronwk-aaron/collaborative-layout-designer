@@ -1,0 +1,195 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/aronwk/collaborative-layout-designer/docs/bbm-cld-schema.json",
+  "title": ".bbm.cld sidecar",
+  "description": "Fork-only metadata for a BlueBrick .bbm map: cross-layer modules, anchored text labels, and event-venue geometry. Lives next to the .bbm so vanilla BlueBrick 1.9.2 can still open the .bbm cleanly without needing any fork awareness.",
+  "type": "object",
+  "required": ["schemaVersion"],
+  "additionalProperties": true,
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Sidecar schema version. 1 is the only version shipped so far. Readers should reject versions newer than they understand."
+    },
+    "bbmHashSha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]*$",
+      "description": "Lowercase hex SHA-256 of the sibling .bbm file's bytes at the time this sidecar was written. On load, readers compare against the current .bbm hash — a mismatch means the .bbm was edited externally (e.g. in vanilla BlueBrick), and anchored-label targets / module members may need re-linking. Empty string = hash not computed."
+    },
+    "anchoredLabels": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/anchoredLabel" },
+      "description": "Text labels whose position sticks to a target item (brick / group / module) when the target moves or rotates. On .bbm save, also written flattened to world-coordinate text cells so vanilla still renders them in the right place at snapshot time."
+    },
+    "modules": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/module" },
+      "description": "Cross-layer groups — bundles items across multiple layers into a named unit that moves or rotates together. A module's per-layer subset is also written as a vanilla same-layer Group inside the .bbm so vanilla sees reasonable grouping within each affected layer."
+    },
+    "venue": {
+      "anyOf": [
+        { "$ref": "#/definitions/venue" },
+        { "type": "null" }
+      ],
+      "description": "Optional physical event space the layout targets: outline, edge classifications (wall / door / open), interior obstacles, walkway buffer. A project has at most one venue. Vanilla BlueBrick has no Venue concept; the .bbm.cld is the only place this lives."
+    }
+  },
+
+  "definitions": {
+    "color": {
+      "type": "object",
+      "description": "Color with optional KnownColor preservation for round-trip.",
+      "properties": {
+        "known": {
+          "type": "boolean",
+          "description": "True iff this color came from a .NET KnownColor enum rather than free-form ARGB."
+        },
+        "argb": {
+          "type": "integer",
+          "description": "32-bit ARGB packed int (QColor::rgba())."
+        },
+        "name": {
+          "type": "string",
+          "description": "KnownColor enum name (e.g. 'Red', 'Black'). Present iff known=true."
+        }
+      },
+      "required": ["known", "argb"]
+    },
+    "font": {
+      "type": "object",
+      "description": "Font spec round-tripped as .NET System.Drawing.Font triple.",
+      "properties": {
+        "family": { "type": "string" },
+        "size":   { "type": "number", "description": "Points, like .NET SizeInPoints." },
+        "style":  { "type": "string", "description": "Comma-separated list from {Regular,Bold,Italic,Underline,Strikeout}." }
+      },
+      "required": ["family", "size", "style"]
+    },
+    "point": {
+      "type": "object",
+      "properties": {
+        "x": { "type": "number" },
+        "y": { "type": "number" }
+      },
+      "required": ["x", "y"]
+    },
+
+    "anchoredLabel": {
+      "type": "object",
+      "properties": {
+        "id":   { "type": "string" },
+        "text": { "type": "string" },
+        "font": { "$ref": "#/definitions/font" },
+        "color": { "$ref": "#/definitions/color" },
+        "kind": {
+          "type": "integer",
+          "enum": [0, 1, 2, 3],
+          "description": "AnchorKind — 0=World (absolute world-stud offset), 1=Brick (offset is in target-brick local coords; moves with the brick), 2=Group (attached to an upstream same-layer Group), 3=Module (attached to a cross-layer Module)."
+        },
+        "targetId": {
+          "type": "string",
+          "description": "guid of the anchor target. Meaning depends on `kind`: brick.guid for Brick, group.guid for Group, module.id for Module, ignored (empty) for World."
+        },
+        "offset":  { "$ref": "#/definitions/point", "description": "Offset from the anchor, in studs. Interpretation depends on `kind` (world coords for World, local coords for everything else)." },
+        "rot":     { "type": "number", "description": "Rotation of the label relative to the target, in degrees." },
+        "minZoom": { "type": "number", "description": "Optional visibility cutoff: label hidden at zooms below this. 0 = always visible." }
+      },
+      "required": ["id", "text", "kind", "targetId", "offset"]
+    },
+
+    "module": {
+      "type": "object",
+      "properties": {
+        "id":   { "type": "string", "description": "Sidecar-scope unique id (UUID)." },
+        "name": { "type": "string" },
+        "members": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "guids of every item in the module, across any layer. Can include brick / text / ruler guids."
+        },
+        "transform": {
+          "type": "array",
+          "items": { "type": "number" },
+          "minItems": 9, "maxItems": 9,
+          "description": "3×3 QTransform matrix in row-major order (m11 m12 m13 m21 m22 m23 m31 m32 m33). Identity is [1,0,0,0,1,0,0,0,1]."
+        },
+        "sourceFile": {
+          "type": "string",
+          "description": "Path of the .bbm this module was imported from, when applicable. Relative or absolute is caller-dependent."
+        },
+        "importedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO-8601 timestamp of the import. Absent when the module was created from selection rather than imported."
+        }
+      },
+      "required": ["id", "name", "members", "transform"]
+    },
+
+    "venue": {
+      "type": "object",
+      "properties": {
+        "name":    { "type": "string" },
+        "enabled": { "type": "boolean", "description": "Allows the user to toggle the venue off without deleting it." },
+        "minWalkwayStuds": {
+          "type": "number",
+          "description": "Minimum walkway clearance from the inside of Door / Open edges. In studs (converted to/from mm per BlueBrick convention: 1 stud = 8 mm)."
+        },
+        "bounds": {
+          "type": "object",
+          "description": "Optional explicit reserved layout footprint. When empty, the footprint is inferred from `edges`.",
+          "properties": {
+            "x": { "type": "number" },
+            "y": { "type": "number" },
+            "w": { "type": "number" },
+            "h": { "type": "number" }
+          }
+        },
+        "edges": {
+          "type": "array",
+          "description": "Closed loop of segments making up the venue perimeter. Each edge is polyline + kind. Order matters (adjacent edges share endpoints).",
+          "items": { "$ref": "#/definitions/venueEdge" }
+        },
+        "obstacles": {
+          "type": "array",
+          "description": "Interior polygons (pillars, columns, fixed furniture) that bricks mustn't overlap.",
+          "items": { "$ref": "#/definitions/venueObstacle" }
+        }
+      }
+    },
+    "venueEdge": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "integer",
+          "enum": [0, 1, 2],
+          "description": "EdgeKind — 0=Wall (solid barrier, no walkway buffer needed), 1=Door (walkway clearance required; `doorWidthStuds` > 0), 2=Open (no barrier, indicates viewing side; walkway buffer applies)."
+        },
+        "doorWidthStuds": {
+          "type": "number",
+          "description": "Door clear width in studs. Only meaningful when `kind == 1` (Door)."
+        },
+        "label":   { "type": "string", "description": "Optional caption (e.g. 'Main entrance')." },
+        "poly":    {
+          "type": "array",
+          "items": { "$ref": "#/definitions/point" },
+          "description": "Segment polyline in world studs. Most edges are two points; curved doors can use more."
+        }
+      },
+      "required": ["kind", "poly"]
+    },
+    "venueObstacle": {
+      "type": "object",
+      "properties": {
+        "label": { "type": "string" },
+        "poly":  {
+          "type": "array",
+          "items": { "$ref": "#/definitions/point" },
+          "description": "Closed polygon in world studs."
+        }
+      },
+      "required": ["poly"]
+    }
+  }
+}

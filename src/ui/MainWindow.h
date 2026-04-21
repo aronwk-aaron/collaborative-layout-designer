@@ -69,6 +69,7 @@ private:
     PartsBrowser* partsBrowser_ = nullptr;
     class ModulesPanel* modulesPanel_ = nullptr;
     class ModuleLibraryPanel* moduleLibraryPanel_ = nullptr;
+    class PartUsagePanel* partUsagePanel_ = nullptr;
 
     QString currentFilePath_;
     int     cleanUndoIndex_ = 0;   // index at which the stack is "clean"
@@ -85,6 +86,7 @@ private:
     // the last-opened file, we offer to restore it (see restoreAutosaveIfAny).
     class QTimer* autosaveTimer_ = nullptr;
     void performAutosave();
+    void performAutosaveThrottled();  // called on every undo-stack change
 public:
     // Returns the path where the autosave file lives for the current session
     // (AppDataLocation/autosave.bbm). Public so main.cpp can check on startup.

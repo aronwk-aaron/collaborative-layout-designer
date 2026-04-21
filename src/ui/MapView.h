@@ -22,6 +22,8 @@ namespace cld::rendering { class SceneBuilder; }
 
 namespace cld::ui {
 
+class SelectionOverlay;
+
 class MapView : public QGraphicsView {
     Q_OBJECT
 public:
@@ -104,7 +106,16 @@ signals:
 
 protected:
     void wheelEvent(QWheelEvent* e) override;
+    // Viewport event filter — installed on viewport() so wheel events
+    // funnel through our wheelEvent() only and never reach the
+    // QAbstractScrollArea base class, which would otherwise pan the
+    // viewport via (hidden) scrollbars.
+    bool eventFilter(QObject* obj, QEvent* ev) override;
     void drawBackground(QPainter* painter, const QRectF& rect) override;
+    // Draws the persistent scale-indicator bar in the lower-left of the
+    // viewport after the rest of the scene. Using drawForeground keeps
+    // the readout pinned to the viewport corner regardless of pan / zoom.
+    void drawForeground(QPainter* painter, const QRectF& rect) override;
     void mousePressEvent(QMouseEvent* e) override;
     void mouseMoveEvent(QMouseEvent* e) override;
     void mouseReleaseEvent(QMouseEvent* e) override;
@@ -141,6 +152,17 @@ private:
 
     void captureDragStart();
     void commitDragIfMoved();
+    // Run connection snap as a single rigid group shift during drag. Called
+    // after QGraphicsView::mouseMoveEvent has translated every selected
+    // item by the mouse delta. If a snap fires, translates all dragged
+    // items by the snap shift so connections take priority over Qt's
+    // built-in per-item drag and over grid snap.
+    void applyLiveConnectionSnap();
+    // Generous snap radius around free connection points. BlueBrick's
+    // getMovedSnapPoint uses roughly 2 × grid step as the search range;
+    // we use the larger of 16 studs (half a brick-unit wide) and 2 × grid
+    // step so connections feel "sticky" even on a 1-stud grid.
+    double connectionSnapThresholdStuds() const;
     std::vector<BrickOriginSnapshot> selectedBrickSnapshots() const;
 
     parts::PartsLibrary& parts_;
@@ -155,6 +177,23 @@ private:
     // Middle-mouse pan state.
     bool    panning_ = false;
     QPoint  panAnchor_;
+
+    // Mouse position in scene coords, updated on every press and move. The
+    // connection-snap code reads this so the connection point closest to
+    // the cursor — not to some arbitrary "anchor" brick — drives snapping
+    // for multi-brick group drags.
+    QPointF lastMouseScenePos_;
+
+    // BlueBrick-style master-brick snap anchor. Set at mouse-press from
+    // whichever brick the user grabbed and which of its connections was
+    // closest to the click. Every live-drag snap frame aligns THIS ONE
+    // connection to the nearest free compatible target, and the whole
+    // selected group follows the shift. Cleared on mouseRelease.
+    QString grabBrickGuid_;
+    int     grabBrickLayerIndex_ = -1;
+    int     grabActiveConnIdx_   = -1;   // index into part meta->connections
+    void captureGrabAnchor(QPointF clickScenePos);
+    void clearGrabAnchor();
 
     // Internal (in-process) brick clipboard. Cross-process paste would require
     // serialising to QMimeData via the system clipboard; deferred until a user
@@ -198,7 +237,7 @@ private:
     // Live overlay item that paints outlines around every selected item.
     // Lives in the scene with a very high z-value so it's always on top.
     // Redrawn whenever scene()->selectionChanged fires.
-    class SelectionOverlay* selectionOverlay_ = nullptr;
+    SelectionOverlay* selectionOverlay_ = nullptr;
     void refreshSelectionOverlay();
 
     // Set by the live connection-snap hook when the dragged brick is

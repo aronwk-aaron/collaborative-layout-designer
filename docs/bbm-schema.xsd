@@ -1,0 +1,352 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  BlueBrick .bbm (LEGO layout map) XML schema — data version 9.
+
+  Authored by reading upstream BlueBrick source (MapData/Map.cs,
+  MapData/Layer*.cs, SaveLoad/XmlReadWrite.cs) and this fork's
+  BbmReader / BbmWriter / LayerIO. Intended as documentation, not a
+  strict validator — .NET XmlSerializer emits subtle whitespace and
+  attribute quirks that most XSD processors won't replicate without
+  configuration. See docs/BBM_SCHEMA.md for the full prose reference.
+
+  The .bbm file is the byte-faithful vanilla format. Fork-only
+  metadata (AnchoredLabel / Module / Venue) lives in the sibling
+  `.bbm.cld` sidecar and is NOT part of this schema.
+-->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           elementFormDefault="unqualified">
+
+  <!-- ==================================================================
+       Root element
+       ================================================================== -->
+  <xs:element name="Map">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="Version" type="xs:int"/>
+        <xs:element name="nbItems" type="xs:int"/>
+        <xs:element name="BackgroundColor" type="ColorSpec"/>
+        <xs:element name="Author" type="xs:string"/>
+        <xs:element name="LUG"    type="xs:string"/>
+        <xs:element name="Event"  type="xs:string"/>
+        <xs:element name="Date"   type="DateParts"/>
+        <xs:element name="Comment" type="xs:string"/>
+        <xs:element name="ExportInfo" type="ExportInfo" minOccurs="0"/>
+        <xs:element name="SelectedLayerIndex" type="xs:int"/>
+        <xs:element name="Layers" type="LayersContainer"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- ==================================================================
+       Common primitive types
+       ================================================================== -->
+
+  <!-- ColorSpec: A=R=G=B ints or a KnownColor name. Upstream stores both
+       the numeric ARGB and a KnownColor string; we preserve both for
+       round-trip fidelity. -->
+  <xs:complexType name="ColorSpec">
+    <xs:sequence>
+      <xs:element name="A" type="xs:int"/>
+      <xs:element name="R" type="xs:int"/>
+      <xs:element name="G" type="xs:int"/>
+      <xs:element name="B" type="xs:int"/>
+      <xs:element name="IsKnownColor" type="xs:boolean" minOccurs="0"/>
+      <xs:element name="KnownColor"   type="xs:string"  minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- .NET PointF / RectangleF serialized as X/Y and X/Y/Width/Height. -->
+  <xs:complexType name="PointF">
+    <xs:sequence>
+      <xs:element name="X" type="xs:double"/>
+      <xs:element name="Y" type="xs:double"/>
+    </xs:sequence>
+  </xs:complexType>
+  <xs:complexType name="RectangleF">
+    <xs:sequence>
+      <xs:element name="X"      type="xs:double"/>
+      <xs:element name="Y"      type="xs:double"/>
+      <xs:element name="Width"  type="xs:double"/>
+      <xs:element name="Height" type="xs:double"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- Date serialized as three separate ints to match .NET calendar
+       independence of region settings. -->
+  <xs:complexType name="DateParts">
+    <xs:sequence>
+      <xs:element name="Day"   type="xs:int"/>
+      <xs:element name="Month" type="xs:int"/>
+      <xs:element name="Year"  type="xs:int"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- FontSpec: .NET System.Drawing.Font round-tripped through
+       FamilyName + SizeInPoints + Style. Style is a comma-separated
+       list of {Regular,Bold,Italic,Underline,Strikeout}. -->
+  <xs:complexType name="FontSpec">
+    <xs:sequence>
+      <xs:element name="FamilyName" type="xs:string"/>
+      <xs:element name="SizeInPoints" type="xs:float"/>
+      <xs:element name="Style" type="xs:string" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- ==================================================================
+       ExportInfo (v5+, with v8 additions)
+       ================================================================== -->
+  <xs:complexType name="ExportInfo">
+    <xs:sequence>
+      <xs:element name="ExportPath"     type="xs:string"/>
+      <xs:element name="ExportFileType" type="xs:int"/>
+      <xs:element name="ExportArea"     type="RectangleF"/>
+      <xs:element name="ExportScale"    type="xs:double"/>
+      <!-- v8+ additions: -->
+      <xs:element name="ExportWatermark"        type="xs:boolean" minOccurs="0"/>
+      <!-- ExportBrickHull existed in v8 but was removed in v9.
+           Readers accept it for v8 compat; writers never emit it. -->
+      <xs:element name="ExportBrickHull"        type="xs:boolean" minOccurs="0"/>
+      <xs:element name="ExportElectricCircuit"  type="xs:boolean" minOccurs="0"/>
+      <xs:element name="ExportConnectionPoints" type="xs:boolean" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- ==================================================================
+       Layers container — polymorphic via the 'type' attribute.
+       ================================================================== -->
+  <xs:complexType name="LayersContainer">
+    <xs:sequence>
+      <xs:element name="Layer" type="Layer" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- Base layer with the 'type' attribute distinguishing subclasses.
+       XSD doesn't have a clean polymorphism story over an attribute
+       discriminator, so this tree lists every possible field and the
+       `type` attr says which subset is actually used. -->
+  <xs:complexType name="Layer">
+    <xs:sequence>
+      <!-- Common fields (Layer base class in upstream): -->
+      <xs:element name="Name"         type="xs:string" minOccurs="0"/>
+      <xs:element name="Visible"      type="xs:boolean"/>
+      <!-- v5+: -->
+      <xs:element name="Transparency" type="xs:int" minOccurs="0"/>
+      <!-- v9+: per-layer hull rendering options -->
+      <xs:element name="HullProperties" minOccurs="0">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="DisplayHulls"  type="xs:boolean"/>
+            <xs:element name="HullLineColor" type="ColorSpec"/>
+            <xs:element name="HullLineThickness" type="xs:float"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+
+      <!-- ----- LayerGrid ----- -->
+      <xs:element name="CellSize"       type="xs:float"   minOccurs="0"/>
+      <xs:element name="SubDivision"    type="xs:int"     minOccurs="0"/>
+      <xs:element name="DisplayGrid"    type="xs:boolean" minOccurs="0"/>
+      <xs:element name="GridColor"      type="ColorSpec"  minOccurs="0"/>
+      <xs:element name="GridThickness"  type="xs:float"   minOccurs="0"/>
+      <xs:element name="DisplaySubGrid" type="xs:boolean" minOccurs="0"/>
+      <xs:element name="SubGridColor"     type="ColorSpec" minOccurs="0"/>
+      <xs:element name="SubGridThickness" type="xs:float"  minOccurs="0"/>
+      <xs:element name="DisplayCellIndex"      type="xs:boolean" minOccurs="0"/>
+      <xs:element name="CellIndexColor"        type="ColorSpec"  minOccurs="0"/>
+      <xs:element name="CellIndexFont"         type="FontSpec"   minOccurs="0"/>
+      <xs:element name="CellIndexColumnLetter" type="xs:string"  minOccurs="0"/>
+      <xs:element name="CellIndexRowNumber"    type="xs:string"  minOccurs="0"/>
+
+      <!-- ----- LayerBrick ----- -->
+      <xs:element name="DisplayBrickElevation" type="xs:boolean" minOccurs="0"/>
+      <xs:element name="Bricks"  type="BricksContainer"   minOccurs="0"/>
+
+      <!-- ----- LayerText ----- -->
+      <xs:element name="TextCells" type="TextCellsContainer" minOccurs="0"/>
+
+      <!-- ----- LayerArea ----- -->
+      <xs:element name="AreaCellSizeInStud" type="xs:int"       minOccurs="0"/>
+      <xs:element name="AreaTransparency"   type="xs:int"       minOccurs="0"/>
+      <xs:element name="Areas"              type="AreaContainer" minOccurs="0"/>
+
+      <!-- ----- LayerRuler ----- -->
+      <xs:element name="RulerItems" type="RulerItemsContainer" minOccurs="0"/>
+
+      <!-- Groups (shared by brick / text / ruler layers) -->
+      <xs:element name="Groups" type="GroupsContainer" minOccurs="0"/>
+    </xs:sequence>
+
+    <xs:attribute name="type" use="required">
+      <xs:simpleType>
+        <xs:restriction base="xs:string">
+          <xs:enumeration value="grid"/>
+          <xs:enumeration value="brick"/>
+          <xs:enumeration value="text"/>
+          <xs:enumeration value="area"/>
+          <xs:enumeration value="ruler"/>
+        </xs:restriction>
+      </xs:simpleType>
+    </xs:attribute>
+  </xs:complexType>
+
+  <!-- ==================================================================
+       Items inside Brick / Text / Ruler / Area layers
+       ================================================================== -->
+
+  <xs:complexType name="BricksContainer">
+    <xs:sequence>
+      <xs:element name="Brick" type="Brick" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:attribute name="count" type="xs:int"/>
+  </xs:complexType>
+
+  <!-- Shared item-base fields. All items have a guid id, a displayArea
+       rect, and an optional MyGroup reference. Since v5 the displayArea
+       is explicit; v4 and earlier derived it. -->
+  <xs:complexType name="LayerItemBase" abstract="true">
+    <xs:sequence>
+      <xs:element name="DisplayArea" type="RectangleF"/>
+      <xs:element name="MyGroup" type="xs:string" minOccurs="0"/>
+    </xs:sequence>
+    <xs:attribute name="id" type="xs:string" use="required"/>
+  </xs:complexType>
+
+  <xs:complexType name="Brick">
+    <xs:complexContent>
+      <xs:extension base="LayerItemBase">
+        <xs:sequence>
+          <xs:element name="PartNumber"                 type="xs:string"/>
+          <xs:element name="Orientation"                type="xs:float"/>
+          <xs:element name="ActiveConnectionPointIndex" type="xs:int"/>
+          <!-- v3+: per-brick altitude for pseudo-3D stacking -->
+          <xs:element name="Altitude" type="xs:float" minOccurs="0"/>
+          <!-- v5+: ordered list of connection points with their LinkedTo
+               partner guid (empty = free). Counts via count= attribute. -->
+          <xs:element name="Connexions" minOccurs="0">
+            <xs:complexType>
+              <xs:sequence>
+                <xs:element name="Connexion" minOccurs="0" maxOccurs="unbounded">
+                  <xs:complexType>
+                    <xs:sequence>
+                      <xs:element name="LinkedTo" type="xs:string"/>
+                    </xs:sequence>
+                    <xs:attribute name="id" type="xs:string" use="required"/>
+                  </xs:complexType>
+                </xs:element>
+              </xs:sequence>
+              <xs:attribute name="count" type="xs:int"/>
+            </xs:complexType>
+          </xs:element>
+        </xs:sequence>
+      </xs:extension>
+    </xs:complexContent>
+  </xs:complexType>
+
+  <xs:complexType name="TextCellsContainer">
+    <xs:sequence>
+      <xs:element name="TextCell" type="TextCell" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="TextCell">
+    <xs:complexContent>
+      <xs:extension base="LayerItemBase">
+        <xs:sequence>
+          <xs:element name="Text"      type="xs:string"/>
+          <xs:element name="Font"      type="FontSpec"/>
+          <xs:element name="FontColor" type="ColorSpec"/>
+          <xs:element name="Orientation"  type="xs:float"/>
+          <xs:element name="TextAlignment" type="xs:string"/>
+        </xs:sequence>
+      </xs:extension>
+    </xs:complexContent>
+  </xs:complexType>
+
+  <xs:complexType name="AreaContainer">
+    <xs:sequence>
+      <xs:element name="Area" minOccurs="0" maxOccurs="unbounded">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="X" type="xs:int"/>
+            <xs:element name="Y" type="xs:int"/>
+            <xs:element name="Color" type="ColorSpec"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="RulerItemsContainer">
+    <xs:sequence>
+      <xs:element name="RulerItem" type="RulerItem" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- RulerItem's 'type' attribute is "linear" or "circular". Only the
+       relevant subset of fields is populated; see docs/BBM_SCHEMA.md. -->
+  <xs:complexType name="RulerItem">
+    <xs:complexContent>
+      <xs:extension base="LayerItemBase">
+        <xs:sequence>
+          <!-- Common ruler-base fields -->
+          <xs:element name="Color"           type="ColorSpec"/>
+          <xs:element name="LineThickness"   type="xs:float"/>
+          <xs:element name="DisplayDistance" type="xs:boolean"/>
+          <xs:element name="DisplayUnit"     type="xs:boolean"/>
+          <xs:element name="GuidelineColor"  type="ColorSpec"/>
+          <xs:element name="GuidelineThickness" type="xs:float"/>
+          <xs:element name="GuidelineDashPattern" minOccurs="0">
+            <xs:complexType>
+              <xs:sequence>
+                <xs:element name="float" type="xs:float" minOccurs="0" maxOccurs="unbounded"/>
+              </xs:sequence>
+            </xs:complexType>
+          </xs:element>
+          <xs:element name="Unit"             type="xs:int"/>
+          <xs:element name="MeasureFont"       type="FontSpec"/>
+          <xs:element name="MeasureFontColor"  type="ColorSpec"/>
+
+          <!-- Linear-only fields -->
+          <xs:element name="Point1"            type="PointF"   minOccurs="0"/>
+          <xs:element name="Point2"            type="PointF"   minOccurs="0"/>
+          <xs:element name="AttachedBrick1"    type="xs:string" minOccurs="0"/>
+          <xs:element name="AttachedBrick2"    type="xs:string" minOccurs="0"/>
+          <xs:element name="OffsetDistance"    type="xs:float"  minOccurs="0"/>
+          <xs:element name="AllowOffset"       type="xs:boolean" minOccurs="0"/>
+
+          <!-- Circular-only fields -->
+          <xs:element name="Center"            type="PointF"   minOccurs="0"/>
+          <xs:element name="Radius"            type="xs:float" minOccurs="0"/>
+          <xs:element name="AttachedBrick"     type="xs:string" minOccurs="0"/>
+        </xs:sequence>
+        <xs:attribute name="type" use="required">
+          <xs:simpleType>
+            <xs:restriction base="xs:string">
+              <xs:enumeration value="linear"/>
+              <xs:enumeration value="circular"/>
+            </xs:restriction>
+          </xs:simpleType>
+        </xs:attribute>
+      </xs:extension>
+    </xs:complexContent>
+  </xs:complexType>
+
+  <!-- Groups: per-layer same-layer grouping (separate from cross-layer
+       Modules which live in the .bbm.cld sidecar). -->
+  <xs:complexType name="GroupsContainer">
+    <xs:sequence>
+      <xs:element name="Group" minOccurs="0" maxOccurs="unbounded">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="PartNumber" type="xs:string" minOccurs="0"/>
+            <xs:element name="Orientation" type="xs:float" minOccurs="0"/>
+            <xs:element name="Altitude" type="xs:float" minOccurs="0"/>
+            <xs:element name="MyGroup" type="xs:string" minOccurs="0"/>
+          </xs:sequence>
+          <xs:attribute name="id" type="xs:string" use="required"/>
+        </xs:complexType>
+      </xs:element>
+    </xs:sequence>
+  </xs:complexType>
+
+</xs:schema>

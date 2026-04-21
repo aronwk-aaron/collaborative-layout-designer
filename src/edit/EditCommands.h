@@ -2,9 +2,11 @@
 
 #include "../core/Brick.h"
 #include "../core/Group.h"
+#include "../core/Module.h"
 
 #include <QHash>
 #include <QPointF>
+#include <QSet>
 #include <QUndoCommand>
 
 #include <vector>
@@ -64,7 +66,10 @@ private:
 };
 
 // Delete one or more bricks from their layers. Redo removes; undo restores
-// at their original index.
+// at their original index. A brick can be a member of a sidecar Module; when
+// every member of a module lives in this delete batch the module is removed
+// too (otherwise the Modules panel would list a ghost module with zero
+// members). Per-module membership edits are captured so undo restores them.
 class DeleteBricksCommand : public QUndoCommand {
 public:
     struct Entry {
@@ -81,6 +86,19 @@ public:
 private:
     core::Map& map_;
     std::vector<Entry> entries_;
+
+    struct ModuleEdit {
+        QString id;
+        QSet<QString> beforeMemberIds;
+        QSet<QString> afterMemberIds;
+    };
+    struct ModuleRemoval {
+        int index = -1;
+        core::Module module;
+    };
+    std::vector<ModuleEdit>    moduleEdits_;
+    std::vector<ModuleRemoval> moduleRemovals_;  // sorted by index ascending
+    bool moduleDeltaReady_ = false;
 };
 
 // Add a single brick to the given layer at the given index (or append if -1).

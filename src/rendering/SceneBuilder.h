@@ -5,9 +5,6 @@
 #include <QPointF>
 #include <QString>
 
-#include <functional>
-#include <optional>
-
 class QGraphicsItem;
 class QGraphicsScene;
 
@@ -37,31 +34,34 @@ public:
     // under the cursor during drag, not only on release.
     static void setLiveSnapStepStuds(double snapStepStuds);
 
-    // Install a hook the brick items consult on every live drag frame. If
-    // the hook returns a non-empty position, that overrides grid snap — so
-    // MapView can make connections win over the grid (vanilla's
-    // getMovedSnapPoint flow: search for the nearest free connection point
-    // of matching type; only fall back to the grid if none is close
-    // enough). Passed (item, proposed scene pos); returns nullopt for
-    // "no connection snap applicable".
-    using LiveSnapHook = std::function<std::optional<QPointF>(QGraphicsItem*, QPointF)>;
-    static void setLiveConnectionSnapHook(LiveSnapHook hook);
+    // Set to true for the span of programmatic setPos calls that should not
+    // be re-snapped by the per-item grid-snap logic. MapView turns this on
+    // while applying a group connection-snap shift so its shifted positions
+    // survive the itemChange callback.
+    static void setSuppressItemSnap(bool suppress);
 
     // Toggle the visibility of a layer (by index). Returns false if out of range.
     bool setLayerVisible(int layerIndex, bool visible);
 
 private:
     void addLayer(const core::Layer& layer, int layerIndex);
-    void addSidecarContent(const core::Map& map);
     void addVenue(const core::Map& map);
     void addAnchoredLabels(const core::Map& map);
     void addModuleLabels(const core::Map& map);
+    void addElectricCircuits(const core::Map& map);
 
     QGraphicsScene& scene_;
     parts::PartsLibrary& parts_;
     QHash<int, QList<QGraphicsItem*>> itemsByLayer_;  // layer index -> direct scene items
     QHash<QString, QGraphicsItem*>    brickByGuid_;   // brick.guid -> QGraphicsItem*
+    // brick.guid -> brick world centre in STUDS. Precomputed once per build
+    // so ruler rendering (and any other cross-item feature) can resolve
+    // attached-brick endpoints without walking the whole map.
+    QHash<QString, QPointF>           brickCentreByGuid_;
     QList<QGraphicsItem*>             venueItems_;
+    // Transient items for the Electric Circuits render overlay. Cleared +
+    // rebuilt on every build().
+    QList<QGraphicsItem*>             electricItems_;
     QList<QGraphicsItem*>             worldLabelItems_;
     QList<QGraphicsItem*>             moduleLabelItems_;
 };

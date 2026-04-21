@@ -1,8 +1,20 @@
 add_library(cld_ui STATIC
     MainWindow.cpp
     MainWindow.h
+    MainWindowFileIO.cpp
+    MainWindowLibrary.cpp
+    MainWindowMenus.cpp
     MapView.cpp
     MapView.h
+    MapViewDrag.cpp
+    MapViewClipboard.cpp
+    MapViewContextMenu.cpp
+    MapViewPaint.cpp
+    MapViewInternal.h
+    ConnectionSnap.cpp
+    ConnectionSnap.h
+    SelectionOverlay.cpp
+    SelectionOverlay.h
     LayerPanel.cpp
     LayerPanel.h
     PartsBrowser.cpp
@@ -11,6 +23,8 @@ add_library(cld_ui STATIC
     ModulesPanel.h
     ModuleLibraryPanel.cpp
     ModuleLibraryPanel.h
+    PartUsagePanel.cpp
+    PartUsagePanel.h
     LibraryPathsDialog.cpp
     LibraryPathsDialog.h
     EditDialogs.cpp
@@ -34,7 +48,9 @@ target_link_libraries(cld_ui
         cld_parts
         cld_rendering
         cld_edit
+        cld_import
         Qt6::Core
         Qt6::Gui
         Qt6::Widgets
+        Qt6::PrintSupport
 )
