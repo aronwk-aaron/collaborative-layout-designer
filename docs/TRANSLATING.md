@@ -4,19 +4,28 @@
 
 Current target set (matches upstream BlueBrick's shipped set plus Japanese):
 
-| Code | Language            | Status                  |
-|------|---------------------|-------------------------|
-| en   | English             | Base — built into `tr()` |
-| fr   | French              | Stub — needs translator |
-| de   | German              | Stub                    |
-| es   | Spanish             | Stub                    |
-| it   | Italian             | Stub                    |
-| nl   | Dutch               | Stub                    |
-| pt   | Portuguese          | Stub                    |
-| zh   | Chinese (Simplified)| Stub                    |
-| ja   | Japanese            | Stub                    |
+| Code | Language            | Status                                                    |
+|------|---------------------|-----------------------------------------------------------|
+| en   | English             | Base — built into `tr()`                                  |
+| fr   | French              | ~75 strings machine-seeded — needs native-speaker review |
+| de   | German              | ~75 strings machine-seeded — needs native-speaker review |
+| es   | Spanish             | ~75 strings machine-seeded — needs native-speaker review |
+| it   | Italian             | ~75 strings machine-seeded — needs native-speaker review |
+| nl   | Dutch               | ~75 strings machine-seeded — needs native-speaker review |
+| pt   | Portuguese          | ~75 strings machine-seeded — needs native-speaker review |
+| zh   | Chinese (Simplified)| ~75 strings machine-seeded — needs native-speaker review |
+| ja   | Japanese            | ~75 strings machine-seeded — needs native-speaker review |
 
-Each language has an empty `translations/cld_<code>.ts` file checked in.
+The seeded translations cover menu titles, common dialog buttons, and
+the most-visible UI labels (top-level menu items, panel names, Yes/No/
+Cancel kinds of prompts). Error messages, tooltips, and formatted
+multi-arg strings are still `type="unfinished"` pending proper review.
+See [`scripts/apply-translations.py`](../scripts/apply-translations.py)
+for the translation dictionary — edit that file and rerun the script
+to extend coverage; the seeded strings are a starting point, not a
+finished product.
+
+Each language has a `translations/cld_<code>.ts` file checked in.
 Running `lupdate` populates the file with every `tr()` call from the
 source; translators fill in the `<translation>` bodies; CMake runs
 `lrelease` at build time to produce `cld_<code>.qm` bundled next to the
@@ -42,6 +51,24 @@ installer on Windows).
 completed translations. Removed strings are marked `type="obsolete"`
 instead of deleted, so translators can see them and decide to port or
 drop.
+
+## Workflow — bulk-applying translations via the script
+
+`scripts/apply-translations.py` ships a `TRANS` dictionary keyed by
+language, where each entry maps a `<source>` string (XML-escaped as
+Qt writes it — `&amp;File` etc) to the target translation. Running:
+
+```sh
+python3 scripts/apply-translations.py
+```
+
+walks every `translations/cld_<lang>.ts`, substitutes the
+`<translation>` body for any source appearing in `TRANS[<lang>]`, and
+strips `type="unfinished"`. Missing sources stay unfinished so Qt
+falls back to English at runtime.
+
+Native speakers: the easiest way to contribute a pass is to grow the
+relevant language block inside `TRANS` in that script and rerun it.
 
 ## Workflow — adding translations
 
