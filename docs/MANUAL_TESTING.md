@@ -225,11 +225,43 @@ Set up: a ruler with both endpoints attached to bricks.
 - [ ] Entries persist across app restarts.
 
 ### 4.5 Forward-compat (vanilla BlueBrick opens our `.bbm`)
-- [ ] On Windows: save a document with modules, anchored labels, and a
-      venue. Open the `.bbm` in vanilla BlueBrick 1.9.2.
-- [ ] Vanilla shouldn't error. Modules appear as per-layer groups,
-      anchored labels appear as ordinary text at their snapshot positions,
-      venue is absent (by design — sidecar only).
+
+We can't automate this on CI — BlueBrick is a Windows Forms GUI app
+with no CLI validation mode, and Windows UI automation is too brittle
+to include in the pipeline. Byte-exact round-trip (tested by
+`ctest`) is the main guarantee: if we produce bytes identical to
+vanilla, vanilla can read them. This section is the human backstop
+for paths the round-trip corpus doesn't cover (new features, fresh
+files built from scratch).
+
+**Minimum smoke set** — do these before every release tag:
+
+- [ ] On Windows with BlueBrick 1.9.2 installed, save a fresh
+      document from this app with: 3+ brick layers, a ruler,
+      2+ area cells, a couple of text labels.
+- [ ] Open that `.bbm` in vanilla BlueBrick. No error dialogs.
+      Scene renders; z-order matches; brick positions identical
+      (measure with BlueBrick's ruler tool).
+- [ ] Save it in vanilla (any trivial no-op change + Save). Reopen
+      here. No error dialogs; scene unchanged.
+
+**Feature coverage** — add these when a release introduces new output:
+
+- [ ] Modules with cross-layer members round-trip: save here →
+      open in vanilla → expect per-layer Groups (flattened view).
+      Save in vanilla → open here → module reconstructs via sidecar.
+- [ ] Anchored labels: vanilla sees them as ordinary text at their
+      snapshot world positions (frozen on save). Edit them in
+      vanilla → reopen here; offer to re-link by proximity
+      (acknowledge the prompt).
+- [ ] Venue: `.bbm` carries no venue (by design — sidecar only).
+      Vanilla should open without error; our `.bbm.cld` preserves
+      the venue across round-trips.
+- [ ] **Save Selection as Set**: export a mixed straight + curve +
+      switch selection. Drop the `.set.xml` under
+      BlueBrick's `parts/` folder, reload BlueBrick, place the new
+      set from its Parts library. Tracks should align flush (no
+      gaps) — same as what we see when placing the set here.
 
 ---
 
