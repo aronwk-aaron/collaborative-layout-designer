@@ -35,11 +35,11 @@ struct WorldConn {
 };
 
 // Round a stud coord to a fixed grid cell for spatial bucketing so we
-// find coincident connections in O(N). Bucket size 2 studs keeps the
-// bucket lookup's ±1 neighbourhood wider than our 1.5-stud matching
+// find coincident connections in O(N). Bucket size 5 studs keeps the
+// bucket lookup's ±1 neighbourhood wider than our 4-stud matching
 // tolerance, so a coincident pair always lands in the same or an
 // adjacent bucket.
-constexpr double kBucketSize = 2.0;
+constexpr double kBucketSize = 5.0;
 QPair<int, int> bucketOf(QPointF p) {
     return { static_cast<int>(std::floor(p.x() / kBucketSize)),
              static_cast<int>(std::floor(p.y() / kBucketSize)) };
@@ -88,19 +88,31 @@ void rebuildConnectivity(core::Map& map, parts::PartsLibrary& lib) {
         bucket[bucketOf(all[i].worldPos)].push_back(i);
     }
 
-    // Matching tolerance. Sets (.set.xml) use multi-decimal stud
-    // positions like 20.19525 and -3.647675; combined with the
-    // subpart's rotation, rounding can push the connection world
-    // positions off by up to ~1 stud even when the pieces are
-    // visually touching. 1.5 studs gives slack for sets without
-    // accepting obviously-separate bricks as linked.
-    constexpr double kTolStuds = 1.5;
+    // Matching tolerance. Vanilla BlueBrick straight / curve tracks
+    // abut with sub-stud precision, but BrickTracks / TrixBrix .set.xml
+    // files place subparts at multi-decimal stud positions (e.g.
+    // 20.19525, -3.647644) with non-axis-aligned rotations (-22.5°,
+    // -11.25°). After rotating the part's own connection point, world
+    // positions of "visually touching" connections can drift up to
+    // ~3.6 studs across a switch joint. 4 studs gives comfortable
+    // slack for these sets while still being much smaller than the
+    // distance between any two genuinely-separate tracks (typical
+    // rail chord > 8 studs). Bricks either touch and link, or sit at
+    // least a full tie apart and don't.
+    constexpr double kTolStuds = 4.0;
     constexpr double kTolSq = kTolStuds * kTolStuds;
+
+    // When a connection has multiple candidates inside the tolerance
+    // (common at switch junctions where 3+ tracks share a point)
+    // prefer the nearest one. Falling back to "first in bucket" leaves
+    // the wrong pair linked while the true-nearest stays red.
 
     for (int i = 0; i < static_cast<int>(all.size()); ++i) {
         const auto& a = all[i];
         if (!a.brick->connections[a.connIdx].linkedToId.isEmpty()) continue;
         const auto ab = bucketOf(a.worldPos);
+        int bestJ = -1;
+        double bestDistSq = kTolSq;
         for (int dx = -1; dx <= 1; ++dx) {
             for (int dy = -1; dy <= 1; ++dy) {
                 auto it = bucket.constFind({ ab.first + dx, ab.second + dy });
@@ -112,15 +124,17 @@ void rebuildConnectivity(core::Map& map, parts::PartsLibrary& lib) {
                     if (a.type != b.type) continue;
                     if (!b.brick->connections[b.connIdx].linkedToId.isEmpty()) continue;
                     const QPointF d = a.worldPos - b.worldPos;
-                    if (d.x() * d.x() + d.y() * d.y() > kTolSq) continue;
-                    // Match — link both sides to each other's brick guid.
-                    a.brick->connections[a.connIdx].linkedToId = b.brick->guid;
-                    b.brick->connections[b.connIdx].linkedToId = a.brick->guid;
-                    break;
+                    const double distSq = d.x() * d.x() + d.y() * d.y();
+                    if (distSq > bestDistSq) continue;
+                    bestJ = j;
+                    bestDistSq = distSq;
                 }
-                if (!a.brick->connections[a.connIdx].linkedToId.isEmpty()) break;
             }
-            if (!a.brick->connections[a.connIdx].linkedToId.isEmpty()) break;
+        }
+        if (bestJ >= 0) {
+            const auto& b = all[bestJ];
+            a.brick->connections[a.connIdx].linkedToId = b.brick->guid;
+            b.brick->connections[b.connIdx].linkedToId = a.brick->guid;
         }
     }
 }
