@@ -248,8 +248,9 @@ jobs:
         run: |
           dotnet tool install --global wix --version 4.* || true
           export PATH="$HOME/.dotnet/tools:$PATH"
+          # MSI excludes parts/ — see matching nightly.yml comment.
           mkdir -p packaging/windows/staging
-          cp -r dist/collaborative-layout-designer/* packaging/windows/staging/
+          rsync -a --exclude='parts/' dist/collaborative-layout-designer/ packaging/windows/staging/
           cd packaging/windows
           wix extension add WixToolset.UI.wixext WixToolset.Util.wixext || true
           {

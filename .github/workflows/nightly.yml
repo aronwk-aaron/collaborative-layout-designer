@@ -177,8 +177,16 @@ jobs:
         run: |
           dotnet tool install --global wix --version 4.* || true
           export PATH="$HOME/.dotnet/tools:$PATH"
+          # The MSI ships just the binary + Qt runtime (+ translations).
+          # The parts library is thousands of tiny files with lots of
+          # repeat basenames (_partlist.txt under every category, etc)
+          # that collide in WiX v4's auto-GUID namespace. It's also
+          # 10+ MB of mostly static data that doesn't belong inside a
+          # versioned installer — users point Preferences at any
+          # BlueBrickParts checkout, or use the .zip distribution which
+          # keeps the library bundled.
           mkdir -p packaging/windows/staging
-          cp -r dist/collaborative-layout-designer/* packaging/windows/staging/
+          rsync -a --exclude='parts/' dist/collaborative-layout-designer/ packaging/windows/staging/
           cd packaging/windows
           wix extension add WixToolset.UI.wixext WixToolset.Util.wixext || true
           # heat.exe isn't shipped with wix4 CLI; synthesise the
