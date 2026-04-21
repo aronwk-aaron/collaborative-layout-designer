@@ -24,3 +24,12 @@ target_link_libraries(cld_render
 add_executable(cld_ldraw_import cld_ldraw_import.cpp)
 target_link_libraries(cld_ldraw_import
     PRIVATE cld_import cld_saveload cld_core Qt6::Core)
+
+# External format (.ldr / .io / .lxf / .lxfml) -> top-down sprite PNG/GIF.
+# Wraps the same render pipeline the UI's Tools → Import uses so CI
+# pipelines and batch conversions can reach the sprite output without
+# launching the desktop app.
+add_executable(cld_sprite_gen cld_sprite_gen.cpp)
+target_link_libraries(cld_sprite_gen
+    PRIVATE cld_import cld_rendering cld_edit cld_parts cld_core
+            Qt6::Core Qt6::Gui Qt6::Widgets)

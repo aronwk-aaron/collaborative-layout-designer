@@ -134,6 +134,10 @@ reads the `.bbm` normally and ignores the sidecar.
 - Unit tests for every external-format reader (LDraw, Studio `.io`,
   LDD `.lxf`/`.lxfml`), covering archive extraction, material mapping,
   missing-component fallbacks.
+- Top-down sprite generation for parts not in BlueBrickParts: inline
+  LDraw primitive rasteriser + [`cld_sprite_gen`](src/app/cld_sprite_gen.cpp)
+  CLI for batch converting `.ldr` / `.io` / `.lxf` files into BlueBrick-
+  compatible PNG/GIF sprites without launching the app.
 
 ### Remaining work
 
@@ -158,11 +162,6 @@ reads the `.bbm` normally and ignores the sidecar.
   [`docs/MANUAL_TESTING.md`](docs/MANUAL_TESTING.md) §4.5.
 
 **Large / Phase 4 proper**
-- Top-down sprite generation for LDraw / Studio / LDD parts that aren't
-  present in BlueBrickParts (currently placed as a bounding-box
-  placeholder).
-- Sprite generator CLI for batch-converting external files outside the
-  app.
 - Real installer recipes: WiX v4 MSI for Windows, signed + notarized
   `.app` for macOS, AppImage / Flatpak for Linux. (CI shape copied from
   a sibling project; the packaging recipes are still stubs.)
