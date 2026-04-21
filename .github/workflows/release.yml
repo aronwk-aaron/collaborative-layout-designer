@@ -260,8 +260,12 @@ jobs:
             find staging -type f -not -name collaborative-layout-designer.exe | while read f; do
               rel="${f#staging/}"
               uid="Harv$(echo "$rel" | tr -c '[:alnum:]' '_' )"
+              # Explicit File Id keyed to the Component — WiX4's
+              # auto-generated hash IDs collide when windeployqt
+              # copies the same-named plugin under different Qt
+              # subdirs.
               echo "      <Component Id=\"$uid\" Guid=\"*\">"
-              echo "        <File Source=\"staging\\\\$rel\" KeyPath=\"yes\" />"
+              echo "        <File Id=\"${uid}_F\" Source=\"staging\\\\$rel\" KeyPath=\"yes\" />"
               echo "      </Component>"
             done
             echo '    </ComponentGroup>'

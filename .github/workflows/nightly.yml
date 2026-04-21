@@ -192,8 +192,13 @@ jobs:
             find staging -type f -not -name collaborative-layout-designer.exe | while read f; do
               rel="${f#staging/}"
               uid="Harv$(echo "$rel" | tr -c '[:alnum:]' '_' )"
+              # WiX4 auto-generates File IDs by hashing properties,
+              # and windeployqt can copy identical-path Qt plugins
+              # under different Component parents which makes the
+              # hash collide. Give every File an explicit Id matching
+              # its Component so collisions are impossible.
               echo "      <Component Id=\"$uid\" Guid=\"*\">"
-              echo "        <File Source=\"staging\\\\$rel\" KeyPath=\"yes\" />"
+              echo "        <File Id=\"${uid}_F\" Source=\"staging\\\\$rel\" KeyPath=\"yes\" />"
               echo "      </Component>"
             done
             echo '    </ComponentGroup>'
