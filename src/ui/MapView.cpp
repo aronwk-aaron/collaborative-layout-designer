@@ -893,6 +893,13 @@ void MapView::addPartAtScenePos(const QString& partKey, QPointF sceneCenterPx) {
                     *map_, setName, std::move(members)));
             }
             undoStack_->endMacro();
+            // Set files declare positions + angles but NOT connectivity.
+            // Without this, every subpart has empty linkedToId, so the
+            // tracks look "not connected" even though they're positioned
+            // to abut one another. Rebuild from world positions so the
+            // connection dots light up and snapping recognises the
+            // already-joined track network.
+            edit::rebuildConnectivity(*map_, parts_);
             rebuildScene();
             if (auto* mw = window())
                 if (auto* sb = mw->findChild<QStatusBar*>())
