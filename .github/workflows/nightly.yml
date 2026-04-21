@@ -64,7 +64,7 @@ jobs:
       - name: Test
         run: ctest --test-dir build --build-config Release --output-on-failure
 
-      - name: Package (Linux)
+      - name: Package (Linux .tar.gz)
         if: runner.os == 'Linux'
         run: |
           mkdir -p dist/collaborative-layout-designer
@@ -77,6 +77,44 @@ jobs:
           cp README.md dist/collaborative-layout-designer/ 2>/dev/null || true
           cp LICENSE  dist/collaborative-layout-designer/ 2>/dev/null || true
           tar -czf ${{ matrix.artifact }}.tar.gz -C dist .
+
+      - name: Package (Linux AppImage)
+        if: runner.os == 'Linux'
+        run: |
+          # AppDir hierarchy per AppImage convention:
+          #   AppDir/usr/bin/<binary>
+          #   AppDir/usr/share/applications/<desktop>
+          #   AppDir/usr/share/icons/hicolor/256x256/apps/<icon>.png
+          APPDIR=build/AppDir
+          rm -rf "${APPDIR}"
+          mkdir -p "${APPDIR}/usr/bin" \
+                    "${APPDIR}/usr/share/applications" \
+                    "${APPDIR}/usr/share/icons/hicolor/256x256/apps" \
+                    "${APPDIR}/usr/share/collaborative-layout-designer/parts" \
+                    "${APPDIR}/usr/share/collaborative-layout-designer/translations"
+          cp build/src/app/collaborative-layout-designer "${APPDIR}/usr/bin/"
+          cp packaging/linux/collaborative-layout-designer.desktop "${APPDIR}/usr/share/applications/"
+          cp packaging/icons/collaborative-layout-designer.png "${APPDIR}/usr/share/icons/hicolor/256x256/apps/"
+          cp -r parts/BlueBrickParts "${APPDIR}/usr/share/collaborative-layout-designer/parts/" || true
+          if ls build/*.qm 1>/dev/null 2>&1; then
+            cp build/*.qm "${APPDIR}/usr/share/collaborative-layout-designer/translations/"
+          fi
+          # linuxdeploy + the Qt plugin bundle dependent shared libs
+          # and wire up the AppRun. Pinned to a known-good continuous
+          # release; they publish binary x86_64 AppImages of the tools
+          # themselves.
+          curl -L -o linuxdeploy \
+            https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          curl -L -o linuxdeploy-plugin-qt \
+            https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
+          chmod +x linuxdeploy linuxdeploy-plugin-qt
+          # GitHub Actions runners don't have FUSE by default, so use
+          # --appimage-extract-and-run on the AppImage tools themselves.
+          export APPIMAGE_EXTRACT_AND_RUN=1
+          ./linuxdeploy --appdir "${APPDIR}" \
+                        --plugin qt \
+                        --output appimage
+          mv *.AppImage ${{ matrix.artifact }}.AppImage
 
       - name: Package (macOS)
         if: runner.os == 'macOS'
@@ -96,6 +134,16 @@ jobs:
           fi
           macdeployqt "$APP" -verbose=1
           cd dist && zip -r ../${{ matrix.artifact }}.zip CollaborativeLayoutDesigner.app
+          cd ..
+          # Also emit an unsigned .dmg — macdeployqt gets this close
+          # but hdiutil gives us a drag-to-Applications disk image
+          # that most end users expect. Without codesigning / notary
+          # the user still has to right-click → Open on first launch
+          # to bypass Gatekeeper. That warning is the price of not
+          # owning an Apple Developer ID; the DMG itself is fine.
+          hdiutil create -volname "Collaborative Layout Designer" \
+            -srcfolder dist/CollaborativeLayoutDesigner.app \
+            -ov -format UDZO ${{ matrix.artifact }}.dmg
 
       - name: Package (Windows)
         if: runner.os == 'Windows'
@@ -121,6 +169,40 @@ jobs:
           cp README.md dist/collaborative-layout-designer/ 2>/dev/null || true
           cp LICENSE  dist/collaborative-layout-designer/LICENSE.txt 2>/dev/null || true
           cd dist && 7z a ../${{ matrix.artifact }}.zip collaborative-layout-designer
+          cd ..
+
+      - name: Package (Windows MSI)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          dotnet tool install --global wix --version 4.* || true
+          export PATH="$HOME/.dotnet/tools:$PATH"
+          mkdir -p packaging/windows/staging
+          cp -r dist/collaborative-layout-designer/* packaging/windows/staging/
+          cd packaging/windows
+          wix extension add WixToolset.UI.wixext WixToolset.Util.wixext || true
+          # heat.exe isn't shipped with wix4 CLI; synthesise the
+          # Harvested component group manually for every staged file
+          # other than the main exe (which the .wxs declares directly).
+          {
+            echo '<?xml version="1.0" encoding="utf-8"?>'
+            echo '<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">'
+            echo '  <Fragment>'
+            echo '    <ComponentGroup Id="HarvestedComponents" Directory="INSTALLFOLDER">'
+            find staging -type f -not -name collaborative-layout-designer.exe | while read f; do
+              rel="${f#staging/}"
+              uid="Harv$(echo "$rel" | tr -c '[:alnum:]' '_' )"
+              echo "      <Component Id=\"$uid\" Guid=\"*\">"
+              echo "        <File Source=\"staging\\\\$rel\" KeyPath=\"yes\" />"
+              echo "      </Component>"
+            done
+            echo '    </ComponentGroup>'
+            echo '  </Fragment>'
+            echo '</Wix>'
+          } > Harvested.wxs
+          wix build collaborative-layout-designer.wxs Harvested.wxs \
+              -arch x64 \
+              -out ../../${{ matrix.artifact }}.msi
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

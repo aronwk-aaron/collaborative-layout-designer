@@ -61,7 +61,7 @@ jobs:
       - name: Test
         run: ctest --test-dir build --build-config Release --output-on-failure
 
-      - name: Package (Linux)
+      - name: Package (Linux .tar.gz)
         if: runner.os == 'Linux'
         run: |
           mkdir -p dist/collaborative-layout-designer
@@ -74,6 +74,32 @@ jobs:
           cp README.md dist/collaborative-layout-designer/ 2>/dev/null || true
           cp LICENSE  dist/collaborative-layout-designer/ 2>/dev/null || true
           tar -czf ${{ matrix.artifact }}.tar.gz -C dist .
+
+      - name: Package (Linux AppImage)
+        if: runner.os == 'Linux'
+        run: |
+          APPDIR=build/AppDir
+          rm -rf "${APPDIR}"
+          mkdir -p "${APPDIR}/usr/bin" \
+                    "${APPDIR}/usr/share/applications" \
+                    "${APPDIR}/usr/share/icons/hicolor/256x256/apps" \
+                    "${APPDIR}/usr/share/collaborative-layout-designer/parts" \
+                    "${APPDIR}/usr/share/collaborative-layout-designer/translations"
+          cp build/src/app/collaborative-layout-designer "${APPDIR}/usr/bin/"
+          cp packaging/linux/collaborative-layout-designer.desktop "${APPDIR}/usr/share/applications/"
+          cp packaging/icons/collaborative-layout-designer.png "${APPDIR}/usr/share/icons/hicolor/256x256/apps/"
+          cp -r parts/BlueBrickParts "${APPDIR}/usr/share/collaborative-layout-designer/parts/" || true
+          if ls build/*.qm 1>/dev/null 2>&1; then
+            cp build/*.qm "${APPDIR}/usr/share/collaborative-layout-designer/translations/"
+          fi
+          curl -L -o linuxdeploy \
+            https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          curl -L -o linuxdeploy-plugin-qt \
+            https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
+          chmod +x linuxdeploy linuxdeploy-plugin-qt
+          export APPIMAGE_EXTRACT_AND_RUN=1
+          ./linuxdeploy --appdir "${APPDIR}" --plugin qt --output appimage
+          mv *.AppImage ${{ matrix.artifact }}.AppImage
 
       - name: Package (macOS)
         if: runner.os == 'macOS'
@@ -98,7 +124,71 @@ jobs:
             cp build/*.qm "$APP/Contents/Resources/translations/"
           fi
           macdeployqt "$APP" -verbose=1
+
+      - name: Codesign (macOS)
+        # Runs when the Apple Developer secrets are configured in the
+        # repo. Drop them in to turn on Gatekeeper + notarization; the
+        # step is a no-op otherwise and the build falls back to an
+        # unsigned .zip / .dmg that end users open with right-click →
+        # Open on first launch.
+        if: runner.os == 'macOS' && env.MACOS_CERTIFICATE != ''
+        env:
+          MACOS_CERTIFICATE:          ${{ secrets.MACOS_CERTIFICATE }}           # base64-encoded .p12
+          MACOS_CERTIFICATE_PWD:      ${{ secrets.MACOS_CERTIFICATE_PWD }}       # passphrase for the .p12
+          MACOS_CERTIFICATE_NAME:     ${{ secrets.MACOS_CERTIFICATE_NAME }}      # "Developer ID Application: Your Name (TEAMID)"
+          MACOS_KEYCHAIN_PWD:         ${{ secrets.MACOS_KEYCHAIN_PWD }}          # any short random string
+        run: |
+          # Import the signing cert into a fresh, per-job keychain so
+          # nothing leaks across runs and the keychain disappears with
+          # the runner at job-end.
+          KEYCHAIN=build.keychain
+          security create-keychain -p "${MACOS_KEYCHAIN_PWD}" "${KEYCHAIN}"
+          security set-keychain-settings -lut 21600 "${KEYCHAIN}"
+          security unlock-keychain -p "${MACOS_KEYCHAIN_PWD}" "${KEYCHAIN}"
+          echo "${MACOS_CERTIFICATE}" | base64 --decode > cert.p12
+          security import cert.p12 -k "${KEYCHAIN}" \
+            -P "${MACOS_CERTIFICATE_PWD}" \
+            -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: \
+            -s -k "${MACOS_KEYCHAIN_PWD}" "${KEYCHAIN}"
+          security list-keychains -d user -s "${KEYCHAIN}" login.keychain
+
+          # Deep-sign the bundle with the hardened runtime so notary
+          # accepts it. --force because macdeployqt already signed
+          # individual frameworks; we overwrite with our identity.
+          codesign --force --deep --options runtime --timestamp \
+            --sign "${MACOS_CERTIFICATE_NAME}" dist/CollaborativeLayoutDesigner.app
+          rm -f cert.p12
+
+      - name: Notarize (macOS)
+        # Separate step so a signing failure surfaces distinctly from
+        # a notary upload failure — and so notarization only runs
+        # when both the cert AND the Apple ID creds are configured.
+        if: runner.os == 'macOS' && env.APPLE_ID != ''
+        env:
+          APPLE_ID:           ${{ secrets.APPLE_ID }}            # email of the Apple Developer account
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}  # app-specific password, NOT the login
+          APPLE_TEAM_ID:      ${{ secrets.APPLE_TEAM_ID }}       # 10-char team ID from the developer portal
+        run: |
+          # notarytool wants a ZIP. Submit + wait + staple the
+          # ticket back onto the .app so offline launches work.
+          ditto -c -k --keepParent dist/CollaborativeLayoutDesigner.app notarize.zip
+          xcrun notarytool submit notarize.zip \
+            --apple-id "${APPLE_ID}" \
+            --password "${APPLE_APP_PASSWORD}" \
+            --team-id  "${APPLE_TEAM_ID}" \
+            --wait
+          xcrun stapler staple dist/CollaborativeLayoutDesigner.app
+          rm -f notarize.zip
+
+      - name: Package (macOS .zip + .dmg)
+        if: runner.os == 'macOS'
+        run: |
           cd dist && zip -r ../${{ matrix.artifact }}.zip CollaborativeLayoutDesigner.app
+          cd ..
+          hdiutil create -volname "Collaborative Layout Designer" \
+            -srcfolder dist/CollaborativeLayoutDesigner.app \
+            -ov -format UDZO ${{ matrix.artifact }}.dmg
 
       - name: Package (Windows)
         if: runner.os == 'Windows'
@@ -124,6 +214,79 @@ jobs:
           cp README.md dist/collaborative-layout-designer/ 2>/dev/null || true
           cp LICENSE  dist/collaborative-layout-designer/LICENSE.txt 2>/dev/null || true
           cd dist && 7z a ../${{ matrix.artifact }}.zip collaborative-layout-designer
+          cd ..
+
+      - name: Codesign exe (Windows)
+        # Signs the .exe BEFORE it gets bundled into the MSI so the
+        # MSI's embedded binary is trusted. When secrets aren't set
+        # this step is a no-op and we ship an unsigned exe + MSI
+        # (users see "unknown publisher" in SmartScreen on first run).
+        if: runner.os == 'Windows' && env.WINDOWS_PFX_BASE64 != ''
+        shell: pwsh
+        env:
+          WINDOWS_PFX_BASE64: ${{ secrets.WINDOWS_PFX_BASE64 }}  # base64-encoded .pfx code-signing cert
+          WINDOWS_PFX_PWD:    ${{ secrets.WINDOWS_PFX_PWD }}     # passphrase for the .pfx
+        run: |
+          # Decode the pfx to a temp file, sign every PE binary in
+          # the staged dist tree, then delete the pfx. signtool.exe
+          # is in the Windows SDK; on the windows-latest image it's
+          # already on PATH.
+          [IO.File]::WriteAllBytes("cert.pfx", [Convert]::FromBase64String($env:WINDOWS_PFX_BASE64))
+          $SDKSign = (Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" |
+                      Sort-Object FullName -Descending | Select-Object -First 1).FullName
+          if (-not $SDKSign) { $SDKSign = "signtool.exe" }
+          Get-ChildItem -Path dist -Recurse -Include *.exe,*.dll | ForEach-Object {
+            & $SDKSign sign /f cert.pfx /p $env:WINDOWS_PFX_PWD `
+              /fd SHA256 /tr http://timestamp.sectigo.com /td SHA256 `
+              $_.FullName
+          }
+          Remove-Item cert.pfx
+
+      - name: Package (Windows MSI)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          dotnet tool install --global wix --version 4.* || true
+          export PATH="$HOME/.dotnet/tools:$PATH"
+          mkdir -p packaging/windows/staging
+          cp -r dist/collaborative-layout-designer/* packaging/windows/staging/
+          cd packaging/windows
+          wix extension add WixToolset.UI.wixext WixToolset.Util.wixext || true
+          {
+            echo '<?xml version="1.0" encoding="utf-8"?>'
+            echo '<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">'
+            echo '  <Fragment>'
+            echo '    <ComponentGroup Id="HarvestedComponents" Directory="INSTALLFOLDER">'
+            find staging -type f -not -name collaborative-layout-designer.exe | while read f; do
+              rel="${f#staging/}"
+              uid="Harv$(echo "$rel" | tr -c '[:alnum:]' '_' )"
+              echo "      <Component Id=\"$uid\" Guid=\"*\">"
+              echo "        <File Source=\"staging\\\\$rel\" KeyPath=\"yes\" />"
+              echo "      </Component>"
+            done
+            echo '    </ComponentGroup>'
+            echo '  </Fragment>'
+            echo '</Wix>'
+          } > Harvested.wxs
+          wix build collaborative-layout-designer.wxs Harvested.wxs \
+              -arch x64 \
+              -out ../../${{ matrix.artifact }}.msi
+
+      - name: Codesign MSI (Windows)
+        if: runner.os == 'Windows' && env.WINDOWS_PFX_BASE64 != ''
+        shell: pwsh
+        env:
+          WINDOWS_PFX_BASE64: ${{ secrets.WINDOWS_PFX_BASE64 }}
+          WINDOWS_PFX_PWD:    ${{ secrets.WINDOWS_PFX_PWD }}
+        run: |
+          [IO.File]::WriteAllBytes("cert.pfx", [Convert]::FromBase64String($env:WINDOWS_PFX_BASE64))
+          $SDKSign = (Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" |
+                      Sort-Object FullName -Descending | Select-Object -First 1).FullName
+          if (-not $SDKSign) { $SDKSign = "signtool.exe" }
+          & $SDKSign sign /f cert.pfx /p $env:WINDOWS_PFX_PWD `
+            /fd SHA256 /tr http://timestamp.sectigo.com /td SHA256 `
+            "${{ matrix.artifact }}.msi"
+          Remove-Item cert.pfx
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

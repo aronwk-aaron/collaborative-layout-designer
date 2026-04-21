@@ -126,8 +126,13 @@ reads the `.bbm` normally and ignores the sidecar.
   constituent pieces.
 - Autosave on every edit (5 s throttled) + crash-recovery prompt.
 - Cross-platform CI/CD with Linux / Windows / macOS-arm64 / macOS-x86_64
-  packaging (Qt runtime bundled via windeployqt / macdeployqt, parts
-  library + translations included).
+  packaging. Each release tag now emits:
+  - Linux: `.tar.gz` + AppImage
+  - macOS: `.zip` (app bundle) + `.dmg` disk image
+  - Windows: `.zip` + WiX v4 MSI installer
+  Unsigned by default — signing + notarization activate when the
+  secrets described in [`docs/SIGNING.md`](docs/SIGNING.md) are
+  configured in the repo.
 - Render-goldens regression harness over the `.bbm` corpus (fixed
   1600 × 1200 PNGs under [`fixtures/render-goldens/`](fixtures/render-goldens/);
   re-capture via [`scripts/capture-render-goldens.sh`](scripts/capture-render-goldens.sh)).
@@ -161,10 +166,17 @@ reads the `.bbm` normally and ignores the sidecar.
   byte-exact round-trip (automated) + manual checklist in
   [`docs/MANUAL_TESTING.md`](docs/MANUAL_TESTING.md) §4.5.
 
-**Large / Phase 4 proper**
-- Real installer recipes: WiX v4 MSI for Windows, signed + notarized
-  `.app` for macOS, AppImage / Flatpak for Linux. (CI shape copied from
-  a sibling project; the packaging recipes are still stubs.)
+**Volunteer / budget-gated**
+- **macOS code-signing + notarization**: wired into the release
+  workflow but requires an [Apple Developer Program](https://developer.apple.com/programs/)
+  membership ($99/yr). Drop the secrets listed in
+  [`docs/SIGNING.md`](docs/SIGNING.md) into the repo and signing
+  activates on the next tag.
+- **Windows code-signing**: wired as above but requires a
+  code-signing certificate from a CA ($200–500/yr, OV preferred for
+  CI automation). Activates when `WINDOWS_PFX_BASE64` is set.
+- **Flatpak for Linux**: AppImage covers portable Linux distribution
+  already; Flatpak is a follow-up if someone wants it.
 
 **Deferred (niche)**
 - BlueBrick's Download Center dialog.
