@@ -898,6 +898,10 @@ void MainWindow::setupMenus() {
     connect(importModAct, &QAction::triggered, this, &MainWindow::onImportBbmAsModule);
     auto* saveModAct = modules->addAction(tr("&Save Selection as Module..."));
     connect(saveModAct, &QAction::triggered, this, &MainWindow::onSaveSelectionAsModule);
+    auto* saveSetAct = modules->addAction(tr("Save Selection as &Set..."));
+    saveSetAct->setToolTip(tr("Export the current brick selection as a "
+                              "BrickTracks-style .set.xml drop-in for the parts library"));
+    connect(saveSetAct, &QAction::triggered, this, &MainWindow::onSaveSelectionAsSet);
 
     auto* help = menuBar()->addMenu(tr("&Help"));
     auto* aboutAct = help->addAction(tr("&About CLD..."));

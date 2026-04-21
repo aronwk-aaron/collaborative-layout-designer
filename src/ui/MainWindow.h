@@ -53,6 +53,7 @@ private slots:
     void onCreateModuleFromSelection();
     void onImportBbmAsModule();
     void onSaveSelectionAsModule();
+    void onSaveSelectionAsSet();
     void onImportModuleFromLibraryPath(const QString& bbmPath);
     void rebuildRecentMenu();
     void pushRecentFile(const QString& path);

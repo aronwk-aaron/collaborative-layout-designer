@@ -85,6 +85,11 @@ skin on top.
   - **Cross-layer modules** — bundle items spanning multiple layers into a
     named module; move or rotate the whole module as a single unit; save
     and re-import modules as standalone `.bbm` files.
+  - **Save Selection as Set** — export the current brick selection as a
+    BrickTracks-style `.set.xml` drop-in for the parts library. Sets
+    written by this feature expand cleanly in both vanilla BlueBrick
+    and this fork, with hull-bbox-centre positions preserved so rotated
+    curves / switches line up exactly.
   - **Anchored text labels** — labels that stick to bricks, groups, and
     modules when they move or rotate, instead of drifting in world
     coordinates.

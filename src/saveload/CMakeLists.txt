@@ -13,6 +13,8 @@ add_library(cld_saveload STATIC
     SidecarIO.h
     VenueIO.cpp
     VenueIO.h
+    SetIO.cpp
+    SetIO.h
 )
 
 target_link_libraries(cld_saveload PUBLIC cld_core Qt6::Core Qt6::Gui)

@@ -35,6 +35,7 @@
 #include <atomic>
 #include "../saveload/BbmReader.h"
 #include "../saveload/BbmWriter.h"
+#include "../saveload/SetIO.h"
 #include "../saveload/SidecarIO.h"
 
 #include <QAction>
@@ -958,6 +959,130 @@ void MainWindow::onSaveSelectionAsModule() {
     }
     statusBar()->showMessage(tr("Saved %1 bricks to %2").arg(picks.size()).arg(target), 4000);
     moduleLibraryPanel_->refresh();
+}
+
+void MainWindow::onSaveSelectionAsSet() {
+    // Export the current brick selection as a BrickTracks-style
+    // `.set.xml` — a <group> with one <SubPart> per selected brick,
+    // carrying position (rotated-hull-bbox centre, set-local studs) and
+    // angle. Matches the schema of the set files under parts/BrickTracks/
+    // and parts/TrixBrix/, so the written file drops straight into a
+    // BlueBrick-compatible parts library and expands correctly in both
+    // vanilla BlueBrick and this app.
+    //
+    // Only bricks are supported — sets don't carry rulers / labels /
+    // areas / text. Pick the geometric centroid of the selected bricks'
+    // hull-bbox-centres as the origin so "drop the set on the cursor"
+    // lands roughly where the user expects.
+    auto* map = mapView_->currentMap();
+    if (!map) return;
+    struct Picked { core::Brick brick; };
+    std::vector<Picked> picks;
+    for (QGraphicsItem* it : mapView_->scene()->selectedItems()) {
+        if (it->data(2).toString() != QStringLiteral("brick")) continue;
+        const int li = it->data(0).toInt();
+        const QString guid = it->data(1).toString();
+        if (li < 0 || li >= static_cast<int>(map->layers().size())) continue;
+        auto* L = map->layers()[li].get();
+        if (!L || L->kind() != core::LayerKind::Brick) continue;
+        for (const auto& b : static_cast<core::LayerBrick&>(*L).bricks) {
+            if (b.guid == guid) { picks.push_back({ b }); break; }
+        }
+    }
+    if (picks.empty()) {
+        QMessageBox::information(this, tr("Save set"),
+            tr("Select one or more bricks first."));
+        return;
+    }
+
+    // BB stores each subpart's sp.position as its ROTATED HULL BBOX
+    // CENTRE. Our bricks live at image-centre coords (displayArea.center),
+    // so we back-compute the hull centre per brick via the same mOffset
+    // we apply during set expansion in MapView's set branch.
+    std::vector<QPointF> hullCentres;
+    hullCentres.reserve(picks.size());
+    double sumX = 0.0, sumY = 0.0;
+    for (const auto& p : picks) {
+        const QPointF imgCentre = p.brick.displayArea.center();
+        const QPointF mOffset = parts_.hullBboxOffsetStuds(
+            p.brick.partNumber, p.brick.orientation);
+        const QPointF hullCentre = imgCentre - mOffset;
+        hullCentres.push_back(hullCentre);
+        sumX += hullCentre.x();
+        sumY += hullCentre.y();
+    }
+    const QPointF centroid(sumX / picks.size(), sumY / picks.size());
+
+    saveload::SetManifest manifest;
+    manifest.author = map->author.isEmpty()
+        ? QStringLiteral("Collaborative Layout Designer")
+        : map->author;
+    manifest.canUngroup = true;
+    manifest.subparts.reserve(picks.size());
+    for (size_t i = 0; i < picks.size(); ++i) {
+        saveload::SetSubpart sp;
+        sp.partKey = picks[i].brick.partNumber;
+        sp.positionStuds = hullCentres[i] - centroid;
+        sp.angleDegrees = picks[i].brick.orientation;
+        manifest.subparts.push_back(std::move(sp));
+    }
+
+    const QString rawName = QInputDialog::getText(
+        this, tr("Save set"), tr("Set name:"),
+        QLineEdit::Normal, tr("New Set"));
+    if (rawName.isEmpty()) return;
+    manifest.name = rawName;
+    // Filename sanitisation (same rules as save-selection-as-module).
+    QString safeName = rawName;
+    static const QRegularExpression bad(QStringLiteral(R"([<>:"/\\|?*\x00-\x1F])"));
+    safeName.replace(bad, QStringLiteral("_"));
+    while (safeName.startsWith(QLatin1Char('.')) || safeName.startsWith(QLatin1Char(' ')))
+        safeName.remove(0, 1);
+    while (safeName.endsWith(QLatin1Char('.')) || safeName.endsWith(QLatin1Char(' ')))
+        safeName.chop(1);
+    if (safeName.isEmpty()) safeName = QStringLiteral("Set");
+    if (!safeName.endsWith(QStringLiteral(".set"), Qt::CaseInsensitive))
+        safeName += QStringLiteral(".set");
+
+    // Default target: first configured user library path so placing +
+    // reloading round-trips. Falls back to project directory otherwise.
+    QSettings s;
+    QStringList userPaths = s.value(QStringLiteral("LibraryPaths/UserPaths"))
+                              .toStringList();
+    const QString startDir = userPaths.isEmpty()
+        ? QDir::homePath()
+        : userPaths.first();
+    QDir().mkpath(startDir);
+    QString target = QFileDialog::getSaveFileName(
+        this, tr("Save selection as set"),
+        QDir(startDir).filePath(safeName + QStringLiteral(".xml")),
+        tr("BlueBrick set (*.set.xml)"));
+    if (target.isEmpty()) return;
+    if (!target.endsWith(QStringLiteral(".set.xml"), Qt::CaseInsensitive)) {
+        if (target.endsWith(QStringLiteral(".xml"), Qt::CaseInsensitive))
+            target = target.left(target.size() - 4) + QStringLiteral(".set.xml");
+        else
+            target += QStringLiteral(".set.xml");
+    }
+
+    QString err;
+    if (!saveload::writeSetXml(target, manifest, &err)) {
+        QMessageBox::warning(this, tr("Save set failed"), err);
+        return;
+    }
+    statusBar()->showMessage(
+        tr("Saved set %1 (%2 subparts) to %3")
+            .arg(rawName).arg(picks.size()).arg(target), 4000);
+    // Rescan the library so the new set shows up immediately in the
+    // Parts panel without needing a manual reload.
+    QStringList allPaths;
+    const QString vendored = defaultVendoredPartsRoot();
+    if (!vendored.isEmpty() && QDir(vendored).exists()) allPaths << vendored;
+    for (const QString& p : loadUserLibraryPaths()) {
+        if (!allPaths.contains(p) && QDir(p).exists()) allPaths << p;
+    }
+    rescanLibrary(allPaths);
+    partsBrowser_->rebuild();
 }
 
 // Build the per-source-layer batches for importing a module .bbm. Each

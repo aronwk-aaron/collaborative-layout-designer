@@ -264,6 +264,26 @@ Set up: a ruler with both endpoints attached to bricks.
 - [ ] Drag from Module Library panel onto the map imports the module at
       the drop position.
 
+### 5.7 Save Selection as Set (BrickTracks-style `.set.xml`)
+- [ ] Place several track pieces (mix of straights + curves + switches).
+- [ ] Select them all (Ctrl+A or rubber band).
+- [ ] Modules → **Save Selection as Set...** Enter a name.
+- [ ] Choose a target under a user library path (Libraries dialog →
+      add a folder if needed). Save.
+- [ ] Status bar: `Saved set <name> (N subparts) to <path>`.
+- [ ] Parts panel auto-rescans; the new set appears under its library
+      with the name you entered.
+- [ ] Drag the new set from the Parts panel onto the map. Every
+      subpart appears at the correct position, rotations preserved,
+      and the internal connections between tracks show yellow dots
+      (not red) — no visual gaps at the joints.
+- [ ] `.set.xml` file on disk uses 6-decimal position precision and
+      `<group><SubPartList><SubPart id="..."><position>/<angle></SubPart>`
+      schema matching the BrickTracks / TrixBrix sets shipped with
+      BlueBrick 1.9.2.
+- [ ] Opening the same `.set.xml` in vanilla BlueBrick 1.9.2 (or
+      expanding it there) also produces a correctly-aligned layout.
+
 ---
 
 ## 6. Venues (sidecar-only)
