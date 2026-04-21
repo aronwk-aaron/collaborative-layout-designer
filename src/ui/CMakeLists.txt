@@ -5,6 +5,7 @@ add_library(cld_ui STATIC
     MainWindowLibrary.cpp
     MainWindowMapMenu.cpp
     MainWindowMenus.cpp
+    MainWindowToolsMenu.cpp
     MapView.cpp
     MapView.h
     MapViewDrag.cpp
