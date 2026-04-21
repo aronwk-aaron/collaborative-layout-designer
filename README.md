@@ -128,27 +128,34 @@ reads the `.bbm` normally and ignores the sidecar.
 - Cross-platform CI/CD with Linux / Windows / macOS-arm64 / macOS-x86_64
   packaging (Qt runtime bundled via windeployqt / macdeployqt, parts
   library + translations included).
+- Render-goldens regression harness over the `.bbm` corpus (fixed
+  1600 × 1200 PNGs under [`fixtures/render-goldens/`](fixtures/render-goldens/);
+  re-capture via [`scripts/capture-render-goldens.sh`](scripts/capture-render-goldens.sh)).
+- Unit tests for every external-format reader (LDraw, Studio `.io`,
+  LDD `.lxf`/`.lxfml`), covering archive extraction, material mapping,
+  missing-component fallbacks.
 
 ### Remaining work
 
 **Small / finishing touches**
 - Completed `.ts` [translations](translations/) for the 8 bundled
   languages — stubs ship, real strings are volunteer-driven.
-- Ruler render fidelity — stroke thickness and arrowheads don't quite
-  match vanilla BlueBrick yet.
-- Further code-smell pass on `MainWindowMenus.cpp` (single 900-line
-  `setupMenus()`); lower priority than the large files already split.
+- `MainWindowMenus.cpp` used to be 909 lines; the Map / Venue menu
+  split out into its own file (see [`MainWindowMapMenu.cpp`](src/ui/MainWindowMapMenu.cpp)).
+  Tools menu is the last candidate — low-priority, manageable as-is.
 
 **Medium**
-- Studio `.io` and LDD `.lxf` / `.lxfml` import end-to-end exercise
-  against real-world files (readers exist; import-to-composite-part flow
-  needs more field testing).
-- Forward-compat CI leg: scripted vanilla BlueBrick 1.9.2 run on Windows
-  against every `.bbm` the fork produces, failing the build on any
-  parse error.
-- Render-goldens CI: PNG-diff against vanilla-captured references at
-  1× / 4× zoom (the Phase 2 verification gate from the plan is not yet
-  enforced in CI).
+- Vanilla-captured reference PNGs for the render-goldens harness. The
+  current references are captures of what *we* render today — they
+  lock in regressions but don't enforce parity with BlueBrick. Once
+  someone captures the same corpus on Windows in BlueBrick 1.9.2,
+  drop them into [`fixtures/render-goldens/`](fixtures/render-goldens/)
+  and the gate becomes a parity gate.
+- Forward-compat CI leg: scripted vanilla BlueBrick 1.9.2 run on
+  Windows against every `.bbm` the fork produces. Deferred — Windows
+  Forms UI automation is too brittle for a CI pipeline. Covered by
+  byte-exact round-trip (automated) + manual checklist in
+  [`docs/MANUAL_TESTING.md`](docs/MANUAL_TESTING.md) §4.5.
 
 **Large / Phase 4 proper**
 - Top-down sprite generation for LDraw / Studio / LDD parts that aren't

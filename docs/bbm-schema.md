@@ -12,6 +12,9 @@ This document describes the vanilla BlueBrick `.bbm` save format as derived from
   labels, venues).
 - [`bbm-cld-schema.json`](bbm-cld-schema.json) — JSON Schema (draft-07)
   for the same sidecar.
+- [`set-schema.md`](set-schema.md) — the `.set.xml` format used by
+  the BrickTracks / TrixBrix contrib libraries for pre-assembled
+  multi-brick sets (what **Save Selection as Set** writes).
 
 The schema isn't formally documented upstream — the C# `System.Xml.Serialization.XmlSerializer` output, driven by `Map.WriteXml` and each `Layer` subclass's `WriteXml`, **is** the format.
 

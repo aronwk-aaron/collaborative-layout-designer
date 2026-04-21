@@ -652,6 +652,45 @@ actual target OS (not just via CI artifacts):
 
 ---
 
+## 19. Render-goldens (regression vs parity)
+
+[`fixtures/render-goldens/`](../fixtures/render-goldens/) holds the
+reference PNG for every `.bbm` in the corpus. The automated test
+`RenderGoldens.*` renders each fixture at 1600 × 1200 via the
+offscreen Qt platform and pixel-diffs vs the reference.
+
+The current references are captures of what *we* render today —
+they're a **regression** gate (did anything drift?), not a parity
+gate (does it match BlueBrick?). Turning them into a parity gate is
+a manual one-time capture step:
+
+- [ ] On Windows with vanilla BlueBrick 1.9.2 installed, for each
+      fixture under `fixtures/bbm-corpus/*.bbm`:
+      - Open in BlueBrick.
+      - Export / screen-capture the rendering at a size matching
+        the test harness (`kGoldenWidth × kGoldenHeight` in
+        [`tests/rendering/RenderGoldensTest.cpp`](../tests/rendering/RenderGoldensTest.cpp)).
+      - Save as `<fixture-stem>.png` under `fixtures/render-goldens/`,
+        overwriting the existing capture.
+- [ ] Run `ctest -R RenderGoldens` locally. Failures are diffs
+      against the new vanilla reference — each one is either a
+      genuine parity gap to fix or a tolerance to widen (tweak
+      `kChannelTolerance` / `kMaxPixelDiffFraction` in the test).
+- [ ] Commit the PNGs. From now on the harness enforces vanilla
+      parity rather than just "no internal drift".
+
+When making an intentional renderer change:
+
+- [ ] `cmake --build build` locally.
+- [ ] `scripts/capture-render-goldens.sh` regenerates every
+      reference from the current build.
+- [ ] Eyeball the diffs (git diff on a PNG won't help — use an image
+      diff tool, or open old vs new side-by-side).
+- [ ] Commit only after you've confirmed the new renders are what
+      you intended.
+
+---
+
 ## When you find a regression
 
 1. Note the checklist line that failed and the steps.
