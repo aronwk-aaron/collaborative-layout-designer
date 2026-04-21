@@ -72,21 +72,40 @@ LDrawReadResult readLDraw(const QString& path) {
             firstComment = false;
             continue;
         }
-        if (code != 1) continue;
-        // Expect: 1 color x y z a b c d e f g h i filename
-        if (parts.size() < 15) continue;
+        if (code == 1) {
+            // Expect: 1 color x y z a b c d e f g h i filename
+            if (parts.size() < 15) continue;
 
-        LDrawPartRef p;
-        p.colorCode = parts[1].toInt();
-        p.x = parts[2].toDouble();
-        p.y = parts[3].toDouble();
-        p.z = parts[4].toDouble();
-        for (int i = 0; i < 9; ++i) {
-            p.m[i] = parts[5 + i].toDouble();
+            LDrawPartRef p;
+            p.colorCode = parts[1].toInt();
+            p.x = parts[2].toDouble();
+            p.y = parts[3].toDouble();
+            p.z = parts[4].toDouble();
+            for (int i = 0; i < 9; ++i) {
+                p.m[i] = parts[5 + i].toDouble();
+            }
+            // Filename is the rest of the line (can contain spaces).
+            p.filename = parts.mid(14).join(QLatin1Char(' '));
+            r.parts.push_back(std::move(p));
+            continue;
         }
-        // Filename is the rest of the line (can contain spaces).
-        p.filename = parts.mid(14).join(QLatin1Char(' '));
-        r.parts.push_back(std::move(p));
+        // Primitive: 2 = line (2 verts), 3 = tri (3 verts), 4 = quad (4 verts).
+        // Type 5 is conditional-line, skipped entirely — it's a rendering
+        // hint for edge detection, not geometry we want to rasterize.
+        if (code == 2 || code == 3 || code == 4) {
+            const int nVerts = code;
+            // Expect: <code> colour  <3 * nVerts floats>
+            if (parts.size() < 2 + 3 * nVerts) continue;
+            LDrawPrimitive p;
+            p.kind = code;
+            p.colorCode = parts[1].toInt();
+            for (int i = 0; i < nVerts; ++i) {
+                p.v[i][0] = parts[2 + i * 3 + 0].toDouble();
+                p.v[i][1] = parts[2 + i * 3 + 1].toDouble();
+                p.v[i][2] = parts[2 + i * 3 + 2].toDouble();
+            }
+            r.primitives.push_back(p);
+        }
     }
 
     r.ok = true;

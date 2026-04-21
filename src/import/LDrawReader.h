@@ -19,10 +19,24 @@ struct LDrawPartRef {
     QString filename;                    // e.g. "3001.dat"
 };
 
+// Inline geometry — line (type 2), triangle (type 3), or quad (type 4).
+// Captured so files that inline their geometry (Studio exports, hand-
+// authored .ldr snippets) can be rasterized directly when no library
+// part resolves. Vertex coords are LDU, same axes as type 1 refs.
+// Type 5 (conditional line) is intentionally NOT captured — it only
+// draws when adjacent surfaces are separated by an edge, which is
+// render-pipeline detail irrelevant to a flat top-down sprite.
+struct LDrawPrimitive {
+    int    kind = 0;           // 2 = line, 3 = tri, 4 = quad
+    int    colorCode = 0;
+    double v[4][3] = { {0} };  // up to 4 vertices (x, y, z) each
+};
+
 struct LDrawReadResult {
     bool ok = false;
     QString error;
-    std::vector<LDrawPartRef> parts;
+    std::vector<LDrawPartRef>    parts;
+    std::vector<LDrawPrimitive>  primitives;
     QString title;  // first comment line (line 0 after leading "0")
 };
 

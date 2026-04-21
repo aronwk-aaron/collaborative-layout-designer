@@ -21,6 +21,7 @@
 #include "../edit/Connectivity.h"
 #include "../import/ImportToPart.h"
 #include "../import/LDDReader.h"
+#include "../import/LDrawRasterize.h"
 #include "../import/LDrawReader.h"
 #include "../import/StudioReader.h"
 #include "../parts/PartsLibrary.h"
@@ -29,6 +30,7 @@
 #include <QAction>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QGraphicsPixmapItem>
 #include <QGraphicsScene>
 #include <QImage>
 #include <QKeySequence>
@@ -70,9 +72,10 @@ void MainWindow::setupToolsMenu() {
             return;
         }
         auto modelMap = import::toBlueBrickMap(read);
-        if (!modelMap || modelMap->layers().empty()) {
+        const bool hasRefs = modelMap && !modelMap->layers().empty();
+        if (!hasRefs && read.primitives.empty()) {
             QMessageBox::warning(this, kindLabel,
-                tr("No usable parts found in %1").arg(source));
+                tr("No usable parts or primitives in %1").arg(source));
             return;
         }
 
@@ -81,16 +84,32 @@ void MainWindow::setupToolsMenu() {
         // populated — we use those to discriminate "external" (free)
         // ends from internal joints when emitting the composite
         // part's ConnexionList below.
-        edit::rebuildConnectivity(*modelMap, parts_);
+        if (hasRefs) edit::rebuildConnectivity(*modelMap, parts_);
 
         // Render the imported map into a QImage. Use a dedicated
         // scene + SceneBuilder so we don't disturb the user's current
-        // view.
+        // view. When no library parts resolved (or the scene is
+        // empty after compositing) we fall back to rasterizing the
+        // file's inline primitives directly — type-3/4 fills + type-2
+        // outlines at BlueBrick's 8 px/stud scale via
+        // import::rasterizeTopDown.
         QGraphicsScene renderScene;
         renderScene.setBackgroundBrush(Qt::transparent);
         rendering::SceneBuilder renderer(renderScene, parts_);
-        renderer.build(*modelMap);
-        const QRectF bounds = renderScene.itemsBoundingRect().adjusted(-4, -4, 4, 4);
+        if (hasRefs) renderer.build(*modelMap);
+        QRectF bounds = renderScene.itemsBoundingRect().adjusted(-4, -4, 4, 4);
+        if (bounds.isEmpty() && !read.primitives.empty()) {
+            // Bootstrap a scene from the primitive raster. We can
+            // place the rasterized image as a single pixmap item and
+            // treat it like any other library part from here on.
+            const QImage primImg = import::rasterizeTopDown(read);
+            if (!primImg.isNull()) {
+                auto* item = renderScene.addPixmap(QPixmap::fromImage(primImg));
+                item->setOffset(-primImg.width() / 2.0, -primImg.height() / 2.0);
+                bounds = item->boundingRect().translated(item->pos())
+                            .adjusted(-4, -4, 4, 4);
+            }
+        }
         if (bounds.isEmpty()) {
             QMessageBox::warning(this, kindLabel,
                 tr("Rendered model is empty."));

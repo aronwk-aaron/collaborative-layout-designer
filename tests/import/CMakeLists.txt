@@ -2,6 +2,7 @@ add_executable(cld_import_tests
     LDrawReaderTest.cpp
     StudioReaderTest.cpp
     LDDReaderTest.cpp
+    LDrawRasterizeTest.cpp
 )
 
 target_link_libraries(cld_import_tests
@@ -10,6 +11,7 @@ target_link_libraries(cld_import_tests
         cld_core
         GTest::gtest_main
         Qt6::Core
+        Qt6::Gui
 )
 
 # Studio/LDD tests construct synthetic ZIPs in temp dirs using Qt's
@@ -26,4 +28,6 @@ if(CLD_QZIPREADER_INCLUDE_DIR)
         "${_qtcore_private_parent}")
 endif()
 
-gtest_discover_tests(cld_import_tests)
+gtest_discover_tests(cld_import_tests
+    PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)

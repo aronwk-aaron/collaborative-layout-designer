@@ -1,6 +1,10 @@
 add_library(cld_import STATIC
     LDrawReader.cpp
     LDrawReader.h
+    LDrawColors.cpp
+    LDrawColors.h
+    LDrawRasterize.cpp
+    LDrawRasterize.h
     StudioReader.cpp
     StudioReader.h
     LDDReader.cpp
