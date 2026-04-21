@@ -142,7 +142,7 @@
         </xs:complexType>
       </xs:element>
 
-      <!-- ----- LayerGrid ----- -->
+      <!-- LayerGrid -->
       <xs:element name="CellSize"       type="xs:float"   minOccurs="0"/>
       <xs:element name="SubDivision"    type="xs:int"     minOccurs="0"/>
       <xs:element name="DisplayGrid"    type="xs:boolean" minOccurs="0"/>
@@ -157,19 +157,19 @@
       <xs:element name="CellIndexColumnLetter" type="xs:string"  minOccurs="0"/>
       <xs:element name="CellIndexRowNumber"    type="xs:string"  minOccurs="0"/>
 
-      <!-- ----- LayerBrick ----- -->
+      <!-- LayerBrick -->
       <xs:element name="DisplayBrickElevation" type="xs:boolean" minOccurs="0"/>
       <xs:element name="Bricks"  type="BricksContainer"   minOccurs="0"/>
 
-      <!-- ----- LayerText ----- -->
+      <!-- LayerText -->
       <xs:element name="TextCells" type="TextCellsContainer" minOccurs="0"/>
 
-      <!-- ----- LayerArea ----- -->
+      <!-- LayerArea -->
       <xs:element name="AreaCellSizeInStud" type="xs:int"       minOccurs="0"/>
       <xs:element name="AreaTransparency"   type="xs:int"       minOccurs="0"/>
       <xs:element name="Areas"              type="AreaContainer" minOccurs="0"/>
 
-      <!-- ----- LayerRuler ----- -->
+      <!-- LayerRuler -->
       <xs:element name="RulerItems" type="RulerItemsContainer" minOccurs="0"/>
 
       <!-- Groups (shared by brick / text / ruler layers) -->
