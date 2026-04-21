@@ -3,6 +3,7 @@ add_library(cld_ui STATIC
     MainWindow.h
     MainWindowFileIO.cpp
     MainWindowLibrary.cpp
+    MainWindowMapMenu.cpp
     MainWindowMenus.cpp
     MapView.cpp
     MapView.h

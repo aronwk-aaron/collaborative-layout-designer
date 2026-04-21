@@ -1,0 +1,290 @@
+// Map menu — background colour, general info, and the venue sub-menu
+// (draw outline, draw-by-dimensions, add obstacle, edit properties,
+// clear, plus save/load a .cld-venue file from the venue library).
+// Pulled out of MainWindowMenus.cpp so the remaining setupMenus()
+// function focuses on File / Edit / View / Tools wiring rather than
+// the venue dialog churn.
+
+#include "MainWindow.h"
+
+#include "MapView.h"
+#include "VenueDialog.h"
+#include "VenueDimensionsDialog.h"
+
+#include "../core/Map.h"
+#include "../core/Venue.h"
+#include "../edit/EditCommands.h"
+#include "../edit/LayerCommands.h"
+#include "../edit/VenueCommands.h"
+#include "../saveload/VenueIO.h"
+
+#include <QAction>
+#include <QColorDialog>
+#include <QDateEdit>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QDir>
+#include <QFile>
+#include <QFileDialog>
+#include <QFileInfo>
+#include <QFormLayout>
+#include <QGraphicsScene>
+#include <QInputDialog>
+#include <QLineEdit>
+#include <QMenu>
+#include <QMenuBar>
+#include <QMessageBox>
+#include <QPlainTextEdit>
+#include <QRegularExpression>
+#include <QSettings>
+#include <QStandardPaths>
+#include <QStatusBar>
+#include <QUndoStack>
+
+namespace cld::ui {
+
+void MainWindow::setupMapMenu() {
+    auto* mapMenu = menuBar()->addMenu(tr("&Map"));
+    auto* bgAct = mapMenu->addAction(tr("Background &Colour..."));
+    connect(bgAct, &QAction::triggered, this, [this]{
+        auto* m = mapView_->currentMap();
+        if (!m) return;
+        QColor init = m->backgroundColor.color;
+        const QColor c = QColorDialog::getColor(init, this, tr("Background colour"),
+                                                 QColorDialog::ShowAlphaChannel);
+        if (!c.isValid()) return;
+        mapView_->undoStack()->push(new edit::ChangeBackgroundColorCommand(
+            *m, core::ColorSpec::fromArgb(c)));
+        mapView_->rebuildScene();
+        mapView_->scene()->setBackgroundBrush(c);
+    });
+    auto* infoAct = mapMenu->addAction(tr("General &Info..."));
+    connect(infoAct, &QAction::triggered, this, [this]{
+        auto* m = mapView_->currentMap();
+        if (!m) return;
+        QDialog dlg(this);
+        dlg.setWindowTitle(tr("Map information"));
+        auto* form = new QFormLayout(&dlg);
+        auto* authorE = new QLineEdit(m->author, &dlg);
+        auto* lugE    = new QLineEdit(m->lug, &dlg);
+        auto* eventE  = new QLineEdit(m->event, &dlg);
+        auto* dateE   = new QDateEdit(m->date, &dlg); dateE->setCalendarPopup(true);
+        auto* commentE = new QPlainTextEdit(m->comment, &dlg);
+        commentE->setMinimumHeight(100);
+        form->addRow(tr("Author:"),  authorE);
+        form->addRow(tr("LUG:"),     lugE);
+        form->addRow(tr("Event:"),   eventE);
+        form->addRow(tr("Date:"),    dateE);
+        form->addRow(tr("Comment:"), commentE);
+        auto* bb = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+        form->addRow(bb);
+        connect(bb, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+        connect(bb, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+        if (dlg.exec() != QDialog::Accepted) return;
+        edit::ChangeGeneralInfoCommand::Info next{
+            authorE->text(), lugE->text(), eventE->text(),
+            dateE->date(), commentE->toPlainText()
+        };
+        mapView_->undoStack()->push(new edit::ChangeGeneralInfoCommand(*m, std::move(next)));
+    });
+
+    mapMenu->addSeparator();
+    auto* venueMenu = mapMenu->addMenu(tr("&Venue"));
+    auto* drawOutlineAct = venueMenu->addAction(tr("Draw &Outline..."));
+    drawOutlineAct->setToolTip(tr("Click points on the map to build the venue outline. "
+                                    "Right-click or Enter finishes; Escape cancels."));
+    connect(drawOutlineAct, &QAction::triggered, this, [this]{
+        if (!mapView_->currentMap()) return;
+        mapView_->setTool(MapView::Tool::DrawVenueOutline);
+        statusBar()->showMessage(
+            tr("Click points to outline the venue. Right-click / Enter to finish, Escape to cancel."),
+            8000);
+    });
+    auto* drawByDimsAct = venueMenu->addAction(tr("Draw Outline by &Dimensions..."));
+    drawByDimsAct->setToolTip(tr("Build the venue outline by entering lengths + angles "
+                                   "instead of clicking points on the map."));
+    connect(drawByDimsAct, &QAction::triggered, this, [this]{
+        auto* m = mapView_->currentMap();
+        if (!m) return;
+        VenueDimensionsDialog dlg(this);
+        if (dlg.exec() != QDialog::Accepted) return;
+        const auto poly  = dlg.polygon();
+        const auto metas = dlg.segments();
+        if (poly.size() < 3) return;
+        core::Venue v = m->sidecar.venue.value_or(core::Venue{});
+        v.enabled = true;
+        v.edges.clear();
+        for (int i = 0; i < poly.size(); ++i) {
+            core::VenueEdge e;
+            e.polyline = { poly[i], poly[(i + 1) % poly.size()] };
+            if (i < metas.size()) {
+                e.kind  = metas[i].kind;
+                e.label = metas[i].label;
+            } else {
+                e.kind  = core::EdgeKind::Wall;
+            }
+            v.edges.push_back(e);
+        }
+        mapView_->undoStack()->push(new edit::SetVenueCommand(*m, std::make_optional(v)));
+        mapView_->rebuildScene();
+        statusBar()->showMessage(
+            tr("Venue outline built from %1 segments").arg(poly.size()), 3000);
+    });
+
+    auto* drawObstacleAct = venueMenu->addAction(tr("Add &Obstacle..."));
+    drawObstacleAct->setToolTip(tr("Click points to add an obstacle polygon (pillar, column)."));
+    connect(drawObstacleAct, &QAction::triggered, this, [this]{
+        if (!mapView_->currentMap() || !mapView_->currentMap()->sidecar.venue) {
+            QMessageBox::information(this, tr("Add obstacle"),
+                tr("Draw the venue outline first."));
+            return;
+        }
+        mapView_->setTool(MapView::Tool::DrawVenueObstacle);
+        statusBar()->showMessage(
+            tr("Click points to outline an obstacle. Right-click / Enter to finish, Escape to cancel."),
+            8000);
+    });
+    venueMenu->addSeparator();
+    auto* editVenueAct = venueMenu->addAction(tr("&Edit Venue Properties..."));
+    connect(editVenueAct, &QAction::triggered, this, [this]{
+        auto* m = mapView_->currentMap();
+        if (!m) return;
+        VenueDialog dlg(m->sidecar.venue, this);
+        if (dlg.exec() != QDialog::Accepted) return;
+        if (dlg.cleared()) {
+            mapView_->undoStack()->push(new edit::SetVenueCommand(*m, std::nullopt));
+        } else {
+            mapView_->undoStack()->push(new edit::SetVenueCommand(*m, dlg.result()));
+        }
+        mapView_->rebuildScene();
+    });
+    auto* clearVenueAct = venueMenu->addAction(tr("&Clear Venue"));
+    connect(clearVenueAct, &QAction::triggered, this, [this]{
+        auto* m = mapView_->currentMap();
+        if (!m || !m->sidecar.venue) return;
+        const auto btn = QMessageBox::question(this, tr("Clear venue"),
+            tr("Remove the venue from this project?"));
+        if (btn != QMessageBox::Yes) return;
+        mapView_->undoStack()->push(new edit::SetVenueCommand(*m, std::nullopt));
+        mapView_->rebuildScene();
+    });
+
+    venueMenu->addSeparator();
+
+    // Venue library: per-project (Map::sidecar.venue is one optional)
+    // but stash as standalone .cld-venue files so users can reuse a
+    // venue template across projects.
+    auto venueLibraryFolder = []() -> QString {
+        QString dir = QSettings().value(QStringLiteral("venue/libraryPath")).toString();
+        if (dir.isEmpty()) {
+            dir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)
+                  + QStringLiteral("/venues");
+            QSettings().setValue(QStringLiteral("venue/libraryPath"), dir);
+        }
+        QDir().mkpath(dir);
+        return dir;
+    };
+
+    auto sanitizeFilename = [](QString n) -> QString {
+        static const QRegularExpression bad(QStringLiteral(R"([<>:"/\\|?*\x00-\x1F])"));
+        n.replace(bad, QStringLiteral("_"));
+        while (n.startsWith(QLatin1Char('.')) || n.startsWith(QLatin1Char(' '))) n.remove(0, 1);
+        while (n.endsWith(QLatin1Char('.'))  || n.endsWith(QLatin1Char(' ')))  n.chop(1);
+        if (n.isEmpty()) n = QStringLiteral("Venue");
+        return n;
+    };
+
+    auto* saveVenueAct = venueMenu->addAction(tr("&Save Venue to Library..."));
+    connect(saveVenueAct, &QAction::triggered, this,
+            [this, venueLibraryFolder, sanitizeFilename]{
+        auto* m = mapView_->currentMap();
+        if (!m || !m->sidecar.venue) {
+            QMessageBox::information(this, tr("Save venue"),
+                tr("There's no venue on this project yet."));
+            return;
+        }
+        const QString dir = venueLibraryFolder();
+        bool ok = false;
+        const QString defName = m->sidecar.venue->name.isEmpty() ? tr("Venue")
+                                                                   : m->sidecar.venue->name;
+        const QString raw = QInputDialog::getText(this, tr("Save venue to library"),
+            tr("Venue name (filename):"), QLineEdit::Normal, defName, &ok);
+        if (!ok || raw.isEmpty()) return;
+        const QString target = QDir(dir).filePath(sanitizeFilename(raw)
+                                                    + QStringLiteral(".cld-venue"));
+        if (QFile::exists(target)) {
+            const auto btn = QMessageBox::question(this, tr("Save venue"),
+                tr("%1 already exists. Overwrite?").arg(target));
+            if (btn != QMessageBox::Yes) return;
+        }
+        QString err;
+        if (!saveload::writeVenueFile(target, *m->sidecar.venue, &err)) {
+            QMessageBox::warning(this, tr("Save venue"),
+                tr("Could not write %1: %2").arg(target, err));
+            return;
+        }
+        statusBar()->showMessage(tr("Saved venue to %1").arg(target), 4000);
+    });
+
+    auto* loadVenueAct = venueMenu->addAction(tr("Load Venue from &Library..."));
+    connect(loadVenueAct, &QAction::triggered, this, [this, venueLibraryFolder]{
+        auto* m = mapView_->currentMap();
+        if (!m) return;
+        const QString dir = venueLibraryFolder();
+        QDir d(dir);
+        const QStringList files = d.entryList({ QStringLiteral("*.cld-venue") },
+                                                QDir::Files, QDir::Name | QDir::IgnoreCase);
+        if (files.isEmpty()) {
+            QMessageBox::information(this, tr("Load venue"),
+                tr("No saved venues in %1.").arg(dir));
+            return;
+        }
+        QStringList displayNames;
+        for (const QString& f : files) displayNames << QFileInfo(f).completeBaseName();
+        bool ok = false;
+        const QString picked = QInputDialog::getItem(this, tr("Load venue from library"),
+            tr("Choose a saved venue:"), displayNames, 0, false, &ok);
+        if (!ok || picked.isEmpty()) return;
+        const QString path = d.filePath(picked + QStringLiteral(".cld-venue"));
+        QString err;
+        auto venue = saveload::readVenueFile(path, &err);
+        if (!venue) {
+            QMessageBox::warning(this, tr("Load venue"),
+                tr("Could not read %1: %2").arg(path, err));
+            return;
+        }
+        if (m->sidecar.venue) {
+            const auto btn = QMessageBox::question(this, tr("Replace venue"),
+                tr("This project already has a venue. Replace it?"));
+            if (btn != QMessageBox::Yes) return;
+        }
+        mapView_->undoStack()->push(new edit::SetVenueCommand(*m, venue));
+        mapView_->rebuildScene();
+        statusBar()->showMessage(tr("Loaded venue '%1'").arg(picked), 3000);
+    });
+
+    auto* openVenueFileAct = venueMenu->addAction(tr("Load Venue from &File..."));
+    connect(openVenueFileAct, &QAction::triggered, this, [this]{
+        auto* m = mapView_->currentMap();
+        if (!m) return;
+        const QString path = QFileDialog::getOpenFileName(this, tr("Load venue file"), {},
+            tr("Venue (*.cld-venue);;All files (*)"));
+        if (path.isEmpty()) return;
+        QString err;
+        auto venue = saveload::readVenueFile(path, &err);
+        if (!venue) {
+            QMessageBox::warning(this, tr("Load venue"),
+                tr("Could not read %1: %2").arg(path, err));
+            return;
+        }
+        if (m->sidecar.venue) {
+            const auto btn = QMessageBox::question(this, tr("Replace venue"),
+                tr("This project already has a venue. Replace it?"));
+            if (btn != QMessageBox::Yes) return;
+        }
+        mapView_->undoStack()->push(new edit::SetVenueCommand(*m, venue));
+        mapView_->rebuildScene();
+    });
+}
+
+}  // namespace cld::ui

@@ -60,6 +60,7 @@ private slots:
 
 private:
     void setupMenus();
+    void setupMapMenu();           // in MainWindowMapMenu.cpp
     void updateTitle();
     bool maybeSave();              // prompts on dirty close
     bool writeMapTo(const QString& path);
