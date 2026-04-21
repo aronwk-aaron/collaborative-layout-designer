@@ -186,7 +186,10 @@ jobs:
           # BlueBrickParts checkout, or use the .zip distribution which
           # keeps the library bundled.
           mkdir -p packaging/windows/staging
-          rsync -a --exclude='parts/' dist/collaborative-layout-designer/ packaging/windows/staging/
+          # cp -r then delete the parts/ subtree — rsync isn't on
+          # the Windows runner image, so we fake --exclude by hand.
+          cp -r dist/collaborative-layout-designer/. packaging/windows/staging/
+          rm -rf packaging/windows/staging/parts
           cd packaging/windows
           wix extension add WixToolset.UI.wixext WixToolset.Util.wixext || true
           # heat.exe isn't shipped with wix4 CLI; synthesise the

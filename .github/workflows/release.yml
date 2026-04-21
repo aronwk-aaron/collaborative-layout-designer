@@ -250,7 +250,10 @@ jobs:
           export PATH="$HOME/.dotnet/tools:$PATH"
           # MSI excludes parts/ — see matching nightly.yml comment.
           mkdir -p packaging/windows/staging
-          rsync -a --exclude='parts/' dist/collaborative-layout-designer/ packaging/windows/staging/
+          # cp -r + rm -rf parts/ — rsync isn't available on the
+          # Windows runner image.
+          cp -r dist/collaborative-layout-designer/. packaging/windows/staging/
+          rm -rf packaging/windows/staging/parts
           cd packaging/windows
           wix extension add WixToolset.UI.wixext WixToolset.Util.wixext || true
           {
