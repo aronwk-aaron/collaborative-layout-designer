@@ -4,6 +4,12 @@ on:
   push:
     branches: [main]
 
+# actions/checkout@v4 et al currently target Node 20, which GitHub
+# starts forcing off in June 2026. Opt into Node 24 now so the
+# deprecation warnings stop cluttering the logs.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
 jobs:
   build:
     strategy:
