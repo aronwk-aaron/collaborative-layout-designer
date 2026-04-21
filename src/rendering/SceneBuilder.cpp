@@ -136,7 +136,11 @@ void addBrickLayer(const core::LayerBrick& L, LayerSink& sink, parts::PartsLibra
     // Read scene-level render toggles once per layer; all bricks in the same
     // layer share these decisions. Stored under view/ in QSettings.
     QSettings settings;
-    const bool alwaysShowConns = settings.value(QStringLiteral("view/connectionPoints"), false).toBool();
+    // PreferencesDialog writes the "always show connection points"
+    // toggle to appearance/alwaysShowConnections — read the same key
+    // so the checkbox actually does something.
+    const bool alwaysShowConns = settings.value(
+        QStringLiteral("appearance/alwaysShowConnections"), false).toBool();
     const bool displayHulls    = settings.value(QStringLiteral("view/brickHulls"), false).toBool()
                                  || L.hull.displayHulls;
     const bool displayElev     = settings.value(QStringLiteral("view/brickElevation"), false).toBool();
