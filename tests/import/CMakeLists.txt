@@ -30,4 +30,5 @@ endif()
 
 gtest_discover_tests(cld_import_tests
     PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+    DISCOVERY_TIMEOUT 60
 )

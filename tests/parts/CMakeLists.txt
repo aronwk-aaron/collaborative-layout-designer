@@ -14,4 +14,6 @@ target_link_libraries(cld_parts_tests
         Qt6::Gui
 )
 
-gtest_discover_tests(cld_parts_tests)
+gtest_discover_tests(cld_parts_tests
+    DISCOVERY_TIMEOUT 60
+)

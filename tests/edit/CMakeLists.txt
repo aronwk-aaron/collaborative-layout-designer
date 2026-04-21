@@ -15,4 +15,6 @@ target_link_libraries(cld_edit_tests
         Qt6::Widgets
 )
 
-gtest_discover_tests(cld_edit_tests)
+gtest_discover_tests(cld_edit_tests
+    DISCOVERY_TIMEOUT 60
+)

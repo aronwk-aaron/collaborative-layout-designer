@@ -23,4 +23,5 @@ target_link_libraries(cld_rendering_tests
 
 gtest_discover_tests(cld_rendering_tests
     PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+    DISCOVERY_TIMEOUT 60
 )

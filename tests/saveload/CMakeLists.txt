@@ -18,4 +18,6 @@ target_link_libraries(cld_saveload_tests
         Qt6::Gui
 )
 
-gtest_discover_tests(cld_saveload_tests)
+gtest_discover_tests(cld_saveload_tests
+    DISCOVERY_TIMEOUT 60
+)
