@@ -46,7 +46,8 @@ jobs:
           sudo apt-get install -y libgl1-mesa-dev libxkbcommon-dev \
             libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
             libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxcb-sync1 \
-            libxcb-xfixes0 libxcb-xinerama0 libxcb-xkb1
+            libxcb-xfixes0 libxcb-xinerama0 libxcb-xkb1 \
+            libcups2-dev
 
       - name: Configure
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=${{ env.Qt6_DIR }} ${{ matrix.cmake_extra }}
