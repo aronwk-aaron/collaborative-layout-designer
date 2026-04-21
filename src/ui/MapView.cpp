@@ -855,22 +855,27 @@ void MapView::addPartAtScenePos(const QString& partKey, QPointF sceneCenterPx) {
                         hStuds = pm.height() / pxPerStud;
                     }
                 }
-                // Verified against real BlueBrick .set.xml files (e.g.
-                // BrickTracks/SET R104 RY3 LEFT.set.xml): the <position>
-                // is the subpart's CENTER in set-local stud coords, with
-                // the first subpart's centre at (0, 0) and subsequent
-                // offsets relative to that anchor. Compute the
-                // displayArea top-left by subtracting half-size.
-                const QPointF subCentre = centreStuds + sp.position;
-                // Set files occasionally store angles > 360° (e.g.
-                // 697.5°, 708.75°) where the set designer cumulatively
-                // rotated the subpart in BlueBrick's editor. Wrap into
-                // (-180, 180] so serialization stays tidy and angle
-                // comparisons downstream behave.
+                // BlueBrick convention (verified against MapData/
+                // BrickLibrary.cs::readSubPartListTag + LayerBrickBrick.cs
+                // ::init + updateConnectionPosition): sp.position is the
+                // ROTATED HULL BBOX CENTER for that subpart in set-local
+                // studs. Our render/connectivity code works on the IMAGE
+                // BBOX CENTER (pixmap rotates around its own center and
+                // conn world positions = displayArea.center + rotated
+                // connXMLpos). For asymmetric hulls (curves, switches) at
+                // off-axis rotations the image bbox center and hull bbox
+                // center diverge — that's the mOffsetFromOriginalImage
+                // BlueBrick applies in updateConnectionPosition. Computing
+                // the same offset here and adding it to subCentre is what
+                // makes the tracks line up properly when the set contains
+                // rotated curves/switches.
                 double orientDeg = sp.angleDegrees;
                 orientDeg = std::fmod(orientDeg, 360.0);
                 if (orientDeg >  180.0) orientDeg -= 360.0;
                 if (orientDeg <= -180.0) orientDeg += 360.0;
+                const QPointF mOffsetStuds = parts_.hullBboxOffsetStuds(
+                    sp.subKey, orientDeg);
+                const QPointF subCentre = centreStuds + sp.position + mOffsetStuds;
                 core::Brick b;
                 b.guid = core::newBbmId();
                 b.partNumber = sp.subKey;

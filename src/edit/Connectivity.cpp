@@ -35,11 +35,11 @@ struct WorldConn {
 };
 
 // Round a stud coord to a fixed grid cell for spatial bucketing so we
-// find coincident connections in O(N). Bucket size 5 studs keeps the
-// bucket lookup's ±1 neighbourhood wider than our 4-stud matching
+// find coincident connections in O(N). Bucket size 2 studs keeps the
+// bucket lookup's ±1 neighbourhood wider than our 1-stud matching
 // tolerance, so a coincident pair always lands in the same or an
 // adjacent bucket.
-constexpr double kBucketSize = 5.0;
+constexpr double kBucketSize = 2.0;
 QPair<int, int> bucketOf(QPointF p) {
     return { static_cast<int>(std::floor(p.x() / kBucketSize)),
              static_cast<int>(std::floor(p.y() / kBucketSize)) };
@@ -88,18 +88,13 @@ void rebuildConnectivity(core::Map& map, parts::PartsLibrary& lib) {
         bucket[bucketOf(all[i].worldPos)].push_back(i);
     }
 
-    // Matching tolerance. Vanilla BlueBrick straight / curve tracks
-    // abut with sub-stud precision, but BrickTracks / TrixBrix .set.xml
-    // files place subparts at multi-decimal stud positions (e.g.
-    // 20.19525, -3.647644) with non-axis-aligned rotations (-22.5°,
-    // -11.25°). After rotating the part's own connection point, world
-    // positions of "visually touching" connections can drift up to
-    // ~3.6 studs across a switch joint. 4 studs gives comfortable
-    // slack for these sets while still being much smaller than the
-    // distance between any two genuinely-separate tracks (typical
-    // rail chord > 8 studs). Bricks either touch and link, or sit at
-    // least a full tie apart and don't.
-    constexpr double kTolStuds = 4.0;
+    // Matching tolerance. With mOffsetFromOriginalImage applied during
+    // set expansion (see MapView set-placement branch), connection
+    // world positions should coincide to within sub-stud precision for
+    // visually-touching tracks. 1 stud gives comfortable slack for
+    // multi-decimal set positions without linking bricks that are
+    // obviously separated (vanilla track chord ≥ 8 studs).
+    constexpr double kTolStuds = 1.0;
     constexpr double kTolSq = kTolStuds * kTolStuds;
 
     // When a connection has multiple candidates inside the tolerance

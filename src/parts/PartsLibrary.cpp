@@ -7,6 +7,8 @@
 #include <QXmlStreamReader>
 
 #include <algorithm>
+#include <cmath>
+#include <limits>
 
 namespace cld::parts {
 
@@ -253,6 +255,37 @@ QPolygonF PartsLibrary::hullPolygonStuds(const QString& key) {
     }
     hullCache_.insert(lk, result);
     return result;
+}
+
+QPointF PartsLibrary::hullBboxOffsetStuds(const QString& key,
+                                          double orientationDegrees) {
+    const QPolygonF hull = hullPolygonStuds(key);
+    if (hull.isEmpty()) return {};
+    // Rotate every hull vertex by orientationDegrees around origin.
+    // Then compute the axis-aligned bbox centre of the rotated hull —
+    // that's how far the rotated-hull centre has drifted from the
+    // origin (the unrotated image centre in our centred convention).
+    // mOffset = image_bbox_centre_rotated - hull_bbox_centre_rotated.
+    // The image bbox is symmetric around origin, so its rotated bbox
+    // also stays centred at origin; that reduces mOffset to simply
+    // -hull_bbox_centre_rotated.
+    const double r = orientationDegrees * M_PI / 180.0;
+    const double cs = std::cos(r), sn = std::sin(r);
+    double minX = std::numeric_limits<double>::infinity();
+    double minY = std::numeric_limits<double>::infinity();
+    double maxX = -std::numeric_limits<double>::infinity();
+    double maxY = -std::numeric_limits<double>::infinity();
+    for (const QPointF& p : hull) {
+        const double rx = p.x() * cs - p.y() * sn;
+        const double ry = p.x() * sn + p.y() * cs;
+        if (rx < minX) minX = rx;
+        if (ry < minY) minY = ry;
+        if (rx > maxX) maxX = rx;
+        if (ry > maxY) maxY = ry;
+    }
+    const double cx = (minX + maxX) * 0.5;
+    const double cy = (minY + maxY) * 0.5;
+    return QPointF(-cx, -cy);
 }
 
 void PartsLibrary::clear() {

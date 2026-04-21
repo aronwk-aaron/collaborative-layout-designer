@@ -100,6 +100,17 @@ public:
     // their real silhouette rather than a loose bounding rect.
     QPolygonF hullPolygonStuds(const QString& key);
 
+    // BlueBrick's mOffsetFromOriginalImage in stud coords — the vector
+    // from the HULL bbox centre to the IMAGE bbox centre after rotating
+    // both by `orientationDegrees`. For parts with a symmetric hull
+    // (plain rectangles like straight tracks) this is (0, 0). For
+    // asymmetric hulls (curves, switches) at off-axis rotations it
+    // can be a couple of studs. Set-placement code needs this to shift
+    // sp.position (which BlueBrick stores as the rotated hull bbox
+    // centre) to the pixmap's image centre, matching the convention
+    // the rest of our renderer / connectivity code uses.
+    QPointF hullBboxOffsetStuds(const QString& key, double orientationDegrees);
+
     void clear();
 
 private:
