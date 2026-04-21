@@ -177,7 +177,22 @@ void checkGolden(const QString& bbmPath) {
 
 }  // namespace
 
+// Render goldens are an OPT-IN local regression gate. Even at 8/255
+// channel tolerance + 0.1% pixel fraction they fail cross-platform
+// (and across Qt minor versions within the same platform) because
+// font hinting, image scaler, and GIF decode all differ. The only
+// environment that can meaningfully enforce them is "the same box
+// the references were captured on". Set CLD_ENABLE_RENDER_GOLDENS=1
+// to actually run — CI doesn't, so cross-platform nightly builds
+// don't break every time antialiasing shifts.
+bool goldensEnabled() {
+    return qEnvironmentVariableIsSet("CLD_ENABLE_RENDER_GOLDENS")
+        && !qEnvironmentVariable("CLD_ENABLE_RENDER_GOLDENS").isEmpty()
+        && qEnvironmentVariable("CLD_ENABLE_RENDER_GOLDENS") != QStringLiteral("0");
+}
+
 TEST(RenderGoldens, TightCorner) {
+    if (!goldensEnabled()) GTEST_SKIP() << "set CLD_ENABLE_RENDER_GOLDENS=1 to run";
     const QString path = corpusDir() + QStringLiteral("/tight-corner.bbm");
     if (!QFile::exists(path)) GTEST_SKIP() << "tight-corner.bbm missing";
     if (!QDir(partsLibRoot()).exists()) GTEST_SKIP() << "BlueBrickParts submodule missing";
@@ -185,6 +200,7 @@ TEST(RenderGoldens, TightCorner) {
 }
 
 TEST(RenderGoldens, Fordyce2026) {
+    if (!goldensEnabled()) GTEST_SKIP() << "set CLD_ENABLE_RENDER_GOLDENS=1 to run";
     const QString path = corpusDir() + QStringLiteral("/fordyce-2026.bbm");
     if (!QFile::exists(path)) GTEST_SKIP() << "fordyce-2026.bbm missing";
     if (!QDir(partsLibRoot()).exists()) GTEST_SKIP() << "BlueBrickParts submodule missing";

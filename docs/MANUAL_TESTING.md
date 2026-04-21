@@ -659,6 +659,16 @@ reference PNG for every `.bbm` in the corpus. The automated test
 `RenderGoldens.*` renders each fixture at 1600 × 1200 via the
 offscreen Qt platform and pixel-diffs vs the reference.
 
+**Opt-in**: the harness skips unless `CLD_ENABLE_RENDER_GOLDENS=1`
+is set when you run `ctest`. Cross-environment pixel parity isn't
+achievable (Qt version + font hinting + Mesa differences), so CI
+doesn't gate on these. Treat them as a local regression check on
+the same box you captured from. Run with:
+
+```sh
+CLD_ENABLE_RENDER_GOLDENS=1 ctest --test-dir build -R RenderGoldens
+```
+
 The current references are captures of what *we* render today —
 they're a **regression** gate (did anything drift?), not a parity
 gate (does it match BlueBrick?). Turning them into a parity gate is
