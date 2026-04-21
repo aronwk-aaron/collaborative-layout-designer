@@ -95,9 +95,17 @@ jobs:
         if: runner.os == 'Windows'
         shell: bash
         run: |
+          # Visual Studio (multi-config) places the .exe in
+          # build/<CONFIG>/ because our app has OUTPUT_NAME set; Ninja
+          # would put it at build/src/app/. Locate it either way.
           mkdir -p dist/collaborative-layout-designer
-          cp build/src/app/Release/collaborative-layout-designer.exe dist/collaborative-layout-designer/ 2>/dev/null || \
-          cp build/src/app/collaborative-layout-designer.exe dist/collaborative-layout-designer/
+          EXE=$(find build -name collaborative-layout-designer.exe -not -path '*/CMakeFiles/*' | head -n 1)
+          if [ -z "$EXE" ]; then
+            echo "Could not locate collaborative-layout-designer.exe in build/"
+            find build -name '*.exe' -not -path '*/CMakeFiles/*' | head
+            exit 1
+          fi
+          cp "$EXE" dist/collaborative-layout-designer/
           windeployqt dist/collaborative-layout-designer/collaborative-layout-designer.exe
           cp -r parts/BlueBrickParts dist/collaborative-layout-designer/parts
           if ls build/*.qm 1>/dev/null 2>&1; then
