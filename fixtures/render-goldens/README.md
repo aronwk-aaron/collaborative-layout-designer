@@ -29,12 +29,25 @@ re-run to lock in the new output.
 
 ## Initial capture
 
-Ideally captured once on Windows from **vanilla BlueBrick 1.9.2** so
-the goldens enforce visual parity, not just "don't change". Until
-that's done, the test harness writes a `*.suggested.png` next to
-each expected golden when no reference exists — promote it to
-`<stem>.png` once a human has eyeballed it and confirmed it looks
-right.
+Ideally captured once from **vanilla BlueBrick 1.9.2** so the goldens
+enforce visual parity, not just "don't change". Until that's done,
+the test harness writes a `*.suggested.png` next to each expected
+golden when no reference exists — promote it to `<stem>.png` once
+a human has eyeballed it and confirmed it looks right.
+
+On Linux / macOS the repo ships
+[`scripts/run-vanilla-bluebrick.sh`](../../scripts/run-vanilla-bluebrick.sh)
+to launch BlueBrick.exe under wine / Proton-GE:
+
+1. `scripts/run-vanilla-bluebrick.sh fixtures/bbm-corpus/tight-corner.bbm`
+2. Wait for BlueBrick to finish loading.
+3. File → Export Image → pick PNG at 1600 × 1200 (matches the
+   harness' `kGoldenWidth × kGoldenHeight`).
+4. Save as `fixtures/render-goldens/tight-corner.png` (overwriting
+   the current self-captured PNG).
+5. Repeat for every `.bbm` under `fixtures/bbm-corpus/`.
+6. Run `CLD_ENABLE_RENDER_GOLDENS=1 ctest -R RenderGoldens` — any
+   failures now represent a real parity gap.
 
 See [`../../scripts/capture-render-goldens.sh`](../../scripts/capture-render-goldens.sh)
 for the local-capture path (produces the same renders the test runs
