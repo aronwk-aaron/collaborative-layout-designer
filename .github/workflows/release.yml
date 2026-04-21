@@ -75,27 +75,25 @@ jobs:
       - name: Package (macOS)
         if: runner.os == 'macOS'
         run: |
+          # Use the .app bundle CMake already built (MACOSX_BUNDLE ON).
+          # Patch the Info.plist with the release tag version, then drop
+          # parts + translations into Resources and let macdeployqt embed
+          # Qt frameworks.
           mkdir -p dist
+          SRC_APP=build/src/app/collaborative-layout-designer.app
           APP=dist/CollaborativeLayoutDesigner.app
-          mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-          cp build/src/app/collaborative-layout-designer "$APP/Contents/MacOS/collaborative-layout-designer"
-          cp -r parts/BlueBrickParts "$APP/Contents/Resources/BlueBrickParts"
+          cp -R "$SRC_APP" "$APP"
           VERSION="${GITHUB_REF_NAME#v}"
-          cat > "$APP/Contents/Info.plist" << PLIST
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-            <key>CFBundleExecutable</key><string>collaborative-layout-designer</string>
-            <key>CFBundleName</key><string>Collaborative Layout Designer</string>
-            <key>CFBundleIdentifier</key><string>com.collaborative-layout-designer.app</string>
-            <key>CFBundleVersion</key><string>${VERSION}</string>
-            <key>CFBundleShortVersionString</key><string>${VERSION}</string>
-            <key>LSMinimumSystemVersion</key><string>11.0</string>
-            <key>NSHighResolutionCapable</key><true/>
-          </dict>
-          </plist>
-          PLIST
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${VERSION}" \
+            "$APP/Contents/Info.plist" || true
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${VERSION}" \
+            "$APP/Contents/Info.plist" || true
+          mkdir -p "$APP/Contents/Resources"
+          cp -r parts/BlueBrickParts "$APP/Contents/Resources/BlueBrickParts"
+          if ls build/*.qm 1>/dev/null 2>&1; then
+            mkdir -p "$APP/Contents/Resources/translations"
+            cp build/*.qm "$APP/Contents/Resources/translations/"
+          fi
           macdeployqt "$APP" -verbose=1
           cd dist && zip -r ../${{ matrix.artifact }}.zip CollaborativeLayoutDesigner.app
 
