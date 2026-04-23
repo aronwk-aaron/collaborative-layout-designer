@@ -10,6 +10,22 @@ set_target_properties(cld_app PROPERTIES
     MACOSX_BUNDLE ON
 )
 
+# Drop the Qt runtime next to the built .exe so double-clicking the
+# dev binary works without putting Qt's bin/ on PATH. windeployqt is
+# idempotent and incremental, so re-running it on every build is fine
+# (and matches what packaging does in CI).
+if(WIN32)
+    find_program(WINDEPLOYQT_EXE windeployqt HINTS "${Qt6_DIR}/../../../bin")
+    if(WINDEPLOYQT_EXE)
+        add_custom_command(TARGET cld_app POST_BUILD
+            COMMAND "${WINDEPLOYQT_EXE}"
+                    --no-translations
+                    --no-compiler-runtime
+                    "$<TARGET_FILE:cld_app>"
+            VERBATIM)
+    endif()
+endif()
+
 # Headless CLI for dumping .bbm structure without requiring a GUI.
 add_executable(cld_inspect cld_inspect.cpp)
 target_link_libraries(cld_inspect PRIVATE cld_saveload cld_core Qt6::Core)
