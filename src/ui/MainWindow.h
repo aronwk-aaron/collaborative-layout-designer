@@ -24,6 +24,12 @@ public:
 
     bool openFile(const QString& path);
 
+    // Seed a blank document if none is loaded. Call once after the
+    // startup file-load attempts so the user always opens to a working
+    // canvas — without it, currentMap() stays null until File > Open
+    // and silent-fail bugs (e.g. add-layer doing nothing) appear.
+    void ensureDocument();
+
 protected:
     void closeEvent(QCloseEvent* e) override;
 

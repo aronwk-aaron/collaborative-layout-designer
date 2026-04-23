@@ -11,8 +11,10 @@
 #include "ModulesPanel.h"
 #include "PartsBrowser.h"
 
+#include "../core/ColorSpec.h"
 #include "../core/Ids.h"
 #include "../core/LayerBrick.h"
+#include "../core/LayerGrid.h"
 #include "../core/Map.h"
 #include "../parts/PartsLibrary.h"
 #include "../saveload/BbmReader.h"
@@ -190,6 +192,11 @@ void MainWindow::closeEvent(QCloseEvent* e) {
     e->accept();
 }
 
+void MainWindow::ensureDocument() {
+    if (mapView_->currentMap()) return;
+    onNew();
+}
+
 void MainWindow::onNew() {
     if (!maybeSave()) return;
 
@@ -214,11 +221,20 @@ void MainWindow::onNew() {
     }
 
     auto blank = std::make_unique<core::Map>();
-    // Seed with a single brick layer so drop-onto-map works out of the box.
+    // BlueBrick's StartNewFile defaults: cornflower-blue background +
+    // a Grid layer at the bottom + a Bricks layer on top. Grid first
+    // so it renders behind the bricks; bricks are the active layer so
+    // drop-onto-map works immediately.
+    blank->backgroundColor = core::ColorSpec::fromArgb(QColor(100, 149, 237));
+    auto grid = std::make_unique<core::LayerGrid>();
+    grid->guid = core::newBbmId();
+    grid->name = tr("Grid");
+    blank->layers().push_back(std::move(grid));
     auto layer = std::make_unique<core::LayerBrick>();
     layer->guid = core::newBbmId();
     layer->name = tr("Bricks");
     blank->layers().push_back(std::move(layer));
+    blank->selectedLayerIndex = static_cast<int>(blank->layers().size()) - 1;
     blank->nbItems = 0;
     mapView_->loadMap(std::move(blank));
     layerPanel_->setMap(mapView_->currentMap(), mapView_->builder());

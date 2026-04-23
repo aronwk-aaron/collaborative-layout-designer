@@ -78,6 +78,10 @@ int main(int argc, char** argv) {
             window.openFile(last);
         }
     }
+    // Guarantee a working canvas. If every load path above failed (first
+    // run, missing lastFile, autosave declined), seed a blank doc so the
+    // layer panel etc. operate on a real Map instead of silently no-op'ing.
+    window.ensureDocument();
 
     return QApplication::exec();
 }
