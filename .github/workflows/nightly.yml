@@ -192,30 +192,14 @@ jobs:
           rm -rf packaging/windows/staging/parts
           cd packaging/windows
           wix extension add WixToolset.UI.wixext WixToolset.Util.wixext || true
-          # heat.exe isn't shipped with wix4 CLI; synthesise the
-          # Harvested component group manually for every staged file
-          # other than the main exe (which the .wxs declares directly).
-          {
-            echo '<?xml version="1.0" encoding="utf-8"?>'
-            echo '<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">'
-            echo '  <Fragment>'
-            echo '    <ComponentGroup Id="HarvestedComponents" Directory="INSTALLFOLDER">'
-            find staging -type f -not -name collaborative-layout-designer.exe | while read f; do
-              rel="${f#staging/}"
-              uid="Harv$(echo "$rel" | tr -c '[:alnum:]' '_' )"
-              # WiX4 auto-generates File IDs by hashing properties,
-              # and windeployqt can copy identical-path Qt plugins
-              # under different Component parents which makes the
-              # hash collide. Give every File an explicit Id matching
-              # its Component so collisions are impossible.
-              echo "      <Component Id=\"$uid\" Guid=\"*\">"
-              echo "        <File Id=\"${uid}_F\" Source=\"staging\\\\$rel\" KeyPath=\"yes\" />"
-              echo "      </Component>"
-            done
-            echo '    </ComponentGroup>'
-            echo '  </Fragment>'
-            echo '</Wix>'
-          } > Harvested.wxs
+          # heat.exe isn't shipped with wix4 CLI; harvest-wix.py walks
+          # staging/ and emits a Harvested.wxs that mirrors the dir
+          # tree (so platforms/qwindows.dll lands under platforms/,
+          # not flat next to the .exe — Qt fails to start otherwise).
+          python ../../scripts/harvest-wix.py \
+            --staging staging \
+            --out Harvested.wxs \
+            --exclude-top collaborative-layout-designer.exe
           wix build collaborative-layout-designer.wxs Harvested.wxs \
               -arch x64 \
               -out ../../${{ matrix.artifact }}.msi

@@ -256,26 +256,14 @@ jobs:
           rm -rf packaging/windows/staging/parts
           cd packaging/windows
           wix extension add WixToolset.UI.wixext WixToolset.Util.wixext || true
-          {
-            echo '<?xml version="1.0" encoding="utf-8"?>'
-            echo '<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">'
-            echo '  <Fragment>'
-            echo '    <ComponentGroup Id="HarvestedComponents" Directory="INSTALLFOLDER">'
-            find staging -type f -not -name collaborative-layout-designer.exe | while read f; do
-              rel="${f#staging/}"
-              uid="Harv$(echo "$rel" | tr -c '[:alnum:]' '_' )"
-              # Explicit File Id keyed to the Component — WiX4's
-              # auto-generated hash IDs collide when windeployqt
-              # copies the same-named plugin under different Qt
-              # subdirs.
-              echo "      <Component Id=\"$uid\" Guid=\"*\">"
-              echo "        <File Id=\"${uid}_F\" Source=\"staging\\\\$rel\" KeyPath=\"yes\" />"
-              echo "      </Component>"
-            done
-            echo '    </ComponentGroup>'
-            echo '  </Fragment>'
-            echo '</Wix>'
-          } > Harvested.wxs
+          # Mirror the staging directory tree into the WiX manifest so
+          # Qt finds platforms/qwindows.dll, styles/, imageformats/,
+          # etc. at their expected subpaths. A flat layout breaks Qt
+          # at runtime with "no Qt platform plugin could be initialized".
+          python ../../scripts/harvest-wix.py \
+            --staging staging \
+            --out Harvested.wxs \
+            --exclude-top collaborative-layout-designer.exe
           wix build collaborative-layout-designer.wxs Harvested.wxs \
               -arch x64 \
               -out ../../${{ matrix.artifact }}.msi
