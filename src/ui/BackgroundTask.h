@@ -10,34 +10,56 @@
 #include <QThreadPool>
 #include <QWidget>
 
+#include <atomic>
 #include <functional>
 #include <memory>
 
 namespace cld::ui {
 
+// Cooperative-cancel token shared between the caller's work lambda
+// and the UI thread's progress dialog. The work checks `requested()`
+// at its own natural checkpoints; the cancel button just sets the
+// flag. Atomic so the cross-thread read on `requested()` is well-
+// defined without the work having to acquire a mutex.
+struct CancelToken {
+    std::atomic<bool> flag{false};
+    bool requested() const { return flag.load(std::memory_order_acquire); }
+    void cancel() { flag.store(true, std::memory_order_release); }
+};
+
 // Run a CPU-bound `work` callable on a background thread and show a
 // modal busy progress dialog on the UI thread while it executes.
-// Returns when the work finishes (or the caller closes the dialog,
-// though we don't actually cancel — the work runs to completion).
+// Returns true if the work completed normally, false if the user
+// cancelled (the work may still have run to its next checkpoint
+// since C++ has no safe thread-cancel; the calling code must treat
+// a `false` return as "discard the partial result, don't proceed").
 //
-// This is the minimal "keep the UI alive during a slow synchronous
-// operation" pattern. The work callable must be self-contained — no
-// touching of GUI objects from the worker thread.
+// The work callable receives a CancelToken& it can poll between its
+// own checkpoints — typically once per "pass" of a multi-stage
+// pipeline (e.g. between bake and rasterise). Work that doesn't
+// check the token still runs to completion; only the dialog
+// disappears earlier.
 //
 // Usage:
 //
-//   ui::runBackground(parent, tr("Loading model..."), [&]{
-//       result = expensiveBake();
-//   });
-//   // dialog has closed; result is ready.
-inline void runBackground(QWidget* parent, const QString& busyText,
-                           std::function<void()> work) {
-    QProgressDialog dlg(busyText, QString(), 0, 0, parent);
+//   bool ok = ui::runBackground(parent, tr("Loading model..."),
+//       [&](ui::CancelToken& cancel){
+//           result1 = stage1();
+//           if (cancel.requested()) return;
+//           result2 = stage2();
+//       });
+//   if (!ok) return;
+inline bool runBackground(QWidget* parent, const QString& busyText,
+                           std::function<void(CancelToken&)> work) {
+    QProgressDialog dlg(busyText, QObject::tr("Cancel"), 0, 0, parent);
     dlg.setWindowModality(Qt::WindowModal);
-    dlg.setCancelButton(nullptr);          // no user cancel — work is non-interruptible
     dlg.setMinimumDuration(0);
     dlg.setAutoClose(false);
     dlg.setAutoReset(false);
+
+    CancelToken token;
+    QObject::connect(&dlg, &QProgressDialog::canceled, &dlg,
+                     [&token]{ token.cancel(); });
 
     // Run the work on a one-shot QThread so the UI thread stays free
     // to pump paint events. Using QThread directly (rather than
@@ -49,7 +71,7 @@ inline void runBackground(QWidget* parent, const QString& busyText,
         void run() override { fn(); }
     };
     WorkerThread thread;
-    thread.fn = std::move(work);
+    thread.fn = [&]{ work(token); };
 
     QEventLoop loop;
     QObject::connect(&thread, &QThread::finished, &loop, &QEventLoop::quit);
@@ -60,7 +82,19 @@ inline void runBackground(QWidget* parent, const QString& busyText,
     loop.exec();                           // pumps events while waiting
 
     dlg.close();
-    thread.wait();                         // already finished, just sync
+    thread.wait();                         // already finished (or cancelled mid-checkpoint)
+    return !token.requested();
+}
+
+// Convenience overload for callers that don't want a cancel token.
+// Same as the above but the work runs ignoring cancellation. Cancel
+// button still appears so the user can dismiss the dialog after the
+// work finishes; the returned bool tells the caller whether to
+// proceed.
+inline bool runBackground(QWidget* parent, const QString& busyText,
+                           std::function<void()> work) {
+    return runBackground(parent, busyText,
+        [w = std::move(work)](CancelToken&){ w(); });
 }
 
 }  // namespace cld::ui

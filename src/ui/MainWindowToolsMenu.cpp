@@ -250,18 +250,26 @@ void MainWindow::setupToolsMenu() {
         // Bake + rasterize on a worker thread so the UI stays
         // responsive while a multi-thousand-part LDraw / Studio
         // model is being processed (can take 30s+ for big MOCs).
+        // Cancel checkpoint sits between bake and rasterize so the
+        // user can bail at the largest natural boundary.
         import::LDrawMeshLoader loader(lib, palette);
         import::BakedModel baked;
         import::RasterizeResult rast;
-        runBackground(this, tr("Importing %1...").arg(QFileInfo(source).fileName()),
-            [&]{
+        const bool ok = runBackground(this,
+            tr("Importing %1...").arg(QFileInfo(source).fileName()),
+            [&](CancelToken& cancel){
                 baked = import::bakeMeshFromLDraw(read, loader, palette);
+                if (cancel.requested()) return;
                 if (!baked.mesh.tris.empty()) {
                     import::RasterizeOptions ropt;
                     ropt.pxPerStud = 8;
                     rast = import::rasterizeMeshTopDown(baked.mesh, ropt);
                 }
             });
+        if (!ok) {
+            statusBar()->showMessage(tr("Import cancelled."), 3000);
+            return true;
+        }
         if (baked.mesh.tris.empty()) {
             QMessageBox::warning(this, kindLabel,
                 tr("LDraw library at %1 couldn't resolve any geometry for %2. "
@@ -473,8 +481,9 @@ void MainWindow::setupToolsMenu() {
             dbLif = std::make_unique<import::LifReader>();
             if (!dbLif->open(dbLifPath)) dbLif.reset();
         }
-        runBackground(this, tr("Importing %1...").arg(QFileInfo(source).fileName()),
-            [&]{
+        const bool ok = runBackground(this,
+            tr("Importing %1...").arg(QFileInfo(source).fileName()),
+            [&](CancelToken& cancel){
                 if (!ldrawRoot.isEmpty()) {
                     import::LDrawLibrary lib(ldrawRoot);
                     if (lib.looksValid()) {
@@ -488,6 +497,7 @@ void MainWindow::setupToolsMenu() {
                         for (const auto& tri : baked.mesh.tris) combined.tris.push_back(tri);
                     }
                 }
+                if (cancel.requested()) return;
 
                 import::LDDMeshBuilder lddBuilder;
                 lddBuilder.setOnDiskRoot(lddRoot);
@@ -497,6 +507,7 @@ void MainWindow::setupToolsMenu() {
                 lddBaked = lddBuilder.bake(originalRead);
                 for (const auto& tri : lddBaked.mesh.tris) combined.tris.push_back(tri);
                 allErrors += lddBaked.errors;
+                if (cancel.requested()) return;
 
                 if (!combined.tris.empty()) {
                     import::RasterizeOptions ropt;
@@ -504,6 +515,10 @@ void MainWindow::setupToolsMenu() {
                     rast = import::rasterizeMeshTopDown(combined, ropt);
                 }
             });
+        if (!ok) {
+            statusBar()->showMessage(tr("Import cancelled."), 3000);
+            return true;
+        }
 
         if (combined.tris.empty()) {
             QMessageBox::warning(this, kindLabel,
