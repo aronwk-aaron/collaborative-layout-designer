@@ -5,6 +5,8 @@ add_library(cld_import STATIC
     LDrawColors.h
     LDrawLibrary.cpp
     LDrawLibrary.h
+    LDrawMeshLoader.cpp
+    LDrawMeshLoader.h
     LDrawPalette.cpp
     LDrawPalette.h
     LDrawRasterize.cpp
@@ -23,7 +25,7 @@ target_include_directories(cld_import PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)
 # in explicitly. Using private Qt APIs is a stability tradeoff — it can
 # break across Qt minor versions, but it spares us the external QuaZip /
 # miniz dep for a tiny feature.
-target_link_libraries(cld_import PUBLIC cld_core Qt6::Core Qt6::Gui)
+target_link_libraries(cld_import PUBLIC cld_core cld_geom Qt6::Core Qt6::Gui)
 # Qt 6 layout puts private headers under
 # <prefix>/include/QtCore/<version>/QtCore/private/. Locate the specific
 # directory that contains the header we need, then add its parent so
