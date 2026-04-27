@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../geom/Mesh.h"
+#include "../../geom/Mesh.h"
 
 #include <QByteArray>
 #include <QString>

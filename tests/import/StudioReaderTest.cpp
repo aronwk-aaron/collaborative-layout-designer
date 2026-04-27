@@ -4,7 +4,7 @@
 // Uses Qt's private QZipWriter — same API we already use for the
 // reader side, so no extra deps.
 
-#include "import/StudioReader.h"
+#include "import/studio/StudioReader.h"
 
 #include <gtest/gtest.h>
 

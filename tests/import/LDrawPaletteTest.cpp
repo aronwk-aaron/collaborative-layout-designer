@@ -1,4 +1,4 @@
-#include "import/LDrawPalette.h"
+#include "import/ldraw/LDrawPalette.h"
 
 #include <gtest/gtest.h>
 

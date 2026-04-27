@@ -1,6 +1,6 @@
 #pragma once
 
-#include "LDrawReader.h"
+#include "../ldraw/LDrawReader.h"
 
 #include <QString>
 

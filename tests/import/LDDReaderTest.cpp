@@ -1,7 +1,7 @@
 // Tests for LDDReader. Exercises both `.lxfml` (raw XML) and `.lxf`
 // (LXFML inside a ZIP) paths.
 
-#include "import/LDDReader.h"
+#include "import/ldd/LDDReader.h"
 
 #include <gtest/gtest.h>
 

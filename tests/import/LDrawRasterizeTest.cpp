@@ -2,8 +2,8 @@
 // turns inline LDraw geometry (types 2/3/4) into a top-down sprite
 // for files whose subpart references don't resolve in our library.
 
-#include "import/LDrawRasterize.h"
-#include "import/LDrawReader.h"
+#include "import/ldraw/LDrawRasterize.h"
+#include "import/ldraw/LDrawReader.h"
 
 #include <gtest/gtest.h>
 

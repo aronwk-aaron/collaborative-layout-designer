@@ -1,4 +1,4 @@
-#include "import/LDDLDrawMapping.h"
+#include "import/ldd/LDDLDrawMapping.h"
 
 #include <gtest/gtest.h>
 

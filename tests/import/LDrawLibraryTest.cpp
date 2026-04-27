@@ -1,4 +1,4 @@
-#include "import/LDrawLibrary.h"
+#include "import/ldraw/LDrawLibrary.h"
 
 #include <gtest/gtest.h>
 

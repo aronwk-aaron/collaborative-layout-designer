@@ -1,4 +1,4 @@
-#include "import/LifReader.h"
+#include "import/lif/LifReader.h"
 
 #include <gtest/gtest.h>
 

@@ -1,8 +1,8 @@
 #include "LDrawReader.h"
 
-#include "../core/Brick.h"
-#include "../core/LayerBrick.h"
-#include "../core/Map.h"
+#include "../../core/Brick.h"
+#include "../../core/LayerBrick.h"
+#include "../../core/Map.h"
 
 #include <QFile>
 #include <QRegularExpression>

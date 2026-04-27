@@ -1,4 +1,4 @@
-#include "import/LDDGeomReader.h"
+#include "import/ldd/LDDGeomReader.h"
 
 #include <gtest/gtest.h>
 

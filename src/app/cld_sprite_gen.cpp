@@ -21,10 +21,10 @@
 
 #include "core/Map.h"
 #include "edit/Connectivity.h"
-#include "import/LDDReader.h"
-#include "import/LDrawRasterize.h"
-#include "import/LDrawReader.h"
-#include "import/StudioReader.h"
+#include "import/ldd/LDDReader.h"
+#include "import/ldraw/LDrawRasterize.h"
+#include "import/ldraw/LDrawReader.h"
+#include "import/studio/StudioReader.h"
 #include "parts/PartsLibrary.h"
 #include "rendering/SceneBuilder.h"
 

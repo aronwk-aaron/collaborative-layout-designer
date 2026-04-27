@@ -1,6 +1,6 @@
-#include "import/LDrawLibrary.h"
-#include "import/LDrawMeshLoader.h"
-#include "import/LDrawPalette.h"
+#include "import/ldraw/LDrawLibrary.h"
+#include "import/ldraw/LDrawMeshLoader.h"
+#include "import/ldraw/LDrawPalette.h"
 
 #include <gtest/gtest.h>
 

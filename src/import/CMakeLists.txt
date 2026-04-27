@@ -1,30 +1,47 @@
 add_library(cld_import STATIC
-    LDrawReader.cpp
-    LDrawReader.h
-    LDrawColors.cpp
-    LDrawColors.h
-    LDrawLibrary.cpp
-    LDrawLibrary.h
-    LDrawMeshBuilder.cpp
-    LDrawMeshBuilder.h
-    LDrawMeshLoader.cpp
-    LDrawMeshLoader.h
-    LDrawPalette.cpp
-    LDrawPalette.h
-    MeshRasterize.cpp
-    MeshRasterize.h
-    LDrawRasterize.cpp
-    LDrawRasterize.h
-    StudioReader.cpp
-    StudioReader.h
-    LDDGeomReader.cpp
-    LDDGeomReader.h
-    LDDLDrawMapping.cpp
-    LDDLDrawMapping.h
-    LDDReader.cpp
-    LDDReader.h
-    LifReader.cpp
-    LifReader.h
+    # LDraw / Studio shared pipeline (parser, library scanner, palette,
+    # subfile mesh resolver, top-down rasterizer, BlueBrick-format
+    # rasterizer fallback for inline primitives).
+    ldraw/LDrawReader.cpp
+    ldraw/LDrawReader.h
+    ldraw/LDrawColors.cpp
+    ldraw/LDrawColors.h
+    ldraw/LDrawLibrary.cpp
+    ldraw/LDrawLibrary.h
+    ldraw/LDrawMeshBuilder.cpp
+    ldraw/LDrawMeshBuilder.h
+    ldraw/LDrawMeshLoader.cpp
+    ldraw/LDrawMeshLoader.h
+    ldraw/LDrawPalette.cpp
+    ldraw/LDrawPalette.h
+    ldraw/LDrawRasterize.cpp
+    ldraw/LDrawRasterize.h
+
+    # Studio (.io) — wraps an LDraw model.ldr in a zip alongside thumbs.
+    studio/StudioReader.cpp
+    studio/StudioReader.h
+
+    # LDD (LEGO Digital Designer) — LXFML reader, .g binary geometry
+    # reader, and the ldraw.xml rosetta-stone for mapping LDD design
+    # IDs to LDraw equivalents.
+    ldd/LDDReader.cpp
+    ldd/LDDReader.h
+    ldd/LDDGeomReader.cpp
+    ldd/LDDGeomReader.h
+    ldd/LDDLDrawMapping.cpp
+    ldd/LDDLDrawMapping.h
+
+    # LIF (LEGO Interchange Format) — LDD's packed asset archive.
+    lif/LifReader.cpp
+    lif/LifReader.h
+
+    # Format-agnostic top-down rasterizer for cld::geom::Mesh.
+    mesh/MeshRasterize.cpp
+    mesh/MeshRasterize.h
+
+    # Format-agnostic emission of a BlueBrick library part (sprite +
+    # XML metadata + ConnexionList) — used by every importer above as
+    # the final step.
     ImportToPart.cpp
     ImportToPart.h
 )

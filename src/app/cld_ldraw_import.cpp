@@ -1,4 +1,4 @@
-#include "import/LDrawReader.h"
+#include "import/ldraw/LDrawReader.h"
 #include "saveload/BbmWriter.h"
 #include "core/LayerBrick.h"
 #include "core/Map.h"

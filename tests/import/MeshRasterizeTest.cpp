@@ -1,5 +1,5 @@
 #include "geom/Mesh.h"
-#include "import/MeshRasterize.h"
+#include "import/mesh/MeshRasterize.h"
 
 #include <gtest/gtest.h>
 
