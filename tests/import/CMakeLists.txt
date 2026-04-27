@@ -8,6 +8,7 @@ add_executable(cld_import_tests
     StudioReaderTest.cpp
     LDDGeomReaderTest.cpp
     LDDLDrawMappingTest.cpp
+    LDDMaterialsTest.cpp
     LDDReaderTest.cpp
     LDrawRasterizeTest.cpp
 )

@@ -30,6 +30,8 @@ add_library(cld_import STATIC
     ldd/LDDGeomReader.h
     ldd/LDDLDrawMapping.cpp
     ldd/LDDLDrawMapping.h
+    ldd/LDDMaterials.cpp
+    ldd/LDDMaterials.h
 
     # LIF (LEGO Interchange Format) — LDD's packed asset archive.
     lif/LifReader.cpp
