@@ -236,6 +236,22 @@ SidecarLoadResult readSidecar(const QString& cldPath, const QByteArray& bbmBytes
         out.venue = decodeVenue(root.value(QStringLiteral("venue")).toObject());
     }
 
+    out.backgroundImagePath.clear();
+    out.backgroundImageRectStuds = QRectF();
+    out.backgroundImageOpacity = 0.5;
+    if (root.contains(QStringLiteral("backgroundImage"))) {
+        const auto bg = root.value(QStringLiteral("backgroundImage")).toObject();
+        out.backgroundImagePath = bg.value(QStringLiteral("path")).toString();
+        out.backgroundImageOpacity = bg.value(QStringLiteral("opacity")).toDouble(0.5);
+        if (bg.contains(QStringLiteral("rect"))) {
+            const auto r = bg.value(QStringLiteral("rect")).toArray();
+            if (r.size() == 4) {
+                out.backgroundImageRectStuds = QRectF(
+                    r[0].toDouble(), r[1].toDouble(), r[2].toDouble(), r[3].toDouble());
+            }
+        }
+    }
+
     if (!bbmBytes.isEmpty() && !out.bbmContentHashSha256.isEmpty()) {
         r.hashMismatch = (sha256Hex(bbmBytes) != out.bbmContentHashSha256);
     }
@@ -259,6 +275,17 @@ bool writeSidecar(const QString& cldPath, const QByteArray& bbmBytes,
 
     if (sidecar.venue) {
         root[QStringLiteral("venue")] = encodeVenue(*sidecar.venue);
+    }
+
+    if (!sidecar.backgroundImagePath.isEmpty()) {
+        QJsonObject bg;
+        bg[QStringLiteral("path")] = sidecar.backgroundImagePath;
+        bg[QStringLiteral("opacity")] = sidecar.backgroundImageOpacity;
+        if (!sidecar.backgroundImageRectStuds.isNull()) {
+            const auto& r = sidecar.backgroundImageRectStuds;
+            bg[QStringLiteral("rect")] = QJsonArray{ r.x(), r.y(), r.width(), r.height() };
+        }
+        root[QStringLiteral("backgroundImage")] = bg;
     }
 
     QSaveFile f(cldPath);

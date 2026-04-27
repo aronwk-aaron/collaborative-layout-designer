@@ -85,9 +85,6 @@ private:
     QAction* undoAct_ = nullptr;
     QAction* redoAct_ = nullptr;
 
-    QComboBox* snapCombo_ = nullptr;
-    QComboBox* rotCombo_  = nullptr;
-
     class QMenu* recentMenu_ = nullptr;
 
     // Auto-save: flushes the current map to a sidecar file every N seconds if

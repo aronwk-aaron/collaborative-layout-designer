@@ -5,6 +5,7 @@
 #include "Venue.h"
 
 #include <QByteArray>
+#include <QRectF>
 #include <QString>
 
 #include <optional>
@@ -29,8 +30,17 @@ struct Sidecar {
     std::vector<Module>        modules;
     std::optional<Venue>       venue;
 
+    // Optional raster background image painted underneath everything else.
+    // Path is absolute; opacity is 0..1. CLD-only feature (vanilla
+    // BlueBrick has no background-image support); read/written via the
+    // sidecar so we don't disturb .bbm bytes.
+    QString backgroundImagePath;
+    QRectF  backgroundImageRectStuds;  // null = stretch to scene bounds
+    double  backgroundImageOpacity = 0.5;
+
     bool isEmpty() const {
-        return anchoredLabels.empty() && modules.empty() && !venue.has_value();
+        return anchoredLabels.empty() && modules.empty() && !venue.has_value()
+            && backgroundImagePath.isEmpty();
     }
 };
 

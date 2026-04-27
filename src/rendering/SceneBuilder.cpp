@@ -424,12 +424,15 @@ void addTextLayer(const core::LayerText& L, LayerSink& sink, int layerIndex) {
 void addAreaLayer(const core::LayerArea& L, LayerSink& sink) {
     const double sizePx = studToPx(L.areaCellSizeInStud);
     // Vanilla BlueBrick applies the area layer's transparency on top of
-    // each cell's own colour. When the .bbm doesn't specify a transparency
-    // (field defaults to 100), users still expect the cells to be
-    // semi-transparent so underlying bricks show through. Match BlueBrick's
-    // typical default by dropping our rendered alpha to 50% when the file
-    // provides a "fully opaque" area layer.
-    const double alpha = (L.transparency >= 100) ? 0.5 : L.transparency / 100.0;
+    // each cell's own colour. The layer-level transparency multiplies
+    // every cell's own alpha; we mirror that. When the layer's
+    // transparency is the file-format default of 100 ("fully opaque")
+    // we use 1.0 — letting the cell's own alpha control opacity. The
+    // earlier 0.5-when-100 hack was load-bearing only for legacy .bbm
+    // files where the cell colour was QColor(rgb) (alpha 255) and the
+    // user expected ~50% blend — but that broke fresh paint where
+    // cells are also alpha-255 and need to actually be visible.
+    const double alpha = std::clamp(L.transparency, 0, 100) / 100.0;
     for (const auto& cell : L.cells) {
         auto* r = new QGraphicsRectItem(cell.x * sizePx, cell.y * sizePx, sizePx, sizePx);
         r->setPen(Qt::NoPen);

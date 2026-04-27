@@ -162,7 +162,8 @@ void MapView::contextMenuEvent(QContextMenuEvent* e) {
             }
             auto* ungrp = menu.addAction(tr("Ungroup"));
             connect(ungrp, &QAction::triggered, [this]{ ungroupSelection(); });
-            auto* selPath = menu.addAction(tr("Select Path"));
+            auto* selPath = menu.addAction(tr("Select Connected"));
+            selPath->setToolTip(tr("Extend selection to every brick connected to current selection"));
             connect(selPath, &QAction::triggered, [this]{ selectPath(); });
             menu.addSeparator();
 

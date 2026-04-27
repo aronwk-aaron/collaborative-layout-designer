@@ -23,6 +23,9 @@
 #include <QDateEdit>
 #include <QDialog>
 #include <QDialogButtonBox>
+#include <QDoubleSpinBox>
+#include <QHBoxLayout>
+#include <QPushButton>
 #include <QDir>
 #include <QFile>
 #include <QFileDialog>
@@ -57,6 +60,72 @@ void MainWindow::setupMapMenu() {
             *m, core::ColorSpec::fromArgb(c)));
         mapView_->rebuildScene();
         mapView_->scene()->setBackgroundBrush(c);
+    });
+    auto* bgImgAct = mapMenu->addAction(tr("Background &Image..."));
+    bgImgAct->setToolTip(tr("Optional raster image painted under the layout (CLD-only, stored in .bbm.cld sidecar)"));
+    connect(bgImgAct, &QAction::triggered, this, [this]{
+        auto* m = mapView_->currentMap();
+        if (!m) return;
+        QDialog dlg(this);
+        dlg.setWindowTitle(tr("Background image"));
+        auto* form = new QFormLayout(&dlg);
+        auto* pathEdit = new QLineEdit(m->sidecar.backgroundImagePath, &dlg);
+        auto* browseBtn = new QPushButton(tr("..."), &dlg);
+        auto* clearBtn  = new QPushButton(tr("Clear"), &dlg);
+        auto* row = new QHBoxLayout();
+        row->addWidget(pathEdit); row->addWidget(browseBtn); row->addWidget(clearBtn);
+        auto* rowWrap = new QWidget(&dlg); rowWrap->setLayout(row);
+        form->addRow(tr("Image path:"), rowWrap);
+        connect(browseBtn, &QPushButton::clicked, &dlg, [pathEdit, &dlg]{
+            const QString p = QFileDialog::getOpenFileName(&dlg, tr("Choose background image"),
+                pathEdit->text(),
+                tr("Images (*.png *.jpg *.jpeg *.bmp *.gif);;All files (*)"));
+            if (!p.isEmpty()) pathEdit->setText(p);
+        });
+        connect(clearBtn, &QPushButton::clicked, &dlg, [pathEdit]{ pathEdit->clear(); });
+
+        auto* opacitySpin = new QDoubleSpinBox(&dlg);
+        opacitySpin->setRange(0.0, 1.0);
+        opacitySpin->setSingleStep(0.05);
+        opacitySpin->setValue(m->sidecar.backgroundImageOpacity);
+        form->addRow(tr("Opacity:"), opacitySpin);
+
+        auto* xSpin = new QDoubleSpinBox(&dlg);
+        xSpin->setRange(-100000, 100000); xSpin->setDecimals(1);
+        auto* ySpin = new QDoubleSpinBox(&dlg);
+        ySpin->setRange(-100000, 100000); ySpin->setDecimals(1);
+        auto* wSpin = new QDoubleSpinBox(&dlg);
+        wSpin->setRange(0, 100000); wSpin->setDecimals(1);
+        auto* hSpin = new QDoubleSpinBox(&dlg);
+        hSpin->setRange(0, 100000); hSpin->setDecimals(1);
+        const auto& r = m->sidecar.backgroundImageRectStuds;
+        if (!r.isNull()) {
+            xSpin->setValue(r.x()); ySpin->setValue(r.y());
+            wSpin->setValue(r.width()); hSpin->setValue(r.height());
+        }
+        auto* rectGroupForm = new QFormLayout();
+        rectGroupForm->addRow(tr("X (studs):"), xSpin);
+        rectGroupForm->addRow(tr("Y (studs):"), ySpin);
+        rectGroupForm->addRow(tr("Width (studs):"), wSpin);
+        rectGroupForm->addRow(tr("Height (studs):"), hSpin);
+        auto* rectWrap = new QWidget(&dlg); rectWrap->setLayout(rectGroupForm);
+        form->addRow(tr("Placement (0 width = native size):"), rectWrap);
+
+        auto* bb = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+        form->addRow(bb);
+        connect(bb, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+        connect(bb, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+        if (dlg.exec() != QDialog::Accepted) return;
+
+        m->sidecar.backgroundImagePath = pathEdit->text();
+        m->sidecar.backgroundImageOpacity = opacitySpin->value();
+        if (wSpin->value() > 0 && hSpin->value() > 0) {
+            m->sidecar.backgroundImageRectStuds = QRectF(
+                xSpin->value(), ySpin->value(), wSpin->value(), hSpin->value());
+        } else {
+            m->sidecar.backgroundImageRectStuds = QRectF();
+        }
+        mapView_->viewport()->update();
     });
     auto* infoAct = mapMenu->addAction(tr("General &Info..."));
     connect(infoAct, &QAction::triggered, this, [this]{

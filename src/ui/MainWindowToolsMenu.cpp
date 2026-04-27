@@ -27,7 +27,10 @@
 #include "../parts/PartsLibrary.h"
 #include "../rendering/SceneBuilder.h"
 
+#include "DownloadCenterDialog.h"
+
 #include <QAction>
+#include <QDir>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QGraphicsPixmapItem>
@@ -225,22 +228,36 @@ void MainWindow::setupToolsMenu() {
 
     auto* partListAct = tools->addAction(tr("Export &Part List (CSV)..."));
     connect(partListAct, &QAction::triggered, this, &MainWindow::onExportPartList);
+
     tools->addSeparator();
-    auto* prefsAct = tools->addAction(tr("&Preferences..."));
-    prefsAct->setShortcut(QKeySequence::Preferences);
-    connect(prefsAct, &QAction::triggered, this, [this]{
-        PreferencesDialog dlg(this);
-        dlg.exec();
-        QSettings s; s.beginGroup(QStringLiteral("editing"));
-        mapView_->setSnapStepStuds(s.value(QStringLiteral("snapStepStuds"), 0.0).toDouble());
-        mapView_->setRotationStepDegrees(s.value(QStringLiteral("rotationStepDegrees"), 90.0).toDouble());
-        s.endGroup();
-        const QString libDir = QSettings().value(QStringLiteral("modules/libraryPath")).toString();
-        if (!libDir.isEmpty() && libDir != moduleLibraryPanel_->libraryPath()) {
-            moduleLibraryPanel_->setLibraryPath(libDir);
+    auto* dlAct = tools->addAction(tr("&Download Additional Parts..."));
+    dlAct->setToolTip(tr("Search the official + community part-package servers and install zip archives into your library"));
+    connect(dlAct, &QAction::triggered, this, [this]{
+        // Pick a default install root the same way the simple download
+        // helper used to: first configured user library path, or the
+        // app-data fallback. The dialog uses this as the extraction
+        // destination AND as the source for the "already installed"
+        // version comparison.
+        QStringList userPaths = loadUserLibraryPaths();
+        QString destRoot = userPaths.isEmpty()
+            ? QDir(QStandardPaths::writableLocation(QStandardPaths::AppDataLocation))
+                .filePath(QStringLiteral("parts"))
+            : userPaths.first();
+        DownloadCenterDialog dlg(destRoot, this);
+        if (dlg.exec() == QDialog::Accepted && dlg.installedCount() > 0) {
+            const QString root = dlg.libraryRoot();
+            if (!userPaths.contains(root)) {
+                userPaths.append(root);
+                saveUserLibraryPaths(userPaths);
+            }
+            rescanLibrary(userPaths);
+            statusBar()->showMessage(
+                tr("Installed %1 package(s); library reloaded.")
+                    .arg(dlg.installedCount()), 5000);
         }
-        mapView_->rebuildScene();
     });
+
+    // Preferences moved to Edit menu (BlueBrick parity).
 }
 
 }  // namespace cld::ui

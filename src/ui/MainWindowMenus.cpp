@@ -53,6 +53,7 @@
 #include <QInputDialog>
 #include <QPageLayout>
 #include <QPageSize>
+#include <QPrintDialog>
 #include <QPrinter>
 #include <QLineEdit>
 #include <QMenu>
@@ -83,6 +84,7 @@ void MainWindow::setupMenus() {
     recentMenu_ = file->addMenu(tr("Open &Recent"));
     rebuildRecentMenu();
 
+    file->addSeparator();
     auto* saveAct = file->addAction(tr("&Save"));
     saveAct->setShortcut(QKeySequence::Save);
     connect(saveAct, &QAction::triggered, this, &MainWindow::onSave);
@@ -245,11 +247,79 @@ void MainWindow::setupMenus() {
         statusBar()->showMessage(tr("Exported PDF to %1").arg(path), 5000);
     });
 
+    auto* printAct = file->addAction(tr("&Print..."));
+    printAct->setShortcut(QKeySequence::Print);
+    connect(printAct, &QAction::triggered, this, [this]{
+        if (!mapView_->currentMap()) return;
+        auto* scene = mapView_->scene();
+        const QRectF bounds = scene->itemsBoundingRect().adjusted(-20, -20, 20, 20);
+        if (bounds.isEmpty()) {
+            QMessageBox::information(this, tr("Print"), tr("The map is empty."));
+            return;
+        }
+        // Standard print pipeline: open the system print dialog so the
+        // user can pick destination, paper size, copies, and margins.
+        // Then tile the scene across pages so train-club layouts that
+        // are wider than a single sheet print as a paste-up — vanilla
+        // BlueBrick's print path does the same.
+        QPrinter printer(QPrinter::HighResolution);
+        QPrintDialog dlg(&printer, this);
+        dlg.setWindowTitle(tr("Print layout"));
+        if (dlg.exec() != QDialog::Accepted) return;
+
+        QPainter p(&printer);
+        if (!p.isActive()) {
+            QMessageBox::warning(this, tr("Print failed"),
+                tr("Could not start the print job."));
+            return;
+        }
+        p.setRenderHint(QPainter::Antialiasing);
+        p.setRenderHint(QPainter::SmoothPixmapTransform);
+
+        // Page (paint) rect in printer device pixels.
+        const QRectF pagePx = printer.pageLayout().paintRectPixels(printer.resolution());
+        // Pick a scale that prints "actual size" — 1 stud = 8 mm in
+        // BlueBrick convention. Use the device's resolution to convert
+        // mm into device pixels, then 1 stud = 8 * (px per mm).
+        const double dpmm = printer.resolution() / 25.4;
+        const double pxPerStud = 8.0 * dpmm;
+        const double sceneStudW = bounds.width()  / rendering::SceneBuilder::kPixelsPerStud;
+        const double sceneStudH = bounds.height() / rendering::SceneBuilder::kPixelsPerStud;
+        const double tileStudW = pagePx.width()  / pxPerStud;
+        const double tileStudH = pagePx.height() / pxPerStud;
+        const int cols = std::max(1, static_cast<int>(std::ceil(sceneStudW / tileStudW)));
+        const int rows = std::max(1, static_cast<int>(std::ceil(sceneStudH / tileStudH)));
+
+        for (int row = 0; row < rows; ++row) {
+            for (int col = 0; col < cols; ++col) {
+                if (!(row == 0 && col == 0)) printer.newPage();
+                const QRectF sourceStuds(
+                    bounds.x() + col * tileStudW * rendering::SceneBuilder::kPixelsPerStud,
+                    bounds.y() + row * tileStudH * rendering::SceneBuilder::kPixelsPerStud,
+                    tileStudW * rendering::SceneBuilder::kPixelsPerStud,
+                    tileStudH * rendering::SceneBuilder::kPixelsPerStud);
+                scene->render(&p, pagePx, sourceStuds, Qt::KeepAspectRatio);
+            }
+        }
+        p.end();
+        statusBar()->showMessage(
+            tr("Printed %1 page(s)").arg(rows * cols), 5000);
+    });
+
     file->addSeparator();
     auto* quit = file->addAction(tr("&Quit"));
     quit->setShortcut(QKeySequence::Quit);
     connect(quit, &QAction::triggered, this, &QMainWindow::close);
 
+    // Edit menu — order mirrors BlueBrick MainForm.Designer.cs:
+    //   Undo / Redo
+    //   Cut / Copy / Paste / Duplicate / Delete
+    //   Find & Replace
+    //   Select All / Deselect All / Select Path / Group▸ (Group, Ungroup)
+    //   Transform▸ (Move Step▸ / Send Back / Bring Front / -- /
+    //               Rotation Step▸ / Rotate CW / Rotate CCW)
+    //   Insert▸    (CLD-specific: Add Text, Add Anchored Label)
+    //   Preferences
     auto* edit = menuBar()->addMenu(tr("&Edit"));
     undoAct_ = mapView_->undoStack()->createUndoAction(this, tr("&Undo"));
     undoAct_->setShortcut(QKeySequence::Undo);
@@ -257,47 +327,25 @@ void MainWindow::setupMenus() {
     redoAct_ = mapView_->undoStack()->createRedoAction(this, tr("&Redo"));
     redoAct_->setShortcut(QKeySequence::Redo);
     edit->addAction(redoAct_);
-    edit->addSeparator();
-    auto* del = edit->addAction(tr("&Delete"));
-    del->setShortcut(Qt::Key_Delete);
-    connect(del, &QAction::triggered, [this]{ mapView_->deleteSelected(); });
-    auto* rotCCW = edit->addAction(tr("Rotate &CCW"));
-    rotCCW->setShortcut(Qt::Key_R);
-    connect(rotCCW, &QAction::triggered, [this]{
-        mapView_->rotateSelected(static_cast<float>(-mapView_->rotationStepDegrees()));
-    });
-    auto* rotCW = edit->addAction(tr("Rotate C&W"));
-    rotCW->setShortcut(QKeySequence(tr("Shift+R")));
-    connect(rotCW, &QAction::triggered, [this]{
-        mapView_->rotateSelected(static_cast<float>(mapView_->rotationStepDegrees()));
-    });
 
     edit->addSeparator();
     auto* cutAct = edit->addAction(tr("Cu&t"));
     cutAct->setShortcut(QKeySequence::Cut);
     connect(cutAct, &QAction::triggered, [this]{ mapView_->cutSelection(); });
-
     auto* copyAct = edit->addAction(tr("&Copy"));
     copyAct->setShortcut(QKeySequence::Copy);
     connect(copyAct, &QAction::triggered, [this]{ mapView_->copySelection(); });
-
     auto* pasteAct = edit->addAction(tr("&Paste"));
     pasteAct->setShortcut(QKeySequence::Paste);
     connect(pasteAct, &QAction::triggered, [this]{ mapView_->pasteClipboard(); });
-
     auto* dupAct = edit->addAction(tr("&Duplicate"));
     dupAct->setShortcut(QKeySequence(tr("Ctrl+D")));
     connect(dupAct, &QAction::triggered, [this]{ mapView_->duplicateSelection(); });
+    auto* del = edit->addAction(tr("De&lete"));
+    del->setShortcut(Qt::Key_Delete);
+    connect(del, &QAction::triggered, [this]{ mapView_->deleteSelected(); });
 
     edit->addSeparator();
-    auto* selAllAct = edit->addAction(tr("Select &All"));
-    selAllAct->setShortcut(QKeySequence::SelectAll);
-    connect(selAllAct, &QAction::triggered, [this]{ mapView_->selectAll(); });
-
-    auto* selNoneAct = edit->addAction(tr("Deselect All"));
-    selNoneAct->setShortcut(QKeySequence(tr("Ctrl+Shift+A")));
-    connect(selNoneAct, &QAction::triggered, [this]{ mapView_->deselectAll(); });
-
     auto* findAct = edit->addAction(tr("&Find && Replace..."));
     findAct->setShortcut(QKeySequence::Find);
     connect(findAct, &QAction::triggered, this, [this]{
@@ -306,35 +354,80 @@ void MainWindow::setupMenus() {
         dlg->show();
     });
 
+    edit->addSeparator();
+    auto* selAllAct = edit->addAction(tr("Select &All"));
+    selAllAct->setShortcut(QKeySequence::SelectAll);
+    connect(selAllAct, &QAction::triggered, [this]{ mapView_->selectAll(); });
+    auto* selNoneAct = edit->addAction(tr("Deselect &All"));
+    selNoneAct->setShortcut(QKeySequence(tr("Ctrl+Shift+A")));
+    connect(selNoneAct, &QAction::triggered, [this]{ mapView_->deselectAll(); });
     auto* selPathAct = edit->addAction(tr("Select &Path"));
     selPathAct->setShortcut(QKeySequence(tr("Ctrl+P")));
     selPathAct->setToolTip(tr("Extend selection to every brick connected to current selection"));
     connect(selPathAct, &QAction::triggered, [this]{ mapView_->selectPath(); });
 
+    auto* groupSub = edit->addMenu(tr("&Group"));
+    auto* groupAct = groupSub->addAction(tr("&Group"));
+    groupAct->setShortcut(QKeySequence(tr("Ctrl+G")));
+    connect(groupAct, &QAction::triggered, [this]{ mapView_->groupSelection(); });
+    auto* ungroupAct = groupSub->addAction(tr("&Ungroup"));
+    ungroupAct->setShortcut(QKeySequence(tr("Ctrl+Shift+G")));
+    connect(ungroupAct, &QAction::triggered, [this]{ mapView_->ungroupSelection(); });
+
     edit->addSeparator();
-    // Move Step submenu — nudge selection by the current snap step (or a
-    // specific override). Mirrors BlueBrick's Edit > Transform > Move Step.
-    auto* moveStepMenu = edit->addMenu(tr("&Move Step"));
+    // Transform submenu (BlueBrick parity).
+    auto* transformMenu = edit->addMenu(tr("&Transform"));
+    auto* moveStepMenu = transformMenu->addMenu(tr("&Move Step"));
     auto addNudge = [this, moveStepMenu](const QString& label, double dx, double dy){
         auto* a = moveStepMenu->addAction(label);
         connect(a, &QAction::triggered, this, [this, dx, dy]{
             mapView_->nudgeSelected(dx, dy);
         });
     };
-    addNudge(tr("Up"),    0.0, -1.0);
-    addNudge(tr("Down"),  0.0,  1.0);
-    addNudge(tr("Left"), -1.0,  0.0);
-    addNudge(tr("Right"), 1.0,  0.0);
+    addNudge(tr("&Up"),    0.0, -1.0);
+    addNudge(tr("&Down"),  0.0,  1.0);
+    addNudge(tr("&Left"), -1.0,  0.0);
+    addNudge(tr("&Right"), 1.0,  0.0);
+    auto* toBackAct = transformMenu->addAction(tr("Send to &Back"));
+    toBackAct->setShortcut(QKeySequence(tr("Ctrl+Shift+[")));
+    connect(toBackAct, &QAction::triggered, [this]{ mapView_->sendSelectionToBack(); });
+    auto* toFrontAct = transformMenu->addAction(tr("Bring to &Front"));
+    toFrontAct->setShortcut(QKeySequence(tr("Ctrl+Shift+]")));
+    connect(toFrontAct, &QAction::triggered, [this]{ mapView_->bringSelectionToFront(); });
+    transformMenu->addSeparator();
+    // Rotation step picker — duplicates toolbar dropdown so it's reachable
+    // without a mouse. Each entry sets the current rotation step.
+    auto* rotStepMenu = transformMenu->addMenu(tr("Rotation &Step"));
+    const std::vector<std::pair<QString, double>> rotStepOpts = {
+        { tr("90°"),    90.0 },
+        { tr("45°"),    45.0 },
+        { tr("22.5°"),  22.5 },
+        { tr("11.25°"), 11.25 },
+        { tr("5°"),     5.0 },
+        { tr("1°"),     1.0 },
+    };
+    for (const auto& o : rotStepOpts) {
+        auto* a = rotStepMenu->addAction(o.first);
+        connect(a, &QAction::triggered, this, [this, val = o.second]{
+            mapView_->setRotationStepDegrees(val);
+            QSettings s; s.beginGroup(QStringLiteral("editing"));
+            s.setValue(QStringLiteral("rotationStepDegrees"), val); s.endGroup();
+        });
+    }
+    auto* rotCW = transformMenu->addAction(tr("Rotate C&W"));
+    rotCW->setShortcut(QKeySequence(tr("Shift+R")));
+    connect(rotCW, &QAction::triggered, [this]{
+        mapView_->rotateSelected(static_cast<float>(mapView_->rotationStepDegrees()));
+    });
+    auto* rotCCW = transformMenu->addAction(tr("Rotate &CCW"));
+    rotCCW->setShortcut(Qt::Key_R);
+    connect(rotCCW, &QAction::triggered, [this]{
+        mapView_->rotateSelected(static_cast<float>(-mapView_->rotationStepDegrees()));
+    });
 
-    auto* groupAct = edit->addAction(tr("&Group"));
-    groupAct->setShortcut(QKeySequence(tr("Ctrl+G")));
-    connect(groupAct, &QAction::triggered, [this]{ mapView_->groupSelection(); });
-    auto* ungroupAct = edit->addAction(tr("&Ungroup"));
-    ungroupAct->setShortcut(QKeySequence(tr("Ctrl+Shift+G")));
-    connect(ungroupAct, &QAction::triggered, [this]{ mapView_->ungroupSelection(); });
-
-    edit->addSeparator();
-    auto* addTextAct = edit->addAction(tr("Add &Text..."));
+    // Insert submenu — CLD additions for items BlueBrick doesn't have.
+    auto* insertMenu = edit->addMenu(tr("&Insert"));
+    auto* addTextAct = insertMenu->addAction(tr("&Text..."));
     addTextAct->setShortcut(QKeySequence(tr("Ctrl+T")));
     connect(addTextAct, &QAction::triggered, this, [this]{
         if (!mapView_->currentMap()) return;
@@ -344,18 +437,7 @@ void MainWindow::setupMenus() {
             QLineEdit::Normal, {}, &ok);
         if (ok && !text.isEmpty()) mapView_->addTextAtViewCenter(text);
     });
-
-    edit->addSeparator();
-    auto* toFrontAct = edit->addAction(tr("Bring to &Front"));
-    toFrontAct->setShortcut(QKeySequence(tr("Ctrl+Shift+]")));
-    connect(toFrontAct, &QAction::triggered, [this]{ mapView_->bringSelectionToFront(); });
-
-    auto* toBackAct = edit->addAction(tr("Send to &Back"));
-    toBackAct->setShortcut(QKeySequence(tr("Ctrl+Shift+[")));
-    connect(toBackAct, &QAction::triggered, [this]{ mapView_->sendSelectionToBack(); });
-
-    edit->addSeparator();
-    auto* addLabel = edit->addAction(tr("Add &Anchored Label..."));
+    auto* addLabel = insertMenu->addAction(tr("&Anchored Label..."));
     addLabel->setShortcut(QKeySequence(tr("Ctrl+L")));
     connect(addLabel, &QAction::triggered, this, [this]{
         auto* map = mapView_->currentMap();
@@ -386,6 +468,23 @@ void MainWindow::setupMenus() {
         L.targetId = targetId;
         L.offset = offsetStuds;
         mapView_->undoStack()->push(new edit::AddAnchoredLabelCommand(*map, std::move(L)));
+        mapView_->rebuildScene();
+    });
+
+    edit->addSeparator();
+    auto* prefsAct = edit->addAction(tr("&Preferences..."));
+    prefsAct->setShortcut(QKeySequence::Preferences);
+    connect(prefsAct, &QAction::triggered, this, [this]{
+        PreferencesDialog dlg(this);
+        dlg.exec();
+        QSettings s; s.beginGroup(QStringLiteral("editing"));
+        mapView_->setSnapStepStuds(s.value(QStringLiteral("snapStepStuds"), 0.0).toDouble());
+        mapView_->setRotationStepDegrees(s.value(QStringLiteral("rotationStepDegrees"), 90.0).toDouble());
+        s.endGroup();
+        const QString libDir = QSettings().value(QStringLiteral("modules/libraryPath")).toString();
+        if (!libDir.isEmpty() && libDir != moduleLibraryPanel_->libraryPath()) {
+            moduleLibraryPanel_->setLibraryPath(libDir);
+        }
         mapView_->rebuildScene();
     });
 
@@ -460,8 +559,6 @@ void MainWindow::setupMenus() {
     // Map menu (background + info + the venue sub-menu) lives in
     // MainWindowMapMenu.cpp — it's ~240 lines on its own.
     setupMapMenu();
-
-    menuBar()->addMenu(tr("&Layers"));
 
     auto* budgetMenu = menuBar()->addMenu(tr("&Budget"));
     auto* budgetDlg = budgetMenu->addAction(tr("Open Budget &Editor..."));

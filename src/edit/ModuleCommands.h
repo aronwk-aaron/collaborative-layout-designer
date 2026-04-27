@@ -187,6 +187,19 @@ public:
     void redo() override;
     const QString& moduleId() const { return moduleId_; }
 
+    // After redo() runs (the undo stack pushes call redo immediately),
+    // returns every (layerIndex, guid) pair the command inserted. Lets
+    // callers select the just-placed bricks so post-drop R/Shift+R or
+    // arrow-nudge applies to the freshly-placed module.
+    struct PlacedBrick { int layerIndex; QString guid; };
+    QList<PlacedBrick> placedBricks() const {
+        QList<PlacedBrick> out;
+        for (const auto& a : applied_) {
+            for (const auto& g : a.addedGuids) out.append({ a.layerIndex, g });
+        }
+        return out;
+    }
+
 private:
     core::Map& map_;
     QString sourcePath_;

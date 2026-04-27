@@ -221,11 +221,13 @@ void MainWindow::onNew() {
     }
 
     auto blank = std::make_unique<core::Map>();
-    // BlueBrick's StartNewFile defaults: cornflower-blue background +
-    // a Grid layer at the bottom + a Bricks layer on top. Grid first
-    // so it renders behind the bricks; bricks are the active layer so
-    // drop-onto-map works immediately.
-    blank->backgroundColor = core::ColorSpec::fromArgb(QColor(100, 149, 237));
+    // BlueBrick's StartNewFile defaults: cornflower-blue background + a
+    // Grid layer at the bottom + a Bricks layer on top. Grid first so
+    // it renders behind the bricks; bricks are the active layer so
+    // drop-onto-map works immediately. Use fromKnown so the saved .bbm
+    // preserves the "CornflowerBlue" name vanilla recognises.
+    blank->backgroundColor = core::ColorSpec::fromKnown(
+        QColor(100, 149, 237), QStringLiteral("CornflowerBlue"));
     auto grid = std::make_unique<core::LayerGrid>();
     grid->guid = core::newBbmId();
     grid->name = tr("Grid");

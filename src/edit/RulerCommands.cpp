@@ -198,6 +198,89 @@ void MoveRulerItemCommand::undo() {
     }
 }
 
+// ----- MoveRulerEndpointCommand -----
+
+MoveRulerEndpointCommand::MoveRulerEndpointCommand(core::Map& map, int layerIndex,
+    QString rulerGuid, int endpointIndex, QPointF toStuds, QUndoCommand* parent)
+    : QUndoCommand(parent), map_(map), layerIndex_(layerIndex),
+      rulerGuid_(std::move(rulerGuid)),
+      endpointIndex_(endpointIndex), after_(toStuds) {
+    setText(QObject::tr("Move ruler endpoint"));
+}
+
+void MoveRulerEndpointCommand::redo() {
+    auto* L = rulerLayerForMove(map_, layerIndex_);
+    if (!L) return;
+    for (auto& any : L->rulers) {
+        const QString& g = (any.kind == core::RulerKind::Linear) ? any.linear.guid : any.circular.guid;
+        if (g != rulerGuid_) continue;
+        if (any.kind == core::RulerKind::Linear) {
+            QPointF& target = (endpointIndex_ == 0) ? any.linear.point1 : any.linear.point2;
+            if (!captured_) { before_ = target; captured_ = true; }
+            target = after_;
+            // Recompute displayArea so picking / hit-testing stays in sync
+            // with the new geometry. Mirrors what the create-time path
+            // does in MapView::mouseReleaseEvent.
+            const QPointF& p1 = any.linear.point1;
+            const QPointF& p2 = any.linear.point2;
+            const QPointF tl(std::min(p1.x(), p2.x()), std::min(p1.y(), p2.y()));
+            const QPointF br(std::max(p1.x(), p2.x()), std::max(p1.y(), p2.y()));
+            any.linear.displayArea = QRectF(tl, br);
+        } else {
+            // Circular: endpoint 0 = centre (radius preserved); 1 = a
+            // point on the rim, used to derive the radius.
+            if (endpointIndex_ == 0) {
+                if (!captured_) { before_ = any.circular.center; captured_ = true; }
+                any.circular.center = after_;
+            } else {
+                if (!captured_) {
+                    const QPointF d = QPointF(any.circular.radius, 0.0)
+                                        + any.circular.center;
+                    before_ = d;  // any "on-circle" reference
+                    captured_ = true;
+                }
+                const QPointF d = after_ - any.circular.center;
+                any.circular.radius = static_cast<float>(std::hypot(d.x(), d.y()));
+            }
+            const float r = any.circular.radius;
+            any.circular.displayArea = QRectF(
+                any.circular.center.x() - r, any.circular.center.y() - r,
+                2 * r, 2 * r);
+        }
+        break;
+    }
+}
+
+void MoveRulerEndpointCommand::undo() {
+    auto* L = rulerLayerForMove(map_, layerIndex_);
+    if (!L) return;
+    for (auto& any : L->rulers) {
+        const QString& g = (any.kind == core::RulerKind::Linear) ? any.linear.guid : any.circular.guid;
+        if (g != rulerGuid_) continue;
+        if (any.kind == core::RulerKind::Linear) {
+            QPointF& target = (endpointIndex_ == 0) ? any.linear.point1 : any.linear.point2;
+            target = before_;
+            const QPointF& p1 = any.linear.point1;
+            const QPointF& p2 = any.linear.point2;
+            const QPointF tl(std::min(p1.x(), p2.x()), std::min(p1.y(), p2.y()));
+            const QPointF br(std::max(p1.x(), p2.x()), std::max(p1.y(), p2.y()));
+            any.linear.displayArea = QRectF(tl, br);
+        } else {
+            if (endpointIndex_ == 0) {
+                any.circular.center = before_;
+            } else {
+                const QPointF d = before_ - any.circular.center;
+                any.circular.radius = static_cast<float>(std::hypot(d.x(), d.y()));
+            }
+            const float r = any.circular.radius;
+            any.circular.displayArea = QRectF(
+                any.circular.center.x() - r, any.circular.center.y() - r,
+                2 * r, 2 * r);
+        }
+        break;
+    }
+}
+
 // ----- AttachRulerCommand -----
 
 namespace {

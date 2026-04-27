@@ -13,7 +13,9 @@
 #include <memory>
 #include <vector>
 
+class QDragLeaveEvent;
 class QGraphicsItem;
+class QGraphicsPixmapItem;
 class QUndoStack;
 
 namespace cld::core    { class Map; }
@@ -53,6 +55,19 @@ public:
     void deleteSelected();
     void addPartAtViewCenter(const QString& partKey);
     void addPartAtScenePos(const QString& partKey, QPointF scenePosPx);
+
+    // Resolve where a new part of `partKey` should land if dropped at
+    // `cursorScenePx`, applying the same selected-brick anchor + connection
+    // snap + grid snap precedence used by addPartAtScenePos. `outCentreStuds`
+    // and `outOrientation` describe the would-be placement; `outSnapped` is
+    // true when a connection snap (or selection anchor) fired.
+    // `outSnapPointScenePx` (when non-null and outSnapped is true) returns
+    // the world-snap-point in scene coords so the caller can render a snap
+    // ring. Used by the live drag preview.
+    void resolvePartPlacement(const QString& partKey, QPointF cursorScenePx,
+                              QPointF* outCentreStuds, float* outOrientation,
+                              bool* outSnapped,
+                              QPointF* outSnapPointScenePx) const;
 
     // Clipboard / selection ops.
     void copySelection();            // copy selected bricks to the internal clipboard
@@ -124,6 +139,7 @@ protected:
     void contextMenuEvent(QContextMenuEvent* e) override;
     void dragEnterEvent(QDragEnterEvent* e) override;
     void dragMoveEvent(QDragMoveEvent* e) override;
+    void dragLeaveEvent(QDragLeaveEvent* e) override;
     void dropEvent(QDropEvent* e) override;
 
 private:
@@ -223,6 +239,25 @@ private:
     // tool is active. Released-position pairs with this to create the ruler.
     bool    drawingRuler_ = false;
     QPointF rulerStart_;
+    // Endpoint-drag state for selected linear rulers. When the user
+    // clicks on a small square handle drawn at point1 or point2, we
+    // enter this mode and on release commit a MoveRulerEndpointCommand.
+    // Only linear rulers expose handles in this first pass — circular
+    // edits still go through Properties for now.
+    bool    draggingRulerEndpoint_ = false;
+    int     rulerEndpointIndex_ = -1;        // 0 = point1, 1 = point2
+    int     rulerEndpointLayer_ = -1;
+    QString rulerEndpointGuid_;
+    QPointF rulerEndpointDragLast_;          // last scene-px pos under cursor
+    QPointF rulerEndpointOriginalStuds_;     // pre-drag value, in studs
+    // Live preview while the user click-drags a ruler — shows the line
+    // (or circle) being drawn plus a label with current length / radius
+    // pinned near the cursor. Lets the user dial in a target length
+    // before release without watching the status bar.
+    class QGraphicsItem* rulerPreviewShape_ = nullptr;
+    class QGraphicsSimpleTextItem* rulerPreviewLabel_ = nullptr;
+    void updateRulerPreview(QPointF endScene);
+    void clearRulerPreview();
 
     // Venue-draw state: accumulated polygon vertices in scene-stud coords
     // while the user is clicking points in DrawVenueOutline /
@@ -247,6 +282,39 @@ private:
     // draw a ring at the exact connection point.
     bool    liveSnapActive_ = false;
     QPointF liveSnapPointScene_;
+
+    // Sidecar background-image cache. drawBackground reloads the pixmap
+    // only when the path changes so panning over a large image stays
+    // cheap. Held by value (no QGraphicsItem) so layer ordering can't
+    // accidentally bury it behind other items.
+    QPixmap cachedBackgroundImage_;
+    QString cachedBackgroundPath_;
+
+    // Live drag-from-parts-browser preview state. While the user is
+    // dragging a part over the map, we paint a translucent ghost showing
+    // where it would land — including any connection-snap rotation — so
+    // they don't have to drop and undo to see if the snap took. The ghost
+    // lives in the scene at a high z-value and is removed on dragLeave or
+    // drop.
+    QGraphicsPixmapItem* dragPreviewItem_ = nullptr;
+    // The "key" identifies what's currently being previewed:
+    //   * Empty: no preview.
+    //   * "part:<partKey>": a parts-browser drag.
+    //   * "module:<bbmPath>": a module-library drag.
+    // Stored as a single string so the same dragPreviewItem_ can be
+    // rebuilt on key change without juggling two parallel members.
+    QString dragPreviewKey_;
+    // Cached centroid (in scene px) of the currently-previewed module so
+    // the ghost can be repositioned cheaply on every dragMove without
+    // re-parsing or re-rasterizing.
+    QPointF dragPreviewModuleCentroidScenePx_;
+    // Offset in studs from the module's centroid to the bbox top-left.
+    // Used so grid-snap can align the bbox top-left (matching how
+    // single-brick drops snap their top-left), regardless of module size.
+    QPointF dragPreviewModuleTopLeftOffsetStuds_;
+    void clearDragPreview();
+    void updateDragPreview(const QString& partKey, QPointF cursorScenePx);
+    void updateModuleDragPreview(const QString& bbmPath, QPointF cursorScenePx);
 };
 
 }

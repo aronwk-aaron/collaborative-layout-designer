@@ -57,6 +57,28 @@ private:
     QPointF delta_;
 };
 
+// Move just one endpoint of a ruler. Linear: endpointIndex 0 → point1,
+// 1 → point2. Circular: endpointIndex 0 → centre (radius preserved),
+// 1 → adjusts radius so the circle's edge passes through `toStuds`.
+// Used by the in-canvas endpoint-drag handles for inline geometry edits
+// without opening the Properties dialog.
+class MoveRulerEndpointCommand : public QUndoCommand {
+public:
+    MoveRulerEndpointCommand(core::Map& map, int layerIndex, QString rulerGuid,
+                             int endpointIndex, QPointF toStuds,
+                             QUndoCommand* parent = nullptr);
+    void undo() override;
+    void redo() override;
+private:
+    core::Map& map_;
+    int layerIndex_;
+    QString rulerGuid_;
+    int endpointIndex_;
+    QPointF before_;     // cached on first redo
+    QPointF after_;
+    bool captured_ = false;
+};
+
 // Attach or detach a ruler endpoint to a brick. `endpointIndex` is 0 or 1 on
 // linear rulers (point1/point2), ignored on circular rulers (the circle
 // centre is always the attached endpoint). Passing an empty brickGuid

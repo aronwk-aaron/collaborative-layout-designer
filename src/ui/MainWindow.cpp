@@ -33,12 +33,14 @@
 #include "../edit/VenueValidator.h"
 
 #include <atomic>
+#include <functional>
 #include "../saveload/BbmReader.h"
 #include "../saveload/BbmWriter.h"
 #include "../saveload/SetIO.h"
 #include "../saveload/SidecarIO.h"
 
 #include <QAction>
+#include <QActionGroup>
 #include <QApplication>
 #include <QCloseEvent>
 #include <QColorDialog>
@@ -56,8 +58,10 @@
 #include <QFormLayout>
 #include <QGraphicsItem>
 #include <QGraphicsScene>
+#include <QHash>
 #include <QImage>
 #include <QInputDialog>
+#include <QStyle>
 #include <QPainter>
 #include <QLabel>
 #include <QLineEdit>
@@ -555,52 +559,212 @@ MainWindow::MainWindow(parts::PartsLibrary& parts, QWidget* parent)
 
     setupMenus();
 
-    // ----- Toolbar: snap + rotation step presets -----
-    auto* toolbar = addToolBar(tr("Edit tools"));
-    toolbar->setObjectName(QStringLiteral("toolbar.edit"));
+    // ----- Toolbar — matches BlueBrick's MainForm.Designer.cs item order:
+    //   New / Open / Save | Undo / Redo | Delete / Cut / Copy / Paste |
+    //   SnapGrid (split) / RotationAngle (drop-down) / RotateCCW /
+    //   RotateCW / SendToBack / BringToFront | Tool (split).
+    // Icons come from the Qt platform style so the toolbar inherits the
+    // host theme's look without bundling assets.
+    auto* toolbar = addToolBar(tr("Toolbar"));
+    toolbar->setObjectName(QStringLiteral("toolbar.main"));
     toolbar->setMovable(true);
-    toolbar->addWidget(new QLabel(tr("  Snap: "), this));
-    snapCombo_ = new QComboBox(this);
-    // (display text, stud step). 0 = off.
-    const std::vector<std::pair<QString, double>> snapOptions = {
-        { tr("off"),    0.0 },
-        { QStringLiteral("32"), 32.0 },
-        { QStringLiteral("16"), 16.0 },
-        { QStringLiteral("8"),   8.0 },
-        { QStringLiteral("4"),   4.0 },
-        { QStringLiteral("2"),   2.0 },
-        { QStringLiteral("1"),   1.0 },
-        { QStringLiteral("0.5"), 0.5 },
+    toolbar->setToolButtonStyle(Qt::ToolButtonIconOnly);
+    const QStyle* st = style();
+
+    auto addBtn = [toolbar](const QIcon& icon, const QString& tip,
+                            std::function<void()> onClick) {
+        auto* a = toolbar->addAction(icon, tip);
+        a->setToolTip(tip);
+        QObject::connect(a, &QAction::triggered, onClick);
+        return a;
     };
-    for (const auto& o : snapOptions) snapCombo_->addItem(o.first, o.second);
-    toolbar->addWidget(snapCombo_);
 
+    addBtn(st->standardIcon(QStyle::SP_FileIcon),       tr("New"),    [this]{ onNew(); });
+    addBtn(st->standardIcon(QStyle::SP_DialogOpenButton), tr("Open"), [this]{ onOpen(); });
+    addBtn(st->standardIcon(QStyle::SP_DialogSaveButton), tr("Save"), [this]{ onSave(); });
     toolbar->addSeparator();
-    toolbar->addWidget(new QLabel(tr("  Tool: "), this));
-    auto* toolGroupHost = new QWidget(this);
-    auto* toolRow = new QHBoxLayout(toolGroupHost);
-    toolRow->setContentsMargins(0, 0, 0, 0);
-    toolRow->setSpacing(1);
-    auto* selectBtn = new QToolButton(toolGroupHost);
-    selectBtn->setText(tr("Select"));
-    selectBtn->setCheckable(true); selectBtn->setChecked(true);
-    auto* paintBtn = new QToolButton(toolGroupHost);
-    paintBtn->setText(tr("Paint")); paintBtn->setCheckable(true);
-    auto* eraseBtn = new QToolButton(toolGroupHost);
-    eraseBtn->setText(tr("Erase")); eraseBtn->setCheckable(true);
-    auto* lineBtn = new QToolButton(toolGroupHost);
-    lineBtn->setText(tr("Line")); lineBtn->setCheckable(true);
-    lineBtn->setToolTip(tr("Draw a linear ruler (click-drag)"));
-    auto* circleBtn = new QToolButton(toolGroupHost);
-    circleBtn->setText(tr("Circle")); circleBtn->setCheckable(true);
-    circleBtn->setToolTip(tr("Draw a circular ruler (click-drag)"));
-    toolRow->addWidget(selectBtn);
-    toolRow->addWidget(paintBtn);
-    toolRow->addWidget(eraseBtn);
-    toolRow->addWidget(lineBtn);
-    toolRow->addWidget(circleBtn);
-    toolbar->addWidget(toolGroupHost);
 
+    {
+        auto* undoIconAct = mapView_->undoStack()->createUndoAction(this);
+        undoIconAct->setIcon(st->standardIcon(QStyle::SP_ArrowBack));
+        undoIconAct->setToolTip(tr("Undo"));
+        toolbar->addAction(undoIconAct);
+        auto* redoIconAct = mapView_->undoStack()->createRedoAction(this);
+        redoIconAct->setIcon(st->standardIcon(QStyle::SP_ArrowForward));
+        redoIconAct->setToolTip(tr("Redo"));
+        toolbar->addAction(redoIconAct);
+    }
+    toolbar->addSeparator();
+
+    addBtn(st->standardIcon(QStyle::SP_TrashIcon),     tr("Delete"), [this]{ mapView_->deleteSelected(); });
+    addBtn(st->standardIcon(QStyle::SP_DialogDiscardButton), tr("Cut"), [this]{ mapView_->cutSelection(); });
+    addBtn(st->standardIcon(QStyle::SP_DirIcon),       tr("Copy"),   [this]{ mapView_->copySelection(); });
+    addBtn(st->standardIcon(QStyle::SP_DialogApplyButton), tr("Paste"), [this]{ mapView_->pasteClipboard(); });
+    toolbar->addSeparator();
+
+    // Snap-grid split button: click toggles snap on/off, dropdown picks
+    // step. Vanilla offers off + 32/16/8/4/2/1/0.5 studs.
+    auto* snapBtn = new QToolButton(this);
+    snapBtn->setPopupMode(QToolButton::MenuButtonPopup);
+    snapBtn->setToolTip(tr("Snap to grid (click to toggle, ▾ to pick step)"));
+    // Override the toolbar's icon-only style so the current snap step
+    // is visible at a glance — the dropdown pick is meaningless if the
+    // user can't see what's currently selected.
+    snapBtn->setToolButtonStyle(Qt::ToolButtonTextOnly);
+    auto* snapMenu = new QMenu(snapBtn);
+    const std::vector<std::pair<QString, double>> snapOptions = {
+        { QStringLiteral("32"),  32.0 },
+        { QStringLiteral("16"),  16.0 },
+        { QStringLiteral("8"),    8.0 },
+        { QStringLiteral("4"),    4.0 },
+        { QStringLiteral("2"),    2.0 },
+        { QStringLiteral("1"),    1.0 },
+        { QStringLiteral("0.5"),  0.5 },
+    };
+    auto* snapGroup = new QActionGroup(snapBtn);
+    snapGroup->setExclusive(true);
+    QHash<double, QAction*> snapActByValue;
+    for (const auto& o : snapOptions) {
+        auto* a = snapMenu->addAction(o.first);
+        a->setCheckable(true);
+        a->setData(o.second);
+        snapGroup->addAction(a);
+        snapActByValue.insert(o.second, a);
+        connect(a, &QAction::triggered, this, [this, snapBtn, val = o.second]{
+            mapView_->setSnapStepStuds(val);
+            snapBtn->setChecked(true);
+            snapBtn->setText(QString::number(val));
+            QSettings s; s.beginGroup(QStringLiteral("editing"));
+            s.setValue(QStringLiteral("snapStepStuds"), val); s.endGroup();
+        });
+    }
+    snapBtn->setMenu(snapMenu);
+    snapBtn->setCheckable(true);
+    connect(snapBtn, &QToolButton::clicked, this, [this, snapBtn](bool on){
+        if (on) {
+            // Toggle on: use the previously-checked menu entry, or 32.
+            double v = 32.0;
+            for (QAction* a : snapBtn->menu()->actions()) {
+                if (a->isChecked()) { v = a->data().toDouble(); break; }
+            }
+            mapView_->setSnapStepStuds(v);
+            snapBtn->setText(QString::number(v));
+        } else {
+            mapView_->setSnapStepStuds(0.0);
+            snapBtn->setText(tr("Snap"));
+        }
+        QSettings s; s.beginGroup(QStringLiteral("editing"));
+        s.setValue(QStringLiteral("snapStepStuds"),
+                   on ? mapView_->snapStepStuds() : 0.0);
+        s.endGroup();
+    });
+    toolbar->addWidget(snapBtn);
+
+    // Rotation-angle drop-down (no split — picking a value sets the step).
+    auto* rotAngleBtn = new QToolButton(this);
+    rotAngleBtn->setIcon(st->standardIcon(QStyle::SP_BrowserReload));
+    rotAngleBtn->setPopupMode(QToolButton::InstantPopup);
+    rotAngleBtn->setToolTip(tr("Rotation step"));
+    auto* rotMenu = new QMenu(rotAngleBtn);
+    const std::vector<std::pair<QString, double>> rotOptions = {
+        { QStringLiteral("90°"),    90.0 },
+        { QStringLiteral("45°"),    45.0 },
+        { QStringLiteral("22.5°"),  22.5 },
+        { QStringLiteral("11.25°"), 11.25 },
+        { QStringLiteral("5°"),     5.0 },
+        { QStringLiteral("1°"),     1.0 },
+    };
+    auto* rotGroup = new QActionGroup(rotAngleBtn);
+    rotGroup->setExclusive(true);
+    QHash<double, QAction*> rotActByValue;
+    for (const auto& o : rotOptions) {
+        auto* a = rotMenu->addAction(o.first);
+        a->setCheckable(true);
+        a->setData(o.second);
+        rotGroup->addAction(a);
+        rotActByValue.insert(o.second, a);
+        connect(a, &QAction::triggered, this, [this, rotAngleBtn, label = o.first, val = o.second]{
+            mapView_->setRotationStepDegrees(val);
+            rotAngleBtn->setText(label);
+            QSettings s; s.beginGroup(QStringLiteral("editing"));
+            s.setValue(QStringLiteral("rotationStepDegrees"), val); s.endGroup();
+        });
+    }
+    rotAngleBtn->setMenu(rotMenu);
+    toolbar->addWidget(rotAngleBtn);
+
+    addBtn(st->standardIcon(QStyle::SP_MediaSeekBackward), tr("Rotate CCW"), [this]{
+        mapView_->rotateSelected(static_cast<float>(-mapView_->rotationStepDegrees()));
+    });
+    addBtn(st->standardIcon(QStyle::SP_MediaSeekForward),  tr("Rotate CW"),  [this]{
+        mapView_->rotateSelected(static_cast<float>(mapView_->rotationStepDegrees()));
+    });
+    addBtn(st->standardIcon(QStyle::SP_MediaSkipBackward), tr("Send to Back"),  [this]{
+        mapView_->sendSelectionToBack();
+    });
+    addBtn(st->standardIcon(QStyle::SP_MediaSkipForward),  tr("Bring to Front"), [this]{
+        mapView_->bringSelectionToFront();
+    });
+    toolbar->addSeparator();
+
+    // Tool split-button — last item per BlueBrick. Click cycles to the
+    // next tool, dropdown picks one explicitly. The "Select" tool is the
+    // default and isn't in the dropdown (it's just "no special tool").
+    auto* toolBtn = new QToolButton(this);
+    toolBtn->setPopupMode(QToolButton::MenuButtonPopup);
+    toolBtn->setToolTip(tr("Drawing tool"));
+    auto* toolMenu = new QMenu(toolBtn);
+    struct ToolEntry { MapView::Tool t; QString label; QStyle::StandardPixmap icon; };
+    const std::vector<ToolEntry> toolEntries = {
+        { MapView::Tool::Select,            tr("Select"),         QStyle::SP_ArrowRight },
+        { MapView::Tool::PaintArea,         tr("Paint area"),     QStyle::SP_DialogYesButton },
+        { MapView::Tool::EraseArea,         tr("Erase area"),     QStyle::SP_DialogNoButton },
+        { MapView::Tool::DrawLinearRuler,   tr("Add ruler"),      QStyle::SP_ToolBarHorizontalExtensionButton },
+        { MapView::Tool::DrawCircularRuler, tr("Add circle"),     QStyle::SP_DirHomeIcon },
+    };
+    auto* toolGroup = new QActionGroup(toolBtn);
+    toolGroup->setExclusive(true);
+    QHash<int, QAction*> toolActByEnum;
+    for (const auto& e : toolEntries) {
+        const QIcon ic = st->standardIcon(e.icon);
+        auto* a = toolMenu->addAction(ic, e.label);
+        a->setCheckable(true);
+        a->setData(static_cast<int>(e.t));
+        toolGroup->addAction(a);
+        toolActByEnum.insert(static_cast<int>(e.t), a);
+        connect(a, &QAction::triggered, this, [this, toolBtn, ic, label = e.label, t = e.t]{
+            mapView_->setTool(t);
+            toolBtn->setIcon(ic);
+            toolBtn->setText(label);
+            toolBtn->setToolTip(label);
+        });
+    }
+    toolBtn->setMenu(toolMenu);
+    {
+        // Default surface = Paint, matching BlueBrick.
+        const QIcon ic = st->standardIcon(QStyle::SP_DialogYesButton);
+        toolBtn->setIcon(ic);
+    }
+    connect(toolBtn, &QToolButton::clicked, this, [this, toolMenu]{
+        // Click on the button face cycles to the next tool in the menu —
+        // matches BlueBrick's ButtonClick = next-paint-tool behaviour.
+        const auto acts = toolMenu->actions();
+        QAction* current = nullptr;
+        int currentIdx = -1;
+        for (int i = 0; i < acts.size(); ++i) {
+            if (acts[i]->isChecked()) { current = acts[i]; currentIdx = i; break; }
+        }
+        const int n = acts.size();
+        if (n == 0) return;
+        const int next = (currentIdx + 1) % n;
+        if (current) current->setChecked(false);
+        acts[next]->setChecked(true);
+        acts[next]->trigger();
+    });
+    toolbar->addWidget(toolBtn);
+
+    // Paint colour picker — vanilla puts this inside the Paint submenu;
+    // adding it to the toolbar tail keeps colour one click away.
     auto* colorBtn = new QToolButton(this);
     colorBtn->setToolTip(tr("Paint colour"));
     auto refreshColorBtn = [this, colorBtn]{
@@ -610,28 +774,19 @@ MainWindow::MainWindow(parts::PartsLibrary& parts, QWidget* parent)
     };
     {
         QSettings s; s.beginGroup(QStringLiteral("editing"));
-        const QColor savedColor(s.value(QStringLiteral("paintColor"),
-                                          QColor(0, 128, 0).name()).toString());
+        QColor savedColor(s.value(QStringLiteral("paintColor"),
+                                    QColor(0, 128, 0).name()).toString());
         s.endGroup();
+        // Force opaque if the persisted color happened to land at alpha 0
+        // (an old corrupted setting, or a user picking transparent in the
+        // colour dialog). A 0-alpha paint colour silently does nothing on
+        // the canvas, which is the most confusing failure mode possible.
+        if (savedColor.isValid() && savedColor.alpha() == 0) savedColor.setAlpha(255);
         if (savedColor.isValid()) mapView_->setPaintColor(savedColor);
     }
     refreshColorBtn();
     toolbar->addWidget(colorBtn);
-
-    auto setTool = [this, selectBtn, paintBtn, eraseBtn, lineBtn, circleBtn](MapView::Tool t){
-        selectBtn->setChecked(t == MapView::Tool::Select);
-        paintBtn->setChecked(t == MapView::Tool::PaintArea);
-        eraseBtn->setChecked(t == MapView::Tool::EraseArea);
-        lineBtn->setChecked(t == MapView::Tool::DrawLinearRuler);
-        circleBtn->setChecked(t == MapView::Tool::DrawCircularRuler);
-        mapView_->setTool(t);
-    };
-    connect(selectBtn, &QToolButton::clicked, [setTool]{ setTool(MapView::Tool::Select); });
-    connect(paintBtn,  &QToolButton::clicked, [setTool]{ setTool(MapView::Tool::PaintArea); });
-    connect(eraseBtn,  &QToolButton::clicked, [setTool]{ setTool(MapView::Tool::EraseArea); });
-    connect(lineBtn,   &QToolButton::clicked, [setTool]{ setTool(MapView::Tool::DrawLinearRuler); });
-    connect(circleBtn, &QToolButton::clicked, [setTool]{ setTool(MapView::Tool::DrawCircularRuler); });
-    connect(colorBtn, &QToolButton::clicked, [this, refreshColorBtn]{
+    connect(colorBtn, &QToolButton::clicked, this, [this, refreshColorBtn]{
         const QColor c = QColorDialog::getColor(mapView_->paintColor(), this,
                                                  tr("Paint colour"),
                                                  QColorDialog::ShowAlphaChannel);
@@ -643,21 +798,8 @@ MainWindow::MainWindow(parts::PartsLibrary& parts, QWidget* parent)
         s.endGroup();
     });
 
-    toolbar->addSeparator();
-    toolbar->addWidget(new QLabel(tr("  Rotate: "), this));
-    rotCombo_ = new QComboBox(this);
-    const std::vector<std::pair<QString, double>> rotOptions = {
-        { QStringLiteral("90°"),    90.0 },
-        { QStringLiteral("45°"),    45.0 },
-        { QStringLiteral("22.5°"),  22.5 },
-        { QStringLiteral("11.25°"), 11.25 },
-        { QStringLiteral("5°"),     5.0 },
-        { QStringLiteral("1°"),     1.0 },
-    };
-    for (const auto& o : rotOptions) rotCombo_->addItem(o.first, o.second);
-    toolbar->addWidget(rotCombo_);
-
-    // Restore from QSettings.
+    // Restore persisted snap + rotation step from QSettings, sync the
+    // toolbar widgets, and select the default tool.
     {
         QSettings s;
         s.beginGroup(QStringLiteral("editing"));
@@ -666,31 +808,24 @@ MainWindow::MainWindow(parts::PartsLibrary& parts, QWidget* parent)
         s.endGroup();
         mapView_->setSnapStepStuds(snap);
         mapView_->setRotationStepDegrees(rot);
-        for (int i = 0; i < snapCombo_->count(); ++i) {
-            if (qFuzzyCompare(snapCombo_->itemData(i).toDouble() + 1.0, snap + 1.0)) {
-                snapCombo_->setCurrentIndex(i); break;
-            }
+        if (snap > 0.0) {
+            snapBtn->setChecked(true);
+            snapBtn->setText(QString::number(snap));
+            if (auto* a = snapActByValue.value(snap)) a->setChecked(true);
+        } else {
+            snapBtn->setChecked(false);
+            snapBtn->setText(tr("Snap"));
+            // Pre-check 32 as the value to fall back to when toggled on.
+            if (auto* a = snapActByValue.value(32.0)) a->setChecked(true);
         }
-        for (int i = 0; i < rotCombo_->count(); ++i) {
-            if (qFuzzyCompare(rotCombo_->itemData(i).toDouble(), rot)) {
-                rotCombo_->setCurrentIndex(i); break;
-            }
+        if (auto* a = rotActByValue.value(rot)) {
+            a->setChecked(true);
+            rotAngleBtn->setText(a->text());
+        }
+        if (auto* a = toolActByEnum.value(static_cast<int>(MapView::Tool::Select))) {
+            a->setChecked(true);
         }
     }
-    connect(snapCombo_, QOverload<int>::of(&QComboBox::currentIndexChanged),
-            this, [this](int){
-        const double v = snapCombo_->currentData().toDouble();
-        mapView_->setSnapStepStuds(v);
-        QSettings s; s.beginGroup(QStringLiteral("editing"));
-        s.setValue(QStringLiteral("snapStepStuds"), v); s.endGroup();
-    });
-    connect(rotCombo_, QOverload<int>::of(&QComboBox::currentIndexChanged),
-            this, [this](int){
-        const double v = rotCombo_->currentData().toDouble();
-        mapView_->setRotationStepDegrees(v);
-        QSettings s; s.beginGroup(QStringLiteral("editing"));
-        s.setValue(QStringLiteral("rotationStepDegrees"), v); s.endGroup();
-    });
 
     updateTitle();
 
@@ -824,6 +959,33 @@ MainWindow::MainWindow(parts::PartsLibrary& parts, QWidget* parent)
     autosaveTimer_->setInterval(60 * 1000);
     connect(autosaveTimer_, &QTimer::timeout, this, &MainWindow::performAutosave);
     autosaveTimer_->start();
+
+    // Permanent autosave indicator pinned to the status bar's right side.
+    // Shows the last successful autosave time; flashes green briefly when
+    // a save just completed so the user knows their work is being captured.
+    // The transient status-bar message can be missed; a sticky label can't.
+    auto* autosaveLabel = new QLabel(tr("Autosave: —"), this);
+    autosaveLabel->setToolTip(tr("Last successful autosave time"));
+    statusBar()->addPermanentWidget(autosaveLabel);
+    connect(autosaveTimer_, &QTimer::timeout, this, [this, autosaveLabel]{
+        if (!mapView_->currentMap()) return;
+        if (mapView_->undoStack()->isClean()) return;
+        autosaveLabel->setText(tr("Autosave: %1").arg(QTime::currentTime().toString("HH:mm:ss")));
+        autosaveLabel->setStyleSheet(QStringLiteral("QLabel{color:#2c7a2c;font-weight:600;}"));
+        QTimer::singleShot(1500, autosaveLabel, [autosaveLabel]{
+            autosaveLabel->setStyleSheet({});
+        });
+    });
+    // Also update on the throttled save path so quick edits show the
+    // freshest time without waiting for the 60 s tick.
+    connect(mapView_->undoStack(), &QUndoStack::indexChanged,
+            this, [this, autosaveLabel](int){
+        if (!mapView_->currentMap() || mapView_->undoStack()->isClean()) return;
+        // performAutosaveThrottled has its own timing; this label just
+        // reflects "we're modified — autosave is watching" rather than a
+        // hard guarantee a write just happened.
+        autosaveLabel->setText(tr("Autosave: %1*").arg(QTime::currentTime().toString("HH:mm:ss")));
+    });
     // Also autosave on every undo-stack change, throttled so rapid
     // edits don't hit the disk more than once every 5 seconds. This
     // caps crash-related data loss to that window — which is good

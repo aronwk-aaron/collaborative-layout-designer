@@ -11,6 +11,7 @@
 
 #include "../core/Layer.h"
 #include "../core/LayerGrid.h"
+#include "../core/LayerRuler.h"
 #include "../core/Map.h"
 #include "../rendering/SceneBuilder.h"
 #include "MapViewInternal.h"
@@ -36,6 +37,36 @@ using detail::studToPx;
 void MapView::drawBackground(QPainter* painter, const QRectF& rect) {
     QGraphicsView::drawBackground(painter, rect);
     if (!map_) return;
+
+    // Optional sidecar background image — painted under the grid + bricks.
+    // Cached on the MapView so we re-load only when the path changes.
+    if (!map_->sidecar.backgroundImagePath.isEmpty()) {
+        if (cachedBackgroundPath_ != map_->sidecar.backgroundImagePath) {
+            cachedBackgroundImage_ = QPixmap(map_->sidecar.backgroundImagePath);
+            cachedBackgroundPath_ = map_->sidecar.backgroundImagePath;
+        }
+        if (!cachedBackgroundImage_.isNull()) {
+            const double pxPerStud = rendering::SceneBuilder::kPixelsPerStud;
+            QRectF dst;
+            if (!map_->sidecar.backgroundImageRectStuds.isNull()) {
+                const auto& r = map_->sidecar.backgroundImageRectStuds;
+                dst = QRectF(r.x() * pxPerStud, r.y() * pxPerStud,
+                             r.width() * pxPerStud, r.height() * pxPerStud);
+            } else {
+                // Default: anchor top-left at scene origin, scale to image's
+                // native size (1 px = 1 px). User can re-scale by setting
+                // backgroundImageRectStuds via the dialog.
+                dst = QRectF(0, 0, cachedBackgroundImage_.width(),
+                             cachedBackgroundImage_.height());
+            }
+            const double op = std::clamp(map_->sidecar.backgroundImageOpacity, 0.0, 1.0);
+            painter->save();
+            painter->setOpacity(op);
+            painter->drawPixmap(dst, cachedBackgroundImage_,
+                                QRectF(cachedBackgroundImage_.rect()));
+            painter->restore();
+        }
+    }
 
     for (const auto& layer : map_->layers()) {
         if (layer->kind() != core::LayerKind::Grid || !layer->visible) continue;
@@ -78,6 +109,55 @@ void MapView::drawBackground(QPainter* painter, const QRectF& rect) {
 
 void MapView::drawForeground(QPainter* painter, const QRectF& rect) {
     QGraphicsView::drawForeground(painter, rect);
+
+    // Endpoint handles for any selected single linear ruler. drawn in
+    // scene coords so they pin to the actual endpoints regardless of
+    // pan/zoom. Hit-testing in mousePressEvent uses the same world->
+    // viewport math to detect a click on a handle.
+    if (map_) {
+        const auto sel = scene()->selectedItems();
+        QSet<QString> selRulerGuids;
+        for (QGraphicsItem* it : sel) {
+            if (!it) continue;
+            if (it->data(2).toString() == QStringLiteral("ruler"))
+                selRulerGuids.insert(it->data(1).toString());
+        }
+        if (selRulerGuids.size() == 1) {
+            const QString g = *selRulerGuids.constBegin();
+            const double pxPerStud = rendering::SceneBuilder::kPixelsPerStud;
+            for (const auto& L : map_->layers()) {
+                if (!L || L->kind() != core::LayerKind::Ruler) continue;
+                const auto& RL = static_cast<const core::LayerRuler&>(*L);
+                for (const auto& any : RL.rulers) {
+                    if (any.kind != core::RulerKind::Linear) continue;
+                    if (any.linear.guid != g) continue;
+                    const QPointF p1Scene(any.linear.point1.x() * pxPerStud,
+                                           any.linear.point1.y() * pxPerStud);
+                    const QPointF p2Scene(any.linear.point2.x() * pxPerStud,
+                                           any.linear.point2.y() * pxPerStud);
+                    painter->save();
+                    QPen pen(QColor(20, 20, 20));
+                    pen.setCosmetic(true); pen.setWidthF(1.5);
+                    painter->setPen(pen);
+                    painter->setBrush(QColor(255, 220, 60));
+                    auto drawHandle = [painter](QPointF c){
+                        // 6×6-viewport-pixel square anchored on the
+                        // endpoint. setCosmetic on the pen keeps stroke
+                        // weight constant under zoom; the rect itself
+                        // scales because we draw in scene coords.
+                        const double sz = 0.8;  // studs at default zoom
+                        const double pxPerStud = rendering::SceneBuilder::kPixelsPerStud;
+                        const double s = sz * pxPerStud;
+                        painter->drawRect(QRectF(c.x() - s, c.y() - s, 2 * s, 2 * s));
+                    };
+                    drawHandle(p1Scene);
+                    drawHandle(p2Scene);
+                    painter->restore();
+                    break;
+                }
+            }
+        }
+    }
 
     // Scale-indicator bar pinned to the lower-left viewport corner.
     // Picks a round stud value that renders somewhere near 100-160 px
