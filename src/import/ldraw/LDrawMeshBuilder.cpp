@@ -26,6 +26,10 @@ BakedModel bakeMeshFromLDraw(const LDrawReadResult& src,
     // every triangle through the ref's 4x4. The mesh-loader caches the
     // per-part bake, so a model that uses the same brick a hundred
     // times only parses the .dat once.
+    // Rough capacity hint — assume ~500 triangles per part on average
+    // (reasonable for LDraw library content) so we avoid the
+    // geometric-growth realloc cost across thousands of refs.
+    out.mesh.tris.reserve(out.mesh.tris.size() + src.parts.size() * 500);
     for (const auto& ref : src.parts) {
         const geom::Mesh partMesh = loader.loadPart(ref.filename, ref.colorCode);
         if (partMesh.tris.empty()) {
@@ -34,9 +38,13 @@ BakedModel bakeMeshFromLDraw(const LDrawReadResult& src,
         }
         out.resolvedRefs++;
         const geom::Mat4 xform = refTransform(ref);
+        // Pre-grow once per part rather than per triangle.
+        out.mesh.tris.reserve(out.mesh.tris.size() + partMesh.tris.size());
         for (const auto& t : partMesh.tris) {
             geom::Triangle world;
-            for (int k = 0; k < 3; ++k) world.v[k] = xform.transform(t.v[k]);
+            world.v[0] = xform.transform(t.v[0]);
+            world.v[1] = xform.transform(t.v[1]);
+            world.v[2] = xform.transform(t.v[2]);
             world.color = t.color;
             out.mesh.tris.push_back(world);
         }

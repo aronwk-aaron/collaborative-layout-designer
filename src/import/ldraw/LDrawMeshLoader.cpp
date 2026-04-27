@@ -38,11 +38,14 @@ const LDrawMeshLoader::ParsedDat* LDrawMeshLoader::parse(const QString& absolute
         return nullptr;
     }
     ParsedDat parsed;
+    // Pre-compiled whitespace splitter — building a fresh regex per
+    // line was the dominant cost of parsing big LDraw .dat files
+    // (perf showed it at >40% of total bake time on a 30k-tri model).
+    static const QRegularExpression kWs(QStringLiteral("\\s+"));
     QTextStream ts(&f);
     while (!ts.atEnd()) {
         const QString line = ts.readLine();
-        const QStringList toks = line.split(QRegularExpression(QStringLiteral("\\s+")),
-                                              Qt::SkipEmptyParts);
+        const QStringList toks = line.split(kWs, Qt::SkipEmptyParts);
         if (toks.isEmpty()) continue;
         bool typeOk = false;
         const int type = toks[0].toInt(&typeOk);
@@ -120,18 +123,28 @@ void LDrawMeshLoader::appendBaked(geom::Mesh& out,
                                    int parentColor) {
     // Resolve colour code -> final QColor. 16 = inherit parent. 24 is
     // for edges (which we don't render here); fall through to grey.
+    // Cache resolutions per call so a part with thousands of
+    // primitives sharing one colour code only hits the palette once.
+    QHash<int, QColor> colorCache;
     auto resolveColor = [&](int code) -> QColor {
-        if (code == 16) return palette_.color(parentColor == 16 ? 7 : parentColor);
-        if (code == 24) return palette_.color(0);
-        return palette_.color(code);
+        auto it = colorCache.constFind(code);
+        if (it != colorCache.constEnd()) return it.value();
+        QColor result;
+        if (code == 16)      result = palette_.color(parentColor == 16 ? 7 : parentColor);
+        else if (code == 24) result = palette_.color(0);
+        else                 result = palette_.color(code);
+        colorCache.insert(code, result);
+        return result;
     };
 
     // Bake each primitive: parent transform applied, colour resolved.
+    out.tris.reserve(out.tris.size() + dat.primitives.size());
     for (const auto& prim : dat.primitives) {
-        const QColor finalColor = resolveColor(prim.color);
         geom::Triangle t;
-        for (int k = 0; k < 3; ++k) t.v[k] = parentXform.transform(prim.v[k]);
-        t.color = finalColor;
+        t.v[0]  = parentXform.transform(prim.v[0]);
+        t.v[1]  = parentXform.transform(prim.v[1]);
+        t.v[2]  = parentXform.transform(prim.v[2]);
+        t.color = resolveColor(prim.color);
         out.tris.push_back(t);
     }
 
@@ -155,15 +168,23 @@ void LDrawMeshLoader::appendBaked(geom::Mesh& out,
 }
 
 geom::Mesh LDrawMeshLoader::loadPart(const QString& datRef, int topColor) {
-    geom::Mesh out;
     const QString abs = lib_.resolve(datRef);
     if (abs.isEmpty()) {
         errors_.append(QStringLiteral("Unresolved part %1").arg(datRef));
-        return out;
+        return {};
+    }
+    // Per-(file, colour) bake cache. A model that places the same
+    // brick in the same colour 200 times would otherwise recurse
+    // through hundreds of subfiles each time. Bake once, copy after.
+    const auto cacheKey = qMakePair(abs, topColor);
+    if (auto it = bakedCache_.constFind(cacheKey); it != bakedCache_.constEnd()) {
+        return it.value();
     }
     const ParsedDat* dat = parse(abs);
-    if (!dat) return out;
+    if (!dat) return {};
+    geom::Mesh out;
     appendBaked(out, *dat, geom::Mat4::identity(), topColor);
+    bakedCache_.insert(cacheKey, out);
     return out;
 }
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QHash>
 #include <QString>
 #include <QStringList>
 
@@ -49,12 +50,25 @@ public:
     // component, since LDraw filenames mix cases on disk but author
     // tools normalise to upper or lower depending on era). Returns the
     // absolute path or an empty string when the reference cannot be
-    // satisfied. Cheap to call repeatedly: the search order is fixed
-    // and the result isn't cached here (the resolver layer caches).
+    // satisfied. Resolved answers are memoised, so repeated lookups
+    // for the same name are O(1) — important for the bake pipeline
+    // which walks tens of thousands of subfile refs across LDraw's
+    // primitive set.
     QString resolve(const QString& filename) const;
 
 private:
+    // Lower-cased filename → absolute path index, built lazily per
+    // search directory. The index is mutable because resolve() is
+    // logically const from the caller's POV but populates the cache
+    // on first miss for each directory.
+    using FileIndex = QHash<QString, QString>;
+    const FileIndex& indexForSubdir(const QString& subdir) const;
+
     QString root_;
+    mutable QHash<QString, FileIndex> indexBySubdir_;
+    // Resolved-result cache so e.g. "stud.dat" referenced 50 000 times
+    // only walks the search dirs once.
+    mutable QHash<QString, QString> resolveCache_;
 };
 
 }  // namespace cld::import

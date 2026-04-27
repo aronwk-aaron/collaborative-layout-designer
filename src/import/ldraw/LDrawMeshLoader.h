@@ -80,6 +80,10 @@ private:
     const LDrawLibrary& lib_;
     const LDrawPalette& palette_;
     QHash<QString, ParsedDat> cache_;  // keyed on absolute path
+    // Memoised final-mesh cache keyed by (absolute path, top colour
+    // code). Same part in the same colour gets baked once even if a
+    // model references it thousands of times.
+    QHash<QPair<QString, int>, geom::Mesh> bakedCache_;
     QStringList errors_;
 };
 

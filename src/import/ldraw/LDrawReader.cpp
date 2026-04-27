@@ -53,12 +53,14 @@ LDrawReadResult readLDraw(const QString& path) {
 
     bool firstComment = true;
     QString line;
+    static const QRegularExpression kWs(QStringLiteral("\\s+"));
     while (in.readLineInto(&line)) {
         const QString trimmed = line.trimmed();
         if (trimmed.isEmpty()) continue;
 
-        // Split on any whitespace.
-        const auto parts = trimmed.split(QRegularExpression("\\s+"), Qt::SkipEmptyParts);
+        // Split on any whitespace. Pre-compiled regex; rebuilding per
+        // line dominated parse time on big .ldr models.
+        const auto parts = trimmed.split(kWs, Qt::SkipEmptyParts);
         if (parts.isEmpty()) continue;
         bool ok = false;
         const int code = parts[0].toInt(&ok);

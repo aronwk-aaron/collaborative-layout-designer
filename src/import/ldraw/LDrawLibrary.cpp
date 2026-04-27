@@ -5,33 +5,15 @@
 
 namespace cld::import {
 
-namespace {
-
-// Returns absoluteFilePath for the first existing case-insensitive
-// match of `name` inside `dir`. Linux is case-sensitive while LDraw
-// filenames in the wild can be lower-, mixed-, or upper-case; falling
-// back to a directory listing handles the case-mismatch path. Cheap
-// fast path first: try the exact name verbatim.
-QString findCaseInsensitive(const QDir& dir, const QString& name) {
-    if (!dir.exists()) return {};
-    {
-        const QString fast = dir.absoluteFilePath(name);
-        if (QFileInfo::exists(fast)) return fast;
-    }
-    // Fallback: scan the directory once, compare lowered.
-    const QString needle = name.toLower();
-    const QFileInfoList entries = dir.entryInfoList(QDir::Files);
-    for (const QFileInfo& fi : entries) {
-        if (fi.fileName().toLower() == needle) return fi.absoluteFilePath();
-    }
-    return {};
-}
-
-}  // namespace
-
 LDrawLibrary::LDrawLibrary(QString root) : root_(std::move(root)) {}
 
-void LDrawLibrary::setRoot(QString root) { root_ = std::move(root); }
+void LDrawLibrary::setRoot(QString root) {
+    root_ = std::move(root);
+    // Path-cache hits would point at the OLD root after this call;
+    // wipe both caches so resolve() rebuilds against the new tree.
+    indexBySubdir_.clear();
+    resolveCache_.clear();
+}
 
 bool LDrawLibrary::looksValid() const {
     if (root_.isEmpty()) return false;
@@ -46,8 +28,37 @@ bool LDrawLibrary::looksValid() const {
     return true;
 }
 
+const LDrawLibrary::FileIndex& LDrawLibrary::indexForSubdir(const QString& subdir) const {
+    auto it = indexBySubdir_.constFind(subdir);
+    if (it != indexBySubdir_.constEnd()) return it.value();
+
+    FileIndex index;
+    QDir d(subdir.isEmpty() ? root_ : QDir(root_).absoluteFilePath(subdir));
+    if (d.exists()) {
+        // entryInfoList returns FileInfos for every file in this
+        // directory once. We bucket them by lowercased filename so
+        // subsequent resolve() calls are O(1) hash lookups regardless
+        // of the directory's size — LDraw's parts/ has ~22 000 entries
+        // and the previous "scan on every miss" path was the dominant
+        // cost of importing anything non-trivial.
+        const QFileInfoList entries = d.entryInfoList(QDir::Files);
+        index.reserve(entries.size());
+        for (const QFileInfo& fi : entries) {
+            index.insert(fi.fileName().toLower(), fi.absoluteFilePath());
+        }
+    }
+    return *indexBySubdir_.insert(subdir, std::move(index));
+}
+
 QString LDrawLibrary::resolve(const QString& filename) const {
     if (root_.isEmpty() || filename.isEmpty()) return {};
+
+    // Memoised result cache. Hits cover the "stud.dat referenced
+    // 50 000 times" case at O(1) per call.
+    const QString cacheKey = filename.toLower();
+    if (auto it = resolveCache_.constFind(cacheKey); it != resolveCache_.constEnd()) {
+        return it.value();
+    }
 
     // Normalise the reference: LDraw `.dat` lines often write paths
     // with backslashes (Windows-era convention; many parts are still
@@ -57,22 +68,30 @@ QString LDrawLibrary::resolve(const QString& filename) const {
     QString rel = filename;
     rel.replace(QChar('\\'), QChar('/'));
 
-    QDir rootDir(root_);
+    auto saveAndReturn = [&, this](const QString& v) -> QString {
+        resolveCache_.insert(cacheKey, v);
+        return v;
+    };
 
     // 1) If the filename already specifies a subdir prefix, resolve
-    //    that exact relative path against root, parts/, and p/. e.g.
-    //    "s/3001s01.dat" against parts/s/3001s01.dat.
+    //    that exact relative path against root, parts/, and p/. The
+    //    subdir-rooted variant uses the per-directory index so it's
+    //    still O(1) instead of O(dir-size).
     if (rel.contains(QChar('/'))) {
-        const QStringList searches = {
-            rootDir.absoluteFilePath(QStringLiteral("parts/") + rel),
-            rootDir.absoluteFilePath(QStringLiteral("p/") + rel),
-            rootDir.absoluteFilePath(rel),
+        const QString tail = rel.section(QChar('/'), -1);
+        const QString head = rel.section(QChar('/'), 0, -2);
+        const QStringList prefixes = {
+            QStringLiteral("parts/") + head,
+            QStringLiteral("p/") + head,
+            head,
         };
-        for (const QString& p : searches) {
-            if (QFileInfo::exists(p)) return p;
+        for (const QString& p : prefixes) {
+            const auto& idx = indexForSubdir(p);
+            const auto hit = idx.constFind(tail.toLower());
+            if (hit != idx.constEnd()) return saveAndReturn(hit.value());
         }
         // Fall through to bare-name lookup using the trailing component.
-        rel = rel.section(QChar('/'), -1);
+        rel = tail;
     }
 
     // 2) Bare filename: walk LDraw's stock search order. parts/ first
@@ -80,7 +99,7 @@ QString LDrawLibrary::resolve(const QString& filename) const {
     //    primitive in p/. p/48/ and p/8/ are resolution variants we
     //    treat at the same priority as p/ — author tools have always
     //    been free to reference either depending on intended fidelity.
-    const QStringList dirs = {
+    static const QStringList kDirs = {
         QStringLiteral("parts"),
         QStringLiteral("p"),
         QStringLiteral("p/48"),
@@ -88,12 +107,13 @@ QString LDrawLibrary::resolve(const QString& filename) const {
         QStringLiteral("parts/s"),
         QStringLiteral(""),  // root itself, last
     };
-    for (const QString& sub : dirs) {
-        const QDir d(sub.isEmpty() ? root_ : rootDir.absoluteFilePath(sub));
-        const QString hit = findCaseInsensitive(d, rel);
-        if (!hit.isEmpty()) return hit;
+    const QString needle = rel.toLower();
+    for (const QString& sub : kDirs) {
+        const auto& idx = indexForSubdir(sub);
+        const auto it = idx.constFind(needle);
+        if (it != idx.constEnd()) return saveAndReturn(it.value());
     }
-    return {};
+    return saveAndReturn(QString());
 }
 
 }  // namespace cld::import
