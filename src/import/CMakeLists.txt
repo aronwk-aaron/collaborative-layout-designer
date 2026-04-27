@@ -5,6 +5,8 @@ add_library(cld_import STATIC
     LDrawColors.h
     LDrawLibrary.cpp
     LDrawLibrary.h
+    LDrawPalette.cpp
+    LDrawPalette.h
     LDrawRasterize.cpp
     LDrawRasterize.h
     StudioReader.cpp
