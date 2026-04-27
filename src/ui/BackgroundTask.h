@@ -58,8 +58,12 @@ inline bool runBackground(QWidget* parent, const QString& busyText,
     dlg.setAutoReset(false);
 
     CancelToken token;
-    QObject::connect(&dlg, &QProgressDialog::canceled, &dlg,
-                     [&token]{ token.cancel(); });
+    bool userCancelled = false;
+    auto cancelConn = QObject::connect(&dlg, &QProgressDialog::canceled, &dlg,
+        [&token, &userCancelled]{
+            userCancelled = true;
+            token.cancel();
+        });
 
     // Run the work on a one-shot QThread so the UI thread stays free
     // to pump paint events. Using QThread directly (rather than
@@ -81,9 +85,14 @@ inline bool runBackground(QWidget* parent, const QString& busyText,
     thread.start();
     loop.exec();                           // pumps events while waiting
 
+    // Drop the cancel handler BEFORE closing the dialog. Otherwise
+    // QProgressDialog::close() emits canceled() during its standard
+    // teardown and our handler sets the token — causing the helper to
+    // report cancellation on every successful run.
+    QObject::disconnect(cancelConn);
     dlg.close();
     thread.wait();                         // already finished (or cancelled mid-checkpoint)
-    return !token.requested();
+    return !userCancelled;
 }
 
 // Convenience overload for callers that don't want a cancel token.
