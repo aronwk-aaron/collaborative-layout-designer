@@ -37,6 +37,7 @@
 #include "../rendering/SceneBuilder.h"
 
 #include "DownloadCenterDialog.h"
+#include "ImportPreviewDialog.h"
 
 #include <QAction>
 #include <QDir>
@@ -183,6 +184,19 @@ void MainWindow::setupToolsMenu() {
             }
         }
 
+        // Preview before commit. The legacy path doesn't track granular
+        // resolved/unresolved counts the way the LDraw-library and LDD
+        // paths do, so the stats panel will be sparse — that's fine,
+        // the sprite preview is the part the user really cares about.
+        ImportPreviewDialog::Stats st;
+        st.ldrawResolved = static_cast<int>(read.parts.size());
+        ImportPreviewDialog dlg(source, kindLabel, sprite,
+                                wStud, hStud, st, {}, this);
+        if (dlg.exec() != QDialog::Accepted) {
+            statusBar()->showMessage(tr("Import cancelled."), 3000);
+            return;
+        }
+
         QString libRoot = QSettings().value(QStringLiteral("modules/libraryPath")).toString();
         if (libRoot.isEmpty()) {
             libRoot = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)
@@ -194,7 +208,7 @@ void MainWindow::setupToolsMenu() {
         const QString author = mapView_->currentMap()
                                    ? mapView_->currentMap()->author : QString();
         const QString key = import::writeImportedModelAsLibraryPart(
-            source, sprite, wStud, hStud, libRoot, author,
+            dlg.partName(), sprite, wStud, hStud, libRoot, author,
             externalConns, &err);
         if (key.isEmpty()) {
             QMessageBox::warning(this, kindLabel,
@@ -257,6 +271,19 @@ void MainWindow::setupToolsMenu() {
         const int hStud = std::max(1, static_cast<int>(
             std::round(rast.meshBoundsXZ.height())));
 
+        // Show the preview dialog so the user sees what they're
+        // about to add to the library. Cancelling here just returns
+        // — no part files written, no library scan, nothing to undo.
+        ImportPreviewDialog::Stats st;
+        st.ldrawResolved = baked.resolvedRefs;
+        st.unmapped      = baked.unresolvedRefs;
+        ImportPreviewDialog dlg(source, kindLabel, rast.image,
+                                wStud, hStud, st, baked.errors, this);
+        if (dlg.exec() != QDialog::Accepted) {
+            statusBar()->showMessage(tr("Import cancelled."), 3000);
+            return true;
+        }
+
         // Emit as a new BlueBrick library part with no ConnexionList
         // for now — full connection-list bake from real LDraw geometry
         // requires picking up the studs from p/stud.dat refs and
@@ -274,7 +301,7 @@ void MainWindow::setupToolsMenu() {
         const QString author = mapView_->currentMap()
                                    ? mapView_->currentMap()->author : QString();
         const QString key = import::writeImportedModelAsLibraryPart(
-            source, rast.image, wStud, hStud, modulesRoot, author,
+            dlg.partName(), rast.image, wStud, hStud, modulesRoot, author,
             {}, &err);
         if (key.isEmpty()) {
             QMessageBox::warning(this, kindLabel,
@@ -285,8 +312,8 @@ void MainWindow::setupToolsMenu() {
         partsBrowser_->rebuild();
         mapView_->addPartAtViewCenter(key);
         statusBar()->showMessage(
-            tr("Imported %1 via LDraw library — %2 part(s) resolved, %3 unresolved")
-                .arg(QFileInfo(source).fileName())
+            tr("Imported %1 as '%2' — %3 part(s) resolved, %4 unresolved")
+                .arg(QFileInfo(source).fileName(), key)
                 .arg(baked.resolvedRefs).arg(baked.unresolvedRefs), 8000);
         return true;
     };
@@ -367,6 +394,55 @@ void MainWindow::setupToolsMenu() {
             ref.filename = ldraw;
             const int newColour = mapping.colourFor(ref.colorCode);
             if (newColour >= 0) ref.colorCode = newColour;
+
+            // Apply per-part LDD↔LDraw frame correction from
+            // <Transformation> if present. The correction is an
+            // axis-angle rotation + translation in the LDraw frame
+            // applied INSIDE the ref's own placement, so we
+            // post-multiply: refMatrix * correction. This keeps the
+            // ref's own translation/rotation as the outer transform
+            // (where the LDD model placed the brick) while baking
+            // the per-design coord-frame fixup just before the
+            // mesh-load step picks up the geometry.
+            const auto t = mapping.transformFor(ldraw);
+            if (t.exists) {
+                const double angle = t.angle;
+                const double c = std::cos(angle);
+                const double s = std::sin(angle);
+                const double C = 1.0 - c;
+                // Normalise axis (the file sometimes ships unnormalised).
+                double ax = t.ax, ay = t.ay, az = t.az;
+                const double mag = std::sqrt(ax*ax + ay*ay + az*az);
+                if (mag > 1e-9) { ax /= mag; ay /= mag; az /= mag; }
+                // Rodrigues' rotation matrix (3x3).
+                const double r00 = c + ax*ax*C;
+                const double r01 = ax*ay*C - az*s;
+                const double r02 = ax*az*C + ay*s;
+                const double r10 = ay*ax*C + az*s;
+                const double r11 = c + ay*ay*C;
+                const double r12 = ay*az*C - ax*s;
+                const double r20 = az*ax*C - ay*s;
+                const double r21 = az*ay*C + ax*s;
+                const double r22 = c + az*az*C;
+                // Compose ref.m (3x3) with the correction:
+                //   newM = oldM * R
+                //   newT = oldM * tCorrection + oldT
+                double oldM[9];
+                for (int k = 0; k < 9; ++k) oldM[k] = ref.m[k];
+                ref.m[0] = oldM[0]*r00 + oldM[1]*r10 + oldM[2]*r20;
+                ref.m[1] = oldM[0]*r01 + oldM[1]*r11 + oldM[2]*r21;
+                ref.m[2] = oldM[0]*r02 + oldM[1]*r12 + oldM[2]*r22;
+                ref.m[3] = oldM[3]*r00 + oldM[4]*r10 + oldM[5]*r20;
+                ref.m[4] = oldM[3]*r01 + oldM[4]*r11 + oldM[5]*r21;
+                ref.m[5] = oldM[3]*r02 + oldM[4]*r12 + oldM[5]*r22;
+                ref.m[6] = oldM[6]*r00 + oldM[7]*r10 + oldM[8]*r20;
+                ref.m[7] = oldM[6]*r01 + oldM[7]*r11 + oldM[8]*r21;
+                ref.m[8] = oldM[6]*r02 + oldM[7]*r12 + oldM[8]*r22;
+                ref.x += oldM[0]*t.tx + oldM[1]*t.ty + oldM[2]*t.tz;
+                ref.y += oldM[3]*t.tx + oldM[4]*t.ty + oldM[5]*t.tz;
+                ref.z += oldM[6]*t.tx + oldM[7]*t.ty + oldM[8]*t.tz;
+            }
+
             ++translated;
         }
         read.parts.erase(std::remove_if(read.parts.begin(), read.parts.end(),
@@ -425,6 +501,22 @@ void MainWindow::setupToolsMenu() {
         const auto rast = import::rasterizeMeshTopDown(combined, ropt);
         if (rast.image.isNull()) return true;
 
+        // Preview before commit. Same dialog the LDraw path uses.
+        ImportPreviewDialog::Stats st;
+        st.ldrawResolved = ldrawResolved;
+        st.lddRendered   = lddBaked.rendered;
+        st.translated    = translated;
+        st.unmapped      = unmapped;
+        st.skipped       = lddBaked.skipped;
+        ImportPreviewDialog dlg(source, kindLabel, rast.image,
+                                static_cast<int>(std::round(rast.meshBoundsXZ.width())),
+                                static_cast<int>(std::round(rast.meshBoundsXZ.height())),
+                                st, allErrors, this);
+        if (dlg.exec() != QDialog::Accepted) {
+            statusBar()->showMessage(tr("Import cancelled."), 3000);
+            return true;
+        }
+
         const int wStud = std::max(1, static_cast<int>(
             std::round(rast.meshBoundsXZ.width())));
         const int hStud = std::max(1, static_cast<int>(
@@ -441,7 +533,7 @@ void MainWindow::setupToolsMenu() {
         const QString author = mapView_->currentMap()
                                    ? mapView_->currentMap()->author : QString();
         const QString key = import::writeImportedModelAsLibraryPart(
-            source, rast.image, wStud, hStud, modulesRoot, author,
+            dlg.partName(), rast.image, wStud, hStud, modulesRoot, author,
             {}, &err);
         if (key.isEmpty()) {
             QMessageBox::warning(this, kindLabel,
@@ -452,8 +544,8 @@ void MainWindow::setupToolsMenu() {
         partsBrowser_->rebuild();
         mapView_->addPartAtViewCenter(key);
         statusBar()->showMessage(
-            tr("Imported %1 — %2 LDraw-rendered + %3 LDD-rendered (of %4 translated, %5 unmapped, %6 skipped)")
-                .arg(QFileInfo(source).fileName())
+            tr("Imported %1 as '%2' — %3 LDraw-rendered + %4 LDD-rendered (%5 translated, %6 unmapped, %7 skipped)")
+                .arg(QFileInfo(source).fileName(), key)
                 .arg(ldrawResolved).arg(lddBaked.rendered)
                 .arg(translated).arg(unmapped).arg(lddBaked.skipped), 10000);
         return true;

@@ -33,6 +33,8 @@ add_library(cld_ui STATIC
     DownloadCenterDialog.h
     EditDialogs.cpp
     EditDialogs.h
+    ImportPreviewDialog.cpp
+    ImportPreviewDialog.h
     PreferencesDialog.cpp
     PreferencesDialog.h
     FindDialog.cpp
