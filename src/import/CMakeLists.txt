@@ -17,6 +17,8 @@ add_library(cld_import STATIC
     LDrawRasterize.h
     StudioReader.cpp
     StudioReader.h
+    LDDGeomReader.cpp
+    LDDGeomReader.h
     LDDLDrawMapping.cpp
     LDDLDrawMapping.h
     LDDReader.cpp
