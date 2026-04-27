@@ -9,6 +9,8 @@ add_library(cld_import STATIC
     LDrawMeshLoader.h
     LDrawPalette.cpp
     LDrawPalette.h
+    MeshRasterize.cpp
+    MeshRasterize.h
     LDrawRasterize.cpp
     LDrawRasterize.h
     StudioReader.cpp
