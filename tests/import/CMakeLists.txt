@@ -3,6 +3,7 @@ add_executable(cld_import_tests
     LDrawLibraryTest.cpp
     LDrawMeshLoaderTest.cpp
     LDrawPaletteTest.cpp
+    LifReaderTest.cpp
     MeshRasterizeTest.cpp
     StudioReaderTest.cpp
     LDDReaderTest.cpp

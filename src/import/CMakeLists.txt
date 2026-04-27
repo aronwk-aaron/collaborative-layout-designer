@@ -17,6 +17,8 @@ add_library(cld_import STATIC
     StudioReader.h
     LDDReader.cpp
     LDDReader.h
+    LifReader.cpp
+    LifReader.h
     ImportToPart.cpp
     ImportToPart.h
 )
