@@ -21,7 +21,10 @@
 #include "../edit/Connectivity.h"
 #include "../import/ImportToPart.h"
 #include "../import/ldd/LDDLDrawMapping.h"
+#include "../import/ldd/LDDMaterials.h"
+#include "../import/ldd/LDDMeshBuilder.h"
 #include "../import/ldd/LDDReader.h"
+#include "../import/lif/LifReader.h"
 #include "../import/ldraw/LDrawLibrary.h"
 #include "../import/ldraw/LDrawMeshBuilder.h"
 #include "../import/ldraw/LDrawMeshLoader.h"
@@ -54,6 +57,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <memory>
 
 namespace cld::ui {
 
@@ -321,59 +325,104 @@ void MainWindow::setupToolsMenu() {
             QStringLiteral("import/lddInstallPath")).toString();
         const QString ldrawRoot = QSettings().value(
             QStringLiteral("import/ldrawLibraryPath")).toString();
-        if (lddRoot.isEmpty() || ldrawRoot.isEmpty()) return false;
+        if (lddRoot.isEmpty()) return false;
 
         const QString xmlPath = QDir(lddRoot).absoluteFilePath(QStringLiteral("ldraw.xml"));
         import::LDDLDrawMapping mapping;
         if (!mapping.loadFromFile(xmlPath)) return false;
 
-        // Rewrite each LDDReader-emitted ref so its filename + colour
-        // are LDraw-side. LDDReader currently produces filenames like
-        // "<designID>.dat" or "<designID>.<matId>.dat" — strip back
-        // to the bare designID, look up the LDraw .dat, and overwrite.
-        // ColourCode = LDD materialID, which we translate through the
-        // mapping to an LDraw code.
-        int translated = 0, dropped = 0;
+        // Materials.xml — needed both for the LDD-only fallback's
+        // colours and for cross-checking. May live in
+        // <lddRoot>/Assets/db/Materials.xml after the user has
+        // extracted db.lif manually, or inside db.lif itself which
+        // we mount via LifReader.
+        import::LDDMaterials materials;
+        const QString matPath = QDir(lddRoot).absoluteFilePath(
+            QStringLiteral("Assets/db/Materials.xml"));
+        if (!materials.loadFromFile(matPath)) {
+            // Try inside db.lif at the same logical path.
+            const QString dbLifPath = QDir(lddRoot).absoluteFilePath(
+                QStringLiteral("Assets/db.lif"));
+            import::LifReader lif;
+            if (lif.open(dbLifPath)) {
+                materials.loadFromBytes(lif.read(QStringLiteral("/db/Materials.xml")));
+            }
+        }
+
+        // Keep the original LDD-flavoured ref list so the LDD-only
+        // fallback path can render parts that have NO LDraw mapping
+        // by loading their .g geometry directly.
+        const auto originalRead = read;
+
+        // ----- LDraw-mapped path ---------------------------------------
+        int translated = 0, unmapped = 0;
         for (auto& ref : read.parts) {
             QString designId = ref.filename;
             if (designId.endsWith(QStringLiteral(".dat"), Qt::CaseInsensitive))
                 designId.chop(4);
-            // Strip optional ".<matId>" decoration LDDReader appends.
             const int dot = designId.indexOf(QChar('.'));
             if (dot > 0) designId = designId.left(dot);
             const QString ldraw = mapping.partFor(designId);
-            if (ldraw.isEmpty()) { ++dropped; ref.filename.clear(); continue; }
+            if (ldraw.isEmpty()) { ++unmapped; ref.filename.clear(); continue; }
             ref.filename = ldraw;
             const int newColour = mapping.colourFor(ref.colorCode);
             if (newColour >= 0) ref.colorCode = newColour;
             ++translated;
         }
-        // Drop refs whose filename got cleared (no mapping).
         read.parts.erase(std::remove_if(read.parts.begin(), read.parts.end(),
             [](const auto& r){ return r.filename.isEmpty(); }), read.parts.end());
 
-        // Hand off to the LDraw pipeline: load library + palette,
-        // bake mesh, rasterize, emit as a library part.
-        import::LDrawLibrary lib(ldrawRoot);
-        if (!lib.looksValid()) return false;
-        import::LDrawPalette palette;
-        palette.loadFromLDConfig(QDir(ldrawRoot).absoluteFilePath(
-            QStringLiteral("LDConfig.ldr")));
-        import::LDrawMeshLoader loader(lib, palette);
-        const auto baked = import::bakeMeshFromLDraw(read, loader, palette);
-        if (baked.mesh.tris.empty()) {
+        // Bake the LDraw-translated subset (when ldrawRoot is set).
+        geom::Mesh combined;
+        int ldrawResolved = 0;
+        QStringList allErrors;
+        if (!ldrawRoot.isEmpty()) {
+            import::LDrawLibrary lib(ldrawRoot);
+            if (lib.looksValid()) {
+                import::LDrawPalette palette;
+                palette.loadFromLDConfig(QDir(ldrawRoot).absoluteFilePath(
+                    QStringLiteral("LDConfig.ldr")));
+                import::LDrawMeshLoader loader(lib, palette);
+                auto baked = import::bakeMeshFromLDraw(read, loader, palette);
+                ldrawResolved = baked.resolvedRefs;
+                allErrors += baked.errors;
+                for (const auto& tri : baked.mesh.tris) combined.tris.push_back(tri);
+            }
+        }
+
+        // ----- LDD-only fallback path ----------------------------------
+        // For refs the LDraw mapping didn't cover, render LDD's own
+        // .g geometry coloured by Materials.xml. Looks for parts on
+        // disk first, then mounts db.lif as a fallback so users who
+        // never extracted the LIF still get full coverage.
+        import::LDDMeshBuilder lddBuilder;
+        lddBuilder.setOnDiskRoot(lddRoot);
+        lddBuilder.setMapping(&mapping);
+        lddBuilder.setMaterials(&materials);
+        std::unique_ptr<import::LifReader> dbLif;
+        const QString dbLifPath = QDir(lddRoot).absoluteFilePath(
+            QStringLiteral("Assets/db.lif"));
+        if (QFileInfo::exists(dbLifPath)) {
+            dbLif = std::make_unique<import::LifReader>();
+            if (dbLif->open(dbLifPath)) lddBuilder.setLifReader(dbLif.get());
+        }
+        const auto lddBaked = lddBuilder.bake(originalRead);
+        for (const auto& tri : lddBaked.mesh.tris) combined.tris.push_back(tri);
+        allErrors += lddBaked.errors;
+
+        if (combined.tris.empty()) {
             QMessageBox::warning(this, kindLabel,
                 tr("LDD model couldn't be rendered: %1 parts translated to LDraw, "
-                   "%2 dropped (no mapping), and the LDraw library returned no "
-                   "geometry.\n\n%3")
-                    .arg(translated).arg(dropped)
-                    .arg(baked.errors.join('\n')));
+                   "%2 unmapped, %3 LDD-rendered, %4 skipped.\n\n%5")
+                    .arg(translated).arg(unmapped)
+                    .arg(lddBaked.rendered).arg(lddBaked.skipped)
+                    .arg(allErrors.join('\n')));
             return true;
         }
 
         import::RasterizeOptions ropt;
         ropt.pxPerStud = 8;
-        const auto rast = import::rasterizeMeshTopDown(baked.mesh, ropt);
+        const auto rast = import::rasterizeMeshTopDown(combined, ropt);
         if (rast.image.isNull()) return true;
 
         const int wStud = std::max(1, static_cast<int>(
@@ -403,9 +452,10 @@ void MainWindow::setupToolsMenu() {
         partsBrowser_->rebuild();
         mapView_->addPartAtViewCenter(key);
         statusBar()->showMessage(
-            tr("Imported %1 via LDD→LDraw mapping — %2 parts translated, %3 dropped, %4 resolved")
+            tr("Imported %1 — %2 LDraw-rendered + %3 LDD-rendered (of %4 translated, %5 unmapped, %6 skipped)")
                 .arg(QFileInfo(source).fileName())
-                .arg(translated).arg(dropped).arg(baked.resolvedRefs), 8000);
+                .arg(ldrawResolved).arg(lddBaked.rendered)
+                .arg(translated).arg(unmapped).arg(lddBaked.skipped), 10000);
         return true;
     };
 
