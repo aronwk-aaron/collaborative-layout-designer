@@ -3,20 +3,79 @@
 #include <QDialogButtonBox>
 #include <QFileInfo>
 #include <QFormLayout>
-#include <QFrame>
+#include <QGraphicsPixmapItem>
+#include <QGraphicsScene>
+#include <QGraphicsView>
 #include <QHBoxLayout>
-#include <QKeyEvent>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPixmap>
 #include <QPlainTextEdit>
 #include <QPushButton>
-#include <QScrollArea>
-#include <QSpinBox>
 #include <QVBoxLayout>
 #include <QWheelEvent>
 
 namespace cld::ui {
+
+namespace {
+
+// QGraphicsView subclass with built-in zoom support — Ctrl+wheel to
+// zoom, plain wheel scrolls. Centered on cursor under the wheel
+// pointer, which is the natural feel users expect from any viewer.
+// Buttons on the toolbar drive scaleBy() too. Replaces the previous
+// QScrollArea + QLabel approach which silently failed to repaint
+// when the label was resized inside the scroll viewport.
+class PreviewView : public QGraphicsView {
+public:
+    PreviewView(QGraphicsScene* scene, QWidget* parent)
+        : QGraphicsView(scene, parent) {
+        setRenderHint(QPainter::SmoothPixmapTransform);
+        setDragMode(QGraphicsView::ScrollHandDrag);
+        setTransformationAnchor(QGraphicsView::AnchorUnderMouse);
+        setResizeAnchor(QGraphicsView::AnchorUnderMouse);
+        setAlignment(Qt::AlignCenter);
+        // Checker pattern via background brush so transparency in the
+        // sprite is visually obvious.
+        QPixmap checker(16, 16);
+        checker.fill(Qt::white);
+        QPainter p(&checker);
+        p.fillRect(0, 0, 8, 8, QColor(220, 220, 220));
+        p.fillRect(8, 8, 8, 8, QColor(220, 220, 220));
+        p.end();
+        setBackgroundBrush(QBrush(checker));
+    }
+
+    void scaleBy(double factor) {
+        const double next = currentScale_ * factor;
+        if (next < 0.05 || next > 32.0) return;
+        currentScale_ = next;
+        scale(factor, factor);
+    }
+
+    double currentScale() const { return currentScale_; }
+
+    void setCurrentScale(double s) {
+        if (s <= 0) return;
+        const double factor = s / currentScale_;
+        scaleBy(factor);
+    }
+
+protected:
+    void wheelEvent(QWheelEvent* e) override {
+        if (e->modifiers().testFlag(Qt::ControlModifier)) {
+            const int delta = e->angleDelta().y();
+            if (delta != 0) scaleBy(delta > 0 ? 1.15 : 1.0 / 1.15);
+            e->accept();
+            return;
+        }
+        QGraphicsView::wheelEvent(e);
+    }
+
+private:
+    double currentScale_ = 1.0;
+};
+
+}  // namespace
 
 ImportPreviewDialog::ImportPreviewDialog(const QString& sourceFile,
                                           const QString& kindLabel,
@@ -28,11 +87,11 @@ ImportPreviewDialog::ImportPreviewDialog(const QString& sourceFile,
                                           QWidget* parent)
     : QDialog(parent) {
     setWindowTitle(tr("Preview: %1").arg(kindLabel));
-    resize(720, 560);
+    resize(720, 620);
 
     auto* root = new QVBoxLayout(this);
 
-    // Header: source file + dimensions.
+    // Header.
     {
         const QString name = QFileInfo(sourceFile).fileName();
         auto* hdr = new QLabel(
@@ -41,98 +100,81 @@ ImportPreviewDialog::ImportPreviewDialog(const QString& sourceFile,
         root->addWidget(hdr);
     }
 
-    // Sprite preview inside a scroll area so the user can pan around
-    // a zoomed-in view. Toolbar above with zoom controls + a fit-to-
-    // window button. Ctrl+wheel zooms; wheel alone scrolls.
-    spriteImage_ = sprite;
+    // Scene + view. Adding a QGraphicsPixmapItem and setting the
+    // scene rect to the pixmap bounds gives us a known canvas the
+    // user can pan around within when zoomed in.
+    auto* scene = new QGraphicsScene(this);
+    QGraphicsPixmapItem* pmItem = nullptr;
+    if (!sprite.isNull()) {
+        pmItem = scene->addPixmap(QPixmap::fromImage(sprite));
+        scene->setSceneRect(pmItem->boundingRect());
+    }
+    auto* view = new PreviewView(scene, this);
+    view->setMinimumHeight(320);
+    root->addWidget(view, 1);
+
+    // Zoom toolbar BELOW the view (more discoverable than above; users
+    // expect zoom controls grouped with the dialog buttons).
     auto* zoomRow = new QHBoxLayout();
-    auto* zoomOut = new QPushButton(tr("-"), this);
-    auto* zoomIn  = new QPushButton(tr("+"), this);
-    auto* fitBtn  = new QPushButton(tr("Fit"), this);
-    auto* nativeBtn = new QPushButton(tr("1:1"), this);
-    auto* zoomLabel = new QLabel(this);
-    zoomOut->setFixedWidth(32);
-    zoomIn->setFixedWidth(32);
-    zoomLabel->setMinimumWidth(60);
+    auto* zoomLabel = new QLabel(QStringLiteral("100%"), this);
+    zoomLabel->setMinimumWidth(56);
     zoomLabel->setAlignment(Qt::AlignCenter);
+    auto* zoomOut = new QPushButton(tr("Zoom out"), this);
+    auto* zoomIn  = new QPushButton(tr("Zoom in"),  this);
+    auto* fitBtn  = new QPushButton(tr("Fit"),  this);
+    auto* native  = new QPushButton(tr("100%"), this);
     zoomRow->addWidget(zoomOut);
     zoomRow->addWidget(zoomIn);
     zoomRow->addWidget(zoomLabel);
     zoomRow->addStretch();
     zoomRow->addWidget(fitBtn);
-    zoomRow->addWidget(nativeBtn);
+    zoomRow->addWidget(native);
     root->addLayout(zoomRow);
 
-    auto* scroll = new QScrollArea(this);
-    scroll->setWidgetResizable(false);
-    scroll->setMinimumHeight(280);
-    scroll->setBackgroundRole(QPalette::Mid);
-    scroll->setAlignment(Qt::AlignCenter);
-    spriteLabel_ = new QLabel(scroll);
-    spriteLabel_->setAlignment(Qt::AlignCenter);
-    spriteLabel_->setStyleSheet(QStringLiteral(
-        "QLabel { background: "
-        "qconicalgradient(cx:0.5, cy:0.5, angle:0, "
-        "stop:0 #cccccc, stop:0.25 #ffffff, stop:0.5 #cccccc, "
-        "stop:0.75 #ffffff, stop:1 #cccccc); }"));
-    scroll->setWidget(spriteLabel_);
-    scroll_ = scroll;
-    root->addWidget(scroll, 1);
-
-    auto applyZoom = [this, zoomLabel, scroll]{
-        if (spriteImage_.isNull()) {
-            spriteLabel_->setText(tr("(empty sprite)"));
-            spriteLabel_->resize(scroll->viewport()->size());
-            zoomLabel->setText(QStringLiteral("—"));
-            return;
-        }
-        const int newW = std::max(1, static_cast<int>(spriteImage_.width()  * zoom_));
-        const int newH = std::max(1, static_cast<int>(spriteImage_.height() * zoom_));
-        QPixmap pm = QPixmap::fromImage(spriteImage_)
-            .scaled(newW, newH, Qt::KeepAspectRatio,
-                    zoom_ < 1.5 ? Qt::SmoothTransformation : Qt::FastTransformation);
-        spriteLabel_->setPixmap(pm);
-        spriteLabel_->resize(pm.size());
-        zoomLabel->setText(QStringLiteral("%1%").arg(int(std::round(zoom_ * 100))));
+    auto refreshLabel = [view, zoomLabel]{
+        zoomLabel->setText(QStringLiteral("%1%").arg(int(std::round(view->currentScale() * 100))));
     };
-    auto fit = [this, applyZoom, scroll]{
-        if (spriteImage_.isNull()) { applyZoom(); return; }
-        const QSize avail = scroll->viewport()->size() - QSize(20, 20);
-        if (avail.width() <= 0 || avail.height() <= 0) { applyZoom(); return; }
-        const double zx = double(avail.width())  / spriteImage_.width();
-        const double zy = double(avail.height()) / spriteImage_.height();
-        zoom_ = std::clamp(std::min(zx, zy), 0.05, 32.0);
-        applyZoom();
-    };
-    auto bumpZoom = [this, applyZoom](double factor){
-        zoom_ = std::clamp(zoom_ * factor, 0.05, 32.0);
-        applyZoom();
-    };
-    connect(zoomOut, &QPushButton::clicked, this, [bumpZoom]{ bumpZoom(1.0 / 1.25); });
-    connect(zoomIn,  &QPushButton::clicked, this, [bumpZoom]{ bumpZoom(1.25); });
-    connect(fitBtn,  &QPushButton::clicked, this, fit);
-    connect(nativeBtn, &QPushButton::clicked, this, [this, applyZoom]{
-        zoom_ = 1.0; applyZoom();
+    connect(zoomOut, &QPushButton::clicked, this, [view, refreshLabel]{
+        view->scaleBy(1.0 / 1.25); refreshLabel();
+    });
+    connect(zoomIn, &QPushButton::clicked, this, [view, refreshLabel]{
+        view->scaleBy(1.25); refreshLabel();
+    });
+    connect(fitBtn, &QPushButton::clicked, this, [view, refreshLabel, pmItem]{
+        if (!pmItem) return;
+        view->resetTransform();
+        view->setCurrentScale(1.0);
+        view->fitInView(pmItem, Qt::KeepAspectRatio);
+        // After fitInView, the transform's m11 is the new scale.
+        const double s = view->transform().m11();
+        view->setCurrentScale(s);
+        refreshLabel();
+    });
+    connect(native, &QPushButton::clicked, this, [view, refreshLabel]{
+        view->resetTransform();
+        view->setCurrentScale(1.0);
+        refreshLabel();
     });
 
-    // Ctrl+wheel on the scroll area zooms; default scroll behaviour
-    // applies otherwise. Install an event filter so the scroll area's
-    // own wheel handling stays in place when Ctrl isn't held.
-    scroll->viewport()->installEventFilter(this);
-    bumpZoom_ = bumpZoom;
-
-    // Initial: fit to viewport for big sprites, native + 4x for tiny.
-    if (!sprite.isNull()) {
-        if (sprite.width() < 64 && sprite.height() < 64) {
-            zoom_ = 4.0;
-            applyZoom();
-        } else {
-            // Defer fit() until the dialog is sized — the scroll
-            // viewport doesn't know its real size at construction.
-            QMetaObject::invokeMethod(this, fit, Qt::QueuedConnection);
-        }
-    } else {
-        applyZoom();
+    // Initial fit so big sprites don't overwhelm the dialog and tiny
+    // sprites get scaled up enough to see. Done in a single-shot so
+    // the view has its real size by the time fit runs.
+    if (pmItem) {
+        QMetaObject::invokeMethod(this, [view, pmItem, refreshLabel, sprite]{
+            // Tiny sprite (< 64 px each side) → scale to ~256 so the
+            // user can actually see it. Otherwise fit to viewport.
+            if (sprite.width() < 64 && sprite.height() < 64) {
+                view->resetTransform();
+                view->setCurrentScale(1.0);
+                view->scaleBy(4.0);
+            } else {
+                view->resetTransform();
+                view->setCurrentScale(1.0);
+                view->fitInView(pmItem, Qt::KeepAspectRatio);
+                view->setCurrentScale(view->transform().m11());
+            }
+            refreshLabel();
+        }, Qt::QueuedConnection);
     }
 
     // Stats.
@@ -152,7 +194,7 @@ ImportPreviewDialog::ImportPreviewDialog(const QString& sourceFile,
         root->addLayout(form);
     }
 
-    // Errors panel — collapsed by default, only shown when errors exist.
+    // Errors panel.
     if (!errors.isEmpty()) {
         auto* errLabel = new QLabel(tr("%1 warning(s)/error(s) during bake:").arg(errors.size()), this);
         root->addWidget(errLabel);
@@ -163,7 +205,7 @@ ImportPreviewDialog::ImportPreviewDialog(const QString& sourceFile,
         root->addWidget(errEdit);
     }
 
-    // Name field + buttons.
+    // Name field.
     {
         auto* row = new QHBoxLayout();
         row->addWidget(new QLabel(tr("Save as:"), this));
@@ -174,12 +216,10 @@ ImportPreviewDialog::ImportPreviewDialog(const QString& sourceFile,
     }
     {
         auto* bb = new QDialogButtonBox(this);
-        // Custom labels: accept means "save it", reject means "abort".
         auto* acceptBtn = bb->addButton(tr("Save as Library Part"), QDialogButtonBox::AcceptRole);
         bb->addButton(tr("Cancel"), QDialogButtonBox::RejectRole);
         connect(bb, &QDialogButtonBox::accepted, this, &QDialog::accept);
         connect(bb, &QDialogButtonBox::rejected, this, &QDialog::reject);
-        // Enable Save only when the name is non-empty.
         connect(nameEdit_, &QLineEdit::textChanged, this,
                 [acceptBtn](const QString& s){ acceptBtn->setEnabled(!s.trimmed().isEmpty()); });
         acceptBtn->setEnabled(!nameEdit_->text().trimmed().isEmpty());
@@ -189,23 +229,6 @@ ImportPreviewDialog::ImportPreviewDialog(const QString& sourceFile,
 
 QString ImportPreviewDialog::partName() const {
     return nameEdit_ ? nameEdit_->text().trimmed() : QString();
-}
-
-bool ImportPreviewDialog::eventFilter(QObject* obj, QEvent* ev) {
-    // Ctrl+wheel on the scroll viewport zooms; plain wheel falls
-    // through to the QScrollArea so the user can scroll a zoomed
-    // sprite.
-    if (scroll_ && obj == scroll_->viewport() && ev->type() == QEvent::Wheel) {
-        auto* we = static_cast<QWheelEvent*>(ev);
-        if (we->modifiers().testFlag(Qt::ControlModifier)) {
-            const int delta = we->angleDelta().y();
-            if (delta != 0 && bumpZoom_) {
-                bumpZoom_(delta > 0 ? 1.15 : 1.0 / 1.15);
-                return true;
-            }
-        }
-    }
-    return QDialog::eventFilter(obj, ev);
 }
 
 }  // namespace cld::ui

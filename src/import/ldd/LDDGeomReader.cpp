@@ -8,12 +8,11 @@ namespace cld::import {
 
 namespace {
 
-// LDD module units → LDraw LDU (1 stud = 20 LDU = 1 LDD module unit
-// scaled appropriately). LDD .g coords are in millimetres at brick
-// pitch (8mm = 1 stud), so 1 LDD unit ≈ 1 mm. LDraw's 1 stud = 20 LDU
-// = 8 mm → 1 LDD unit ≈ 2.5 LDU. Apply that scaling so the meshes
-// land in the same coordinate space as LDraw-baked geometry.
-constexpr double kLddToLdu = 2.5;
+// LDD .g vertex coords are in LDD coordinate units = studs (8 mm
+// each). LDraw uses LDU at 0.4 mm, so 1 LDD unit = 20 LDU. Apply
+// that scaling so .g triangles share the LDU coord system used by
+// the LDraw mesh-loader and the rasterizer.
+constexpr double kLddToLdu = 20.0;
 
 bool readU32(const QByteArray& d, qsizetype& off, quint32& out) {
     if (off + 4 > d.size()) return false;

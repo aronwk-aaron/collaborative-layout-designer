@@ -88,12 +88,19 @@ LDrawReadResult readLDD(const QString& path) {
     }
 
     QXmlStreamReader r(xmlBytes);
-    // LXFML coordinate system: millimetres. 1 LDD unit ~= 1 stud in our
-    // conversion, because LDraw's `toBlueBrickMap` divides by 20 LDU
-    // per stud — so we emit positions as 20 × studs (LDU). 1 LDD
-    // transform unit ~ 0.4 mm along x/z and 0.96 mm along y (stud height).
-    // For a top-down sprite we only need x and z (y is height).
-    constexpr double kLddToStuds = 1.25;  // LDD unit → studs (0.4 mm × 1.25 / 0.5 stud-per-LDU-brick-width)
+    // LXFML coordinate system: LDD units = studs (8 mm each).
+    // Sample LXFML transforms have tx/ty/tz in the 0.01..3 range
+    // for a few-stud-wide model like pq_trike, which only matches
+    // "1 LDD unit = 1 stud". To land in LDU (the unit cld_geom
+    // shares with LDraw, where 1 stud = 20 LDU) we multiply by 20.
+    //
+    // The previous kLddToStuds × kLduPerStud combo was 1.25 × 20 = 25
+    // (wrong — way too far), and a brief intermediate "1.0" landed
+    // every part at the origin (also wrong — too close). 20 lines
+    // up with what lu-toolbox sees natively: it imports LDD coords
+    // verbatim into Blender at "1 BU = 1 stud" then a 20× scale-up
+    // happens during sprite render anyway. Same end result.
+    constexpr double kLddToLdu = 20.0;
 
     while (!r.atEnd() && !r.hasError()) {
         const auto token = r.readNext();
@@ -127,14 +134,12 @@ LDrawReadResult readLDD(const QString& path) {
             if (!xform.ok) continue;
             LDrawPartRef ref;
             ref.colorCode = matId > 0 ? matId : 1;  // default to light-gray
-            // LDD → LDraw mapping: scale by 20 LDU per stud (already in
-            // LDU-ish via kLddToStuds × 20 / 0.8mm-per-LDU quirks).
-            // Approximation that works for top-down placement at our
-            // library's granularity.
-            constexpr double kLduPerStud = 20.0;
-            ref.x = xform.tx * kLddToStuds * kLduPerStud;
-            ref.y = xform.ty * kLddToStuds * kLduPerStud;
-            ref.z = xform.tz * kLddToStuds * kLduPerStud;
+            // LDD ↔ LDraw 1:1 unit mapping (both 0.4 mm units, 20
+            // per stud). MeshRasterize divides by 20 LDU per stud
+            // when converting to the final sprite.
+            ref.x = xform.tx * kLddToLdu;
+            ref.y = xform.ty * kLddToLdu;
+            ref.z = xform.tz * kLddToLdu;
             for (int i = 0; i < 9; ++i) ref.m[i] = xform.m[i];
             // Part filename: try "<designID>.<matId>.dat" so the
             // existing LDraw → BlueBrick mapping strips the .dat and
