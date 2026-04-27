@@ -5,6 +5,8 @@ add_library(cld_import STATIC
     LDrawColors.h
     LDrawLibrary.cpp
     LDrawLibrary.h
+    LDrawMeshBuilder.cpp
+    LDrawMeshBuilder.h
     LDrawMeshLoader.cpp
     LDrawMeshLoader.h
     LDrawPalette.cpp

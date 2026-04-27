@@ -54,6 +54,11 @@ LDrawReadResult readLDraw(const QString& path);
 //   - Rotation around Y becomes the brick's orientation angle.
 //   - Color code maps 1:1 (LDraw and BlueBrick share the palette).
 //   - Part file name becomes PartNumber with ".DAT" stripped and upper-cased.
+//
+// Caveat: this path only renders pieces whose `<id>.<color>.gif` exists
+// in the BlueBrickParts library. Use `bakeMeshFromLDraw` (in
+// LDrawMeshBuilder.h) for the user-pointed-LDraw-library pipeline that
+// renders any part regardless of BlueBrickParts coverage.
 std::unique_ptr<core::Map> toBlueBrickMap(const LDrawReadResult& src);
 
 }

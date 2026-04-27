@@ -269,6 +269,59 @@ QWidget* buildLibraryTab(QDialog* parent) {
     return w;
 }
 
+// "Import" tab — paths to external libraries used by the LDraw /
+// Studio / LDD import pipeline. These are read at import time to
+// resolve part geometry against the user's own LDraw install or LDD
+// install rather than the bundled BlueBrickParts library (which
+// doesn't have the geometry needed for arbitrary LDraw / LDD models).
+QWidget* buildImportTab(QDialog* parent) {
+    auto* w = new QWidget(parent);
+    auto* form = new QFormLayout(w);
+    QSettings s;
+
+    auto buildPicker = [w](const QString& settingsKey, const QString& browseTitle) {
+        auto* edit = new QLineEdit(QSettings().value(settingsKey).toString(), w);
+        auto* btn  = new QPushButton(QObject::tr("Browse..."), w);
+        QObject::connect(btn, &QPushButton::clicked, w, [edit, w, browseTitle]{
+            const QString p = QFileDialog::getExistingDirectory(w, browseTitle, edit->text());
+            if (!p.isEmpty()) edit->setText(p);
+        });
+        auto* row = new QHBoxLayout();
+        row->addWidget(edit, 1);
+        row->addWidget(btn);
+        auto* wrap = new QWidget(w); wrap->setLayout(row);
+        return std::make_pair(wrap, edit);
+    };
+
+    auto [ldrawWrap, ldrawEdit] = buildPicker(
+        QStringLiteral("import/ldrawLibraryPath"),
+        QObject::tr("LDraw library root"));
+    ldrawEdit->setPlaceholderText(QObject::tr("e.g. ~/ldraw — needs LDConfig.ldr + parts/"));
+    form->addRow(QObject::tr("LDraw library root:"), ldrawWrap);
+
+    auto [studioWrap, studioEdit] = buildPicker(
+        QStringLiteral("import/studioLibraryPath"),
+        QObject::tr("Studio LDraw library root"));
+    studioEdit->setPlaceholderText(
+        QObject::tr("Studio's bundled LDraw — falls back to LDraw library above"));
+    form->addRow(QObject::tr("Studio library root:"), studioWrap);
+
+    auto [lddWrap, lddEdit] = buildPicker(
+        QStringLiteral("import/lddInstallPath"),
+        QObject::tr("LEGO Digital Designer install"));
+    lddEdit->setPlaceholderText(
+        QObject::tr("folder containing Assets.lif + ldraw.xml"));
+    form->addRow(QObject::tr("LDD install:"), lddWrap);
+
+    QObject::connect(parent, &QDialog::accepted, w, [ldrawEdit, studioEdit, lddEdit]{
+        QSettings s;
+        s.setValue(QStringLiteral("import/ldrawLibraryPath"),  ldrawEdit->text());
+        s.setValue(QStringLiteral("import/studioLibraryPath"), studioEdit->text());
+        s.setValue(QStringLiteral("import/lddInstallPath"),    lddEdit->text());
+    });
+    return w;
+}
+
 }  // namespace
 
 PreferencesDialog::PreferencesDialog(QWidget* parent) : QDialog(parent) {
@@ -281,6 +334,7 @@ PreferencesDialog::PreferencesDialog(QWidget* parent) : QDialog(parent) {
     tabs->addTab(buildEditionTab(this),    tr("Editing"));
     tabs->addTab(buildAppearanceTab(this), tr("Appearance"));
     tabs->addTab(buildLibraryTab(this),    tr("Library"));
+    tabs->addTab(buildImportTab(this),     tr("Import"));
     vbox->addWidget(tabs);
 
     auto* bb = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);

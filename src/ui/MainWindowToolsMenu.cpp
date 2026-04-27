@@ -21,8 +21,13 @@
 #include "../edit/Connectivity.h"
 #include "../import/ImportToPart.h"
 #include "../import/LDDReader.h"
+#include "../import/LDrawLibrary.h"
+#include "../import/LDrawMeshBuilder.h"
+#include "../import/LDrawMeshLoader.h"
+#include "../import/LDrawPalette.h"
 #include "../import/LDrawRasterize.h"
 #include "../import/LDrawReader.h"
+#include "../import/MeshRasterize.h"
 #include "../import/StudioReader.h"
 #include "../parts/PartsLibrary.h"
 #include "../rendering/SceneBuilder.h"
@@ -201,21 +206,104 @@ void MainWindow::setupToolsMenu() {
                 .arg(wStud).arg(hStud).arg(read.parts.size()), 6000);
     };
 
+    // Newer LDraw / Studio import path: bake the model's geometry
+    // through a user-pointed LDraw library + LDConfig.ldr palette,
+    // rasterize top-down, and emit a sprite. Used when the user has
+    // configured `import/ldrawLibraryPath` in Preferences. Falls back
+    // to the legacy BlueBrickParts-rendering closure when unset or
+    // invalid so existing users don't lose the feature mid-rollout.
+    auto importViaLDrawLibrary = [this](const QString& source,
+                                          const import::LDrawReadResult& read,
+                                          const QString& kindLabel) -> bool {
+        if (!read.ok) return false;
+        const QString libRoot = QSettings().value(
+            QStringLiteral("import/ldrawLibraryPath")).toString();
+        if (libRoot.isEmpty()) return false;
+        import::LDrawLibrary lib(libRoot);
+        if (!lib.looksValid()) return false;
+
+        import::LDrawPalette palette;
+        palette.loadFromLDConfig(QDir(libRoot).absoluteFilePath(
+            QStringLiteral("LDConfig.ldr")));
+
+        import::LDrawMeshLoader loader(lib, palette);
+        const auto baked = import::bakeMeshFromLDraw(read, loader, palette);
+        if (baked.mesh.tris.empty()) {
+            QMessageBox::warning(this, kindLabel,
+                tr("LDraw library at %1 couldn't resolve any geometry for %2. "
+                   "Errors:\n%3").arg(libRoot, source, baked.errors.join('\n')));
+            return true;  // we tried and failed; don't fall back
+        }
+
+        // Rasterize the baked mesh into a top-down sprite at the
+        // BlueBrick stock 8 px/stud sample rate.
+        import::RasterizeOptions ropt;
+        ropt.pxPerStud = 8;
+        const auto rast = import::rasterizeMeshTopDown(baked.mesh, ropt);
+        if (rast.image.isNull()) {
+            QMessageBox::warning(this, kindLabel,
+                tr("Rasterized sprite is empty."));
+            return true;
+        }
+
+        const int wStud = std::max(1, static_cast<int>(
+            std::round(rast.meshBoundsXZ.width())));
+        const int hStud = std::max(1, static_cast<int>(
+            std::round(rast.meshBoundsXZ.height())));
+
+        // Emit as a new BlueBrick library part with no ConnexionList
+        // for now — full connection-list bake from real LDraw geometry
+        // requires picking up the studs from p/stud.dat refs and
+        // is a follow-up. The part is still placeable; users can
+        // manually edit connections via Properties.
+        QString modulesRoot = QSettings().value(
+            QStringLiteral("modules/libraryPath")).toString();
+        if (modulesRoot.isEmpty()) {
+            modulesRoot = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)
+                          + QStringLiteral("/imports");
+        } else {
+            modulesRoot += QStringLiteral("/imports");
+        }
+        QString err;
+        const QString author = mapView_->currentMap()
+                                   ? mapView_->currentMap()->author : QString();
+        const QString key = import::writeImportedModelAsLibraryPart(
+            source, rast.image, wStud, hStud, modulesRoot, author,
+            {}, &err);
+        if (key.isEmpty()) {
+            QMessageBox::warning(this, kindLabel,
+                tr("Could not write library part: %1").arg(err));
+            return true;
+        }
+        rescanLibrary(loadUserLibraryPaths() << modulesRoot);
+        partsBrowser_->rebuild();
+        mapView_->addPartAtViewCenter(key);
+        statusBar()->showMessage(
+            tr("Imported %1 via LDraw library — %2 part(s) resolved, %3 unresolved")
+                .arg(QFileInfo(source).fileName())
+                .arg(baked.resolvedRefs).arg(baked.unresolvedRefs), 8000);
+        return true;
+    };
+
     auto* ldrawAct = importMenu->addAction(tr("&LDraw (.ldr / .dat / .mpd)..."));
-    connect(ldrawAct, &QAction::triggered, this, [this, importAsPart]{
+    connect(ldrawAct, &QAction::triggered, this, [this, importAsPart, importViaLDrawLibrary]{
         const QString in = QFileDialog::getOpenFileName(this,
             tr("Import LDraw file"), {},
             tr("LDraw (*.ldr *.dat *.mpd);;All files (*)"));
         if (in.isEmpty()) return;
-        importAsPart(in, import::readLDraw(in), tr("LDraw import"));
+        const auto read = import::readLDraw(in);
+        if (importViaLDrawLibrary(in, read, tr("LDraw import"))) return;
+        importAsPart(in, read, tr("LDraw import"));
     });
     auto* studioAct = importMenu->addAction(tr("&Studio (.io)..."));
-    connect(studioAct, &QAction::triggered, this, [this, importAsPart]{
+    connect(studioAct, &QAction::triggered, this, [this, importAsPart, importViaLDrawLibrary]{
         const QString in = QFileDialog::getOpenFileName(this,
             tr("Import Studio .io"), {},
             tr("Studio (*.io);;All files (*)"));
         if (in.isEmpty()) return;
-        importAsPart(in, import::readStudioIo(in), tr("Studio import"));
+        const auto read = import::readStudioIo(in);
+        if (importViaLDrawLibrary(in, read, tr("Studio import"))) return;
+        importAsPart(in, read, tr("Studio import"));
     });
     auto* lddAct = importMenu->addAction(tr("L&DD (.lxf / .lxfml)..."));
     connect(lddAct, &QAction::triggered, this, [this, importAsPart]{
