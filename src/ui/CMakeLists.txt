@@ -29,6 +29,7 @@ add_library(cld_ui STATIC
     PartUsagePanel.h
     LibraryPathsDialog.cpp
     LibraryPathsDialog.h
+    BackgroundTask.h
     DownloadCenterDialog.cpp
     DownloadCenterDialog.h
     EditDialogs.cpp

@@ -36,6 +36,7 @@
 #include "../parts/PartsLibrary.h"
 #include "../rendering/SceneBuilder.h"
 
+#include "BackgroundTask.h"
 #include "DownloadCenterDialog.h"
 #include "ImportPreviewDialog.h"
 
@@ -246,20 +247,27 @@ void MainWindow::setupToolsMenu() {
         palette.loadFromLDConfig(QDir(libRoot).absoluteFilePath(
             QStringLiteral("LDConfig.ldr")));
 
+        // Bake + rasterize on a worker thread so the UI stays
+        // responsive while a multi-thousand-part LDraw / Studio
+        // model is being processed (can take 30s+ for big MOCs).
         import::LDrawMeshLoader loader(lib, palette);
-        const auto baked = import::bakeMeshFromLDraw(read, loader, palette);
+        import::BakedModel baked;
+        import::RasterizeResult rast;
+        runBackground(this, tr("Importing %1...").arg(QFileInfo(source).fileName()),
+            [&]{
+                baked = import::bakeMeshFromLDraw(read, loader, palette);
+                if (!baked.mesh.tris.empty()) {
+                    import::RasterizeOptions ropt;
+                    ropt.pxPerStud = 8;
+                    rast = import::rasterizeMeshTopDown(baked.mesh, ropt);
+                }
+            });
         if (baked.mesh.tris.empty()) {
             QMessageBox::warning(this, kindLabel,
                 tr("LDraw library at %1 couldn't resolve any geometry for %2. "
                    "Errors:\n%3").arg(libRoot, source, baked.errors.join('\n')));
             return true;  // we tried and failed; don't fall back
         }
-
-        // Rasterize the baked mesh into a top-down sprite at the
-        // BlueBrick stock 8 px/stud sample rate.
-        import::RasterizeOptions ropt;
-        ropt.pxPerStud = 8;
-        const auto rast = import::rasterizeMeshTopDown(baked.mesh, ropt);
         if (rast.image.isNull()) {
             QMessageBox::warning(this, kindLabel,
                 tr("Rasterized sprite is empty."));
@@ -448,43 +456,54 @@ void MainWindow::setupToolsMenu() {
         read.parts.erase(std::remove_if(read.parts.begin(), read.parts.end(),
             [](const auto& r){ return r.filename.isEmpty(); }), read.parts.end());
 
-        // Bake the LDraw-translated subset (when ldrawRoot is set).
+        // Bake LDraw-translated subset + LDD-only-fallback subset on
+        // a worker thread; both stages can each take 10s+ on dense
+        // models. Final rasterize joins them.
         geom::Mesh combined;
         int ldrawResolved = 0;
         QStringList allErrors;
-        if (!ldrawRoot.isEmpty()) {
-            import::LDrawLibrary lib(ldrawRoot);
-            if (lib.looksValid()) {
-                import::LDrawPalette palette;
-                palette.loadFromLDConfig(QDir(ldrawRoot).absoluteFilePath(
-                    QStringLiteral("LDConfig.ldr")));
-                import::LDrawMeshLoader loader(lib, palette);
-                auto baked = import::bakeMeshFromLDraw(read, loader, palette);
-                ldrawResolved = baked.resolvedRefs;
-                allErrors += baked.errors;
-                for (const auto& tri : baked.mesh.tris) combined.tris.push_back(tri);
-            }
-        }
+        import::LDDLDrawBakedModel lddBaked;
+        import::RasterizeResult rast;
 
-        // ----- LDD-only fallback path ----------------------------------
-        // For refs the LDraw mapping didn't cover, render LDD's own
-        // .g geometry coloured by Materials.xml. Looks for parts on
-        // disk first, then mounts db.lif as a fallback so users who
-        // never extracted the LIF still get full coverage.
-        import::LDDMeshBuilder lddBuilder;
-        lddBuilder.setOnDiskRoot(lddRoot);
-        lddBuilder.setMapping(&mapping);
-        lddBuilder.setMaterials(&materials);
+        // Open db.lif up front (still on UI thread — small map).
         std::unique_ptr<import::LifReader> dbLif;
         const QString dbLifPath = QDir(lddRoot).absoluteFilePath(
             QStringLiteral("Assets/db.lif"));
         if (QFileInfo::exists(dbLifPath)) {
             dbLif = std::make_unique<import::LifReader>();
-            if (dbLif->open(dbLifPath)) lddBuilder.setLifReader(dbLif.get());
+            if (!dbLif->open(dbLifPath)) dbLif.reset();
         }
-        const auto lddBaked = lddBuilder.bake(originalRead);
-        for (const auto& tri : lddBaked.mesh.tris) combined.tris.push_back(tri);
-        allErrors += lddBaked.errors;
+        runBackground(this, tr("Importing %1...").arg(QFileInfo(source).fileName()),
+            [&]{
+                if (!ldrawRoot.isEmpty()) {
+                    import::LDrawLibrary lib(ldrawRoot);
+                    if (lib.looksValid()) {
+                        import::LDrawPalette palette;
+                        palette.loadFromLDConfig(QDir(ldrawRoot).absoluteFilePath(
+                            QStringLiteral("LDConfig.ldr")));
+                        import::LDrawMeshLoader loader(lib, palette);
+                        auto baked = import::bakeMeshFromLDraw(read, loader, palette);
+                        ldrawResolved = baked.resolvedRefs;
+                        allErrors += baked.errors;
+                        for (const auto& tri : baked.mesh.tris) combined.tris.push_back(tri);
+                    }
+                }
+
+                import::LDDMeshBuilder lddBuilder;
+                lddBuilder.setOnDiskRoot(lddRoot);
+                lddBuilder.setMapping(&mapping);
+                lddBuilder.setMaterials(&materials);
+                if (dbLif) lddBuilder.setLifReader(dbLif.get());
+                lddBaked = lddBuilder.bake(originalRead);
+                for (const auto& tri : lddBaked.mesh.tris) combined.tris.push_back(tri);
+                allErrors += lddBaked.errors;
+
+                if (!combined.tris.empty()) {
+                    import::RasterizeOptions ropt;
+                    ropt.pxPerStud = 8;
+                    rast = import::rasterizeMeshTopDown(combined, ropt);
+                }
+            });
 
         if (combined.tris.empty()) {
             QMessageBox::warning(this, kindLabel,
@@ -495,10 +514,6 @@ void MainWindow::setupToolsMenu() {
                     .arg(allErrors.join('\n')));
             return true;
         }
-
-        import::RasterizeOptions ropt;
-        ropt.pxPerStud = 8;
-        const auto rast = import::rasterizeMeshTopDown(combined, ropt);
         if (rast.image.isNull()) return true;
 
         // Preview before commit. Same dialog the LDraw path uses.

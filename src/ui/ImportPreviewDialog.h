@@ -5,10 +5,13 @@
 #include <QString>
 #include <QStringList>
 
+#include <functional>
+
 class QCheckBox;
 class QLabel;
 class QPlainTextEdit;
 class QLineEdit;
+class QScrollArea;
 class QSpinBox;
 
 namespace cld::ui {
@@ -46,8 +49,17 @@ public:
     // Final values after exec() returns Accepted.
     QString partName() const;
 
+protected:
+    bool eventFilter(QObject* obj, QEvent* ev) override;
+
 private:
-    QLineEdit*     nameEdit_  = nullptr;
+    QLineEdit*     nameEdit_   = nullptr;
+    // Sprite preview state for the zoom/scroll viewport.
+    QImage         spriteImage_;
+    QLabel*        spriteLabel_ = nullptr;
+    QScrollArea*   scroll_      = nullptr;
+    double         zoom_        = 1.0;
+    std::function<void(double)> bumpZoom_;
 };
 
 }  // namespace cld::ui

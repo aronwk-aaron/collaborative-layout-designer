@@ -1,6 +1,7 @@
 #include "PreferencesDialog.h"
 #include "LibraryPathsDialog.h"
 
+#include <QApplication>
 #include <QCheckBox>
 #include <QColorDialog>
 #include <QComboBox>
@@ -336,58 +337,144 @@ QWidget* buildImportTab(QDialog* parent) {
             QStandardPaths::AppDataLocation) + QStringLiteral("/ldraw-library");
         QDir().mkpath(destRoot);
 
-        QNetworkAccessManager nam;
+        // QNetworkAccessManager owned by the heap so its lifetime
+        // outlives the lambda capture if the user closes the
+        // Preferences dialog mid-download. parent = w so it gets
+        // cleaned up with the widget.
+        auto* nam = new QNetworkAccessManager(w);
         QNetworkRequest req(QUrl(QStringLiteral(
             "https://library.ldraw.org/library/updates/complete.zip")));
         req.setHeader(QNetworkRequest::UserAgentHeader,
                       QStringLiteral("Collaborative-Layout-Designer/1.0"));
         req.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
                          QNetworkRequest::NoLessSafeRedirectPolicy);
-        QNetworkReply* rep = nam.get(req);
+        QNetworkReply* rep = nam->get(req);
 
+        // Modal-but-pumping progress dialog. setValue() pumps the
+        // event loop on its own — so as long as we keep calling
+        // setValue() we never block. The cancel button is wired
+        // before the network reply gets to processEvents-blocking
+        // state so the user can always escape.
         QProgressDialog dlg(QObject::tr("Downloading LDraw library..."),
                              QObject::tr("Cancel"), 0, 100, w);
         dlg.setWindowModality(Qt::WindowModal);
         dlg.setMinimumDuration(0);
+        dlg.setAutoClose(false);
+        dlg.setAutoReset(false);
+        bool cancelled = false;
+        QObject::connect(&dlg, &QProgressDialog::canceled, rep,
+            [rep, &cancelled]{ cancelled = true; rep->abort(); });
         QObject::connect(rep, &QNetworkReply::downloadProgress, &dlg,
             [&dlg](qint64 done, qint64 total){
                 if (total <= 0) { dlg.setRange(0, 0); return; }
-                dlg.setMaximum(static_cast<int>(total / 1024));
-                dlg.setValue(static_cast<int>(done / 1024));
+                const int mb = std::max(1, static_cast<int>(total / (1024 * 1024)));
+                dlg.setMaximum(mb);
+                dlg.setValue(static_cast<int>(done / (1024 * 1024)));
+                dlg.setLabelText(QObject::tr("Downloading LDraw library — %1 / %2 MB")
+                    .arg(done / (1024 * 1024)).arg(mb));
             });
-        QObject::connect(&dlg, &QProgressDialog::canceled, rep, &QNetworkReply::abort);
         QEventLoop loop;
         QObject::connect(rep, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+        // Show explicitly so it appears immediately rather than after
+        // the minimum-duration delay.
+        dlg.show();
         loop.exec();
-        dlg.close();
 
+        if (cancelled) {
+            dlg.close();
+            rep->deleteLater();
+            nam->deleteLater();
+            return;
+        }
         if (rep->error() != QNetworkReply::NoError) {
+            dlg.close();
             QMessageBox::warning(w, QObject::tr("Download failed"), rep->errorString());
             rep->deleteLater();
+            nam->deleteLater();
             return;
         }
         QByteArray bytes = rep->readAll();
         rep->deleteLater();
-        if (bytes.isEmpty()) return;
+        nam->deleteLater();
+        if (bytes.isEmpty()) { dlg.close(); return; }
 
-        // Stage to a temp .zip then extract.
+        // Stage to a temp .zip on disk so QZipReader can mmap it.
         QTemporaryFile tmp(QDir(QStandardPaths::writableLocation(
             QStandardPaths::TempLocation)).filePath(
                 QStringLiteral("cld-ldraw-libXXXXXX.zip")));
-        tmp.open(); tmp.write(bytes); tmp.flush();
+        if (!tmp.open()) {
+            dlg.close();
+            QMessageBox::warning(w, QObject::tr("Extract failed"),
+                QObject::tr("Couldn't open temp file: %1").arg(tmp.errorString()));
+            return;
+        }
+        tmp.write(bytes);
+        tmp.flush();
 
 #ifndef CLD_NO_QZIPREADER
+        // Per-file extract loop instead of QZipReader::extractAll() so
+        // the progress dialog stays alive and cancellable. The LDraw
+        // archive has ~20 000 entries; processing one file at a time
+        // gives smooth progress + ~30ms event pump per pass.
         QZipReader z(tmp.fileName());
-        if (!z.isReadable() || !z.extractAll(destRoot)) {
+        if (!z.isReadable()) {
+            dlg.close();
             QMessageBox::warning(w, QObject::tr("Extract failed"),
-                QObject::tr("Couldn't extract the LDraw archive."));
+                QObject::tr("Couldn't read the LDraw archive."));
+            return;
+        }
+        const auto entries = z.fileInfoList();
+        dlg.setRange(0, entries.size());
+        dlg.setValue(0);
+        dlg.setLabelText(QObject::tr("Extracting %1 files...").arg(entries.size()));
+        QApplication::processEvents();
+
+        QDir dst(destRoot);
+        cancelled = false;
+        QObject::disconnect(&dlg, &QProgressDialog::canceled, nullptr, nullptr);
+        QObject::connect(&dlg, &QProgressDialog::canceled, &dlg,
+            [&cancelled]{ cancelled = true; });
+
+        int extracted = 0;
+        for (int i = 0; i < entries.size(); ++i) {
+            if (cancelled) break;
+            const auto& info = entries[i];
+            const QString abs = dst.absoluteFilePath(info.filePath);
+            if (info.isDir) {
+                QDir().mkpath(abs);
+            } else if (info.isFile) {
+                QDir().mkpath(QFileInfo(abs).absolutePath());
+                QFile out(abs);
+                if (out.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+                    out.write(z.fileData(info.filePath));
+                    out.close();
+                    out.setPermissions(info.permissions);
+                    ++extracted;
+                }
+            }
+            // Update + pump every ~64 files so the dialog stays
+            // responsive without crawling the whole loop with
+            // synchronous event pumps.
+            if ((i & 63) == 0) {
+                dlg.setValue(i);
+                QApplication::processEvents();
+            }
+        }
+        dlg.setValue(entries.size());
+        if (cancelled) {
+            dlg.close();
+            QMessageBox::information(w, QObject::tr("Download cancelled"),
+                QObject::tr("Extraction cancelled — partial files may remain at %1")
+                    .arg(destRoot));
             return;
         }
 #else
+        dlg.close();
         QMessageBox::warning(w, QObject::tr("Unsupported"),
             QObject::tr("This build was compiled without ZIP support."));
         return;
 #endif
+        dlg.close();
 
         // The archive expands to <destRoot>/ldraw/parts, /p, LDConfig.ldr —
         // point the path field one level deeper.
