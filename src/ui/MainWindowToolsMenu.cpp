@@ -20,6 +20,7 @@
 #include "../core/Map.h"
 #include "../edit/Connectivity.h"
 #include "../import/ImportToPart.h"
+#include "../import/LDDLDrawMapping.h"
 #include "../import/LDDReader.h"
 #include "../import/LDrawLibrary.h"
 #include "../import/LDrawMeshBuilder.h"
@@ -51,6 +52,7 @@
 #include <QStatusBar>
 #include <QVector>
 
+#include <algorithm>
 #include <cmath>
 
 namespace cld::ui {
@@ -305,13 +307,117 @@ void MainWindow::setupToolsMenu() {
         if (importViaLDrawLibrary(in, read, tr("Studio import"))) return;
         importAsPart(in, read, tr("Studio import"));
     });
+    // LDD imports route through ldraw.xml when an LDD install path is
+    // configured: rewrite each LDD designID → LDraw .dat filename and
+    // each LDD materialID → LDraw colour code so the model bakes
+    // through the same LDraw pipeline as native .ldr imports. Parts
+    // without an LDraw mapping are dropped (LDD-only decorations
+    // would need .g geometry from db.lif — handled in a follow-up).
+    auto importLDDViaLDrawMapping = [this](const QString& source,
+                                            import::LDrawReadResult read,
+                                            const QString& kindLabel) -> bool {
+        if (!read.ok) return false;
+        const QString lddRoot = QSettings().value(
+            QStringLiteral("import/lddInstallPath")).toString();
+        const QString ldrawRoot = QSettings().value(
+            QStringLiteral("import/ldrawLibraryPath")).toString();
+        if (lddRoot.isEmpty() || ldrawRoot.isEmpty()) return false;
+
+        const QString xmlPath = QDir(lddRoot).absoluteFilePath(QStringLiteral("ldraw.xml"));
+        import::LDDLDrawMapping mapping;
+        if (!mapping.loadFromFile(xmlPath)) return false;
+
+        // Rewrite each LDDReader-emitted ref so its filename + colour
+        // are LDraw-side. LDDReader currently produces filenames like
+        // "<designID>.dat" or "<designID>.<matId>.dat" — strip back
+        // to the bare designID, look up the LDraw .dat, and overwrite.
+        // ColourCode = LDD materialID, which we translate through the
+        // mapping to an LDraw code.
+        int translated = 0, dropped = 0;
+        for (auto& ref : read.parts) {
+            QString designId = ref.filename;
+            if (designId.endsWith(QStringLiteral(".dat"), Qt::CaseInsensitive))
+                designId.chop(4);
+            // Strip optional ".<matId>" decoration LDDReader appends.
+            const int dot = designId.indexOf(QChar('.'));
+            if (dot > 0) designId = designId.left(dot);
+            const QString ldraw = mapping.partFor(designId);
+            if (ldraw.isEmpty()) { ++dropped; ref.filename.clear(); continue; }
+            ref.filename = ldraw;
+            const int newColour = mapping.colourFor(ref.colorCode);
+            if (newColour >= 0) ref.colorCode = newColour;
+            ++translated;
+        }
+        // Drop refs whose filename got cleared (no mapping).
+        read.parts.erase(std::remove_if(read.parts.begin(), read.parts.end(),
+            [](const auto& r){ return r.filename.isEmpty(); }), read.parts.end());
+
+        // Hand off to the LDraw pipeline: load library + palette,
+        // bake mesh, rasterize, emit as a library part.
+        import::LDrawLibrary lib(ldrawRoot);
+        if (!lib.looksValid()) return false;
+        import::LDrawPalette palette;
+        palette.loadFromLDConfig(QDir(ldrawRoot).absoluteFilePath(
+            QStringLiteral("LDConfig.ldr")));
+        import::LDrawMeshLoader loader(lib, palette);
+        const auto baked = import::bakeMeshFromLDraw(read, loader, palette);
+        if (baked.mesh.tris.empty()) {
+            QMessageBox::warning(this, kindLabel,
+                tr("LDD model couldn't be rendered: %1 parts translated to LDraw, "
+                   "%2 dropped (no mapping), and the LDraw library returned no "
+                   "geometry.\n\n%3")
+                    .arg(translated).arg(dropped)
+                    .arg(baked.errors.join('\n')));
+            return true;
+        }
+
+        import::RasterizeOptions ropt;
+        ropt.pxPerStud = 8;
+        const auto rast = import::rasterizeMeshTopDown(baked.mesh, ropt);
+        if (rast.image.isNull()) return true;
+
+        const int wStud = std::max(1, static_cast<int>(
+            std::round(rast.meshBoundsXZ.width())));
+        const int hStud = std::max(1, static_cast<int>(
+            std::round(rast.meshBoundsXZ.height())));
+        QString modulesRoot = QSettings().value(
+            QStringLiteral("modules/libraryPath")).toString();
+        if (modulesRoot.isEmpty()) {
+            modulesRoot = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)
+                          + QStringLiteral("/imports");
+        } else {
+            modulesRoot += QStringLiteral("/imports");
+        }
+        QString err;
+        const QString author = mapView_->currentMap()
+                                   ? mapView_->currentMap()->author : QString();
+        const QString key = import::writeImportedModelAsLibraryPart(
+            source, rast.image, wStud, hStud, modulesRoot, author,
+            {}, &err);
+        if (key.isEmpty()) {
+            QMessageBox::warning(this, kindLabel,
+                tr("Could not write library part: %1").arg(err));
+            return true;
+        }
+        rescanLibrary(loadUserLibraryPaths() << modulesRoot);
+        partsBrowser_->rebuild();
+        mapView_->addPartAtViewCenter(key);
+        statusBar()->showMessage(
+            tr("Imported %1 via LDD→LDraw mapping — %2 parts translated, %3 dropped, %4 resolved")
+                .arg(QFileInfo(source).fileName())
+                .arg(translated).arg(dropped).arg(baked.resolvedRefs), 8000);
+        return true;
+    };
+
     auto* lddAct = importMenu->addAction(tr("L&DD (.lxf / .lxfml)..."));
-    connect(lddAct, &QAction::triggered, this, [this, importAsPart]{
+    connect(lddAct, &QAction::triggered, this, [this, importAsPart, importLDDViaLDrawMapping]{
         const QString in = QFileDialog::getOpenFileName(this,
             tr("Import LDD file"), {},
             tr("LDD (*.lxf *.lxfml);;All files (*)"));
         if (in.isEmpty()) return;
-        importAsPart(in, import::readLDD(in), tr("LDD import"));
+        const auto read = import::readLDD(in);
+        if (importLDDViaLDrawMapping(in, read, tr("LDD import"))) return;
+        importAsPart(in, read, tr("LDD import"));
     });
 
     auto* partListAct = tools->addAction(tr("Export &Part List (CSV)..."));
