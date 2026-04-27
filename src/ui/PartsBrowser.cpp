@@ -7,6 +7,8 @@
 #include <QComboBox>
 #include <QContextMenuEvent>
 #include <QDir>
+#include <QFile>
+#include <QMessageBox>
 #include <QDrag>
 #include <QFileInfo>
 #include <QHBoxLayout>
@@ -152,6 +154,41 @@ PartsBrowser::PartsBrowser(parts::PartsLibrary& lib, QWidget* parent)
         connect(copy, &QAction::triggered, [key]{
             QApplication::clipboard()->setText(key);
         });
+
+        // Imports — installed by the LDraw / Studio / LDD importer
+        // into a user-writable `imports/` subfolder of the configured
+        // module library. Offer a delete that wipes the .xml + .gif
+        // pair off disk and triggers a parts-library rescan. Skipping
+        // this for vendored parts (read-only location) so users can't
+        // accidentally delete BlueBrickParts entries.
+        auto meta = lib_.metadata(key);
+        if (meta && !meta->xmlFilePath.isEmpty()
+            && meta->xmlFilePath.contains(QStringLiteral("/imports/"))) {
+            menu.addSeparator();
+            auto* del = menu.addAction(tr("Delete imported part..."));
+            connect(del, &QAction::triggered, this, [this, key, meta]{
+                const auto btn = QMessageBox::question(this,
+                    tr("Delete imported part"),
+                    tr("Delete '%1'?\n\nThis removes:\n  %2\n  %3")
+                        .arg(key, meta->xmlFilePath, meta->gifFilePath),
+                    QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+                if (btn != QMessageBox::Yes) return;
+                if (!meta->xmlFilePath.isEmpty()) QFile::remove(meta->xmlFilePath);
+                if (!meta->gifFilePath.isEmpty()) QFile::remove(meta->gifFilePath);
+                // Also clear any sibling files the importer dropped
+                // alongside (PNG fallback, README, etc.) so re-importing
+                // the same model doesn't pick up stale companions.
+                const QFileInfo fi(meta->xmlFilePath);
+                const QString stem = fi.completeBaseName();
+                const QDir dir = fi.absoluteDir();
+                for (const QFileInfo& sibling : dir.entryInfoList(
+                        { stem + QStringLiteral(".*") }, QDir::Files)) {
+                    QFile::remove(sibling.absoluteFilePath());
+                }
+                emit partDeleted();
+            });
+        }
+
         menu.exec(grid_->mapToGlobal(pos));
     });
 

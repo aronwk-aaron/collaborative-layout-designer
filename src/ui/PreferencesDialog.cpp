@@ -5,19 +5,34 @@
 #include <QColorDialog>
 #include <QComboBox>
 #include <QDialogButtonBox>
+#include <QDir>
 #include <QDoubleSpinBox>
+#include <QEventLoop>
 #include <QFileDialog>
+#include <QFileInfo>
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QMessageBox>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QNetworkRequest>
+#include <QProgressDialog>
 #include <QPushButton>
 #include <QSettings>
 #include <QSpinBox>
+#include <QStandardPaths>
 #include <QTabWidget>
+#include <QTemporaryFile>
+#include <QUrl>
 #include <QVBoxLayout>
+
+#ifndef CLD_NO_QZIPREADER
+#  include <private/qzipreader_p.h>
+#endif
 
 namespace cld::ui {
 
@@ -298,6 +313,96 @@ QWidget* buildImportTab(QDialog* parent) {
         QObject::tr("LDraw library root"));
     ldrawEdit->setPlaceholderText(QObject::tr("e.g. ~/ldraw — needs LDConfig.ldr + parts/"));
     form->addRow(QObject::tr("LDraw library root:"), ldrawWrap);
+
+    // One-click LDraw library install. Downloads the official complete
+    // archive from library.ldraw.org, extracts it under the user's
+    // app-data folder, and points the library-root field at the
+    // resulting `ldraw/` directory. Saves the user the maintenance of
+    // tracking the LDraw release page themselves.
+    auto* autoBtn = new QPushButton(
+        QObject::tr("Download LDraw library automatically..."), w);
+    autoBtn->setToolTip(QObject::tr(
+        "Fetches library.ldraw.org/library/updates/complete.zip (~140 MB), "
+        "extracts under your app-data folder, and configures the path. "
+        "Requires an internet connection."));
+    QObject::connect(autoBtn, &QPushButton::clicked, w, [ldrawEdit, w]{
+        const auto btn = QMessageBox::question(w,
+            QObject::tr("Download LDraw library"),
+            QObject::tr("This will download ~140 MB from library.ldraw.org "
+                        "and extract it to your app-data folder. Continue?"));
+        if (btn != QMessageBox::Yes) return;
+
+        const QString destRoot = QStandardPaths::writableLocation(
+            QStandardPaths::AppDataLocation) + QStringLiteral("/ldraw-library");
+        QDir().mkpath(destRoot);
+
+        QNetworkAccessManager nam;
+        QNetworkRequest req(QUrl(QStringLiteral(
+            "https://library.ldraw.org/library/updates/complete.zip")));
+        req.setHeader(QNetworkRequest::UserAgentHeader,
+                      QStringLiteral("Collaborative-Layout-Designer/1.0"));
+        req.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
+                         QNetworkRequest::NoLessSafeRedirectPolicy);
+        QNetworkReply* rep = nam.get(req);
+
+        QProgressDialog dlg(QObject::tr("Downloading LDraw library..."),
+                             QObject::tr("Cancel"), 0, 100, w);
+        dlg.setWindowModality(Qt::WindowModal);
+        dlg.setMinimumDuration(0);
+        QObject::connect(rep, &QNetworkReply::downloadProgress, &dlg,
+            [&dlg](qint64 done, qint64 total){
+                if (total <= 0) { dlg.setRange(0, 0); return; }
+                dlg.setMaximum(static_cast<int>(total / 1024));
+                dlg.setValue(static_cast<int>(done / 1024));
+            });
+        QObject::connect(&dlg, &QProgressDialog::canceled, rep, &QNetworkReply::abort);
+        QEventLoop loop;
+        QObject::connect(rep, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+        loop.exec();
+        dlg.close();
+
+        if (rep->error() != QNetworkReply::NoError) {
+            QMessageBox::warning(w, QObject::tr("Download failed"), rep->errorString());
+            rep->deleteLater();
+            return;
+        }
+        QByteArray bytes = rep->readAll();
+        rep->deleteLater();
+        if (bytes.isEmpty()) return;
+
+        // Stage to a temp .zip then extract.
+        QTemporaryFile tmp(QDir(QStandardPaths::writableLocation(
+            QStandardPaths::TempLocation)).filePath(
+                QStringLiteral("cld-ldraw-libXXXXXX.zip")));
+        tmp.open(); tmp.write(bytes); tmp.flush();
+
+#ifndef CLD_NO_QZIPREADER
+        QZipReader z(tmp.fileName());
+        if (!z.isReadable() || !z.extractAll(destRoot)) {
+            QMessageBox::warning(w, QObject::tr("Extract failed"),
+                QObject::tr("Couldn't extract the LDraw archive."));
+            return;
+        }
+#else
+        QMessageBox::warning(w, QObject::tr("Unsupported"),
+            QObject::tr("This build was compiled without ZIP support."));
+        return;
+#endif
+
+        // The archive expands to <destRoot>/ldraw/parts, /p, LDConfig.ldr —
+        // point the path field one level deeper.
+        const QString ldrawRoot = QDir(destRoot).filePath(QStringLiteral("ldraw"));
+        if (QFileInfo::exists(QDir(ldrawRoot).filePath(QStringLiteral("LDConfig.ldr")))) {
+            ldrawEdit->setText(ldrawRoot);
+        } else {
+            // Fallback: if the archive happens to be flat (no top
+            // ldraw/ wrapper), use destRoot directly.
+            ldrawEdit->setText(destRoot);
+        }
+        QMessageBox::information(w, QObject::tr("LDraw library installed"),
+            QObject::tr("LDraw library installed at:\n%1").arg(ldrawEdit->text()));
+    });
+    form->addRow(QString(), autoBtn);
 
     auto [studioWrap, studioEdit] = buildPicker(
         QStringLiteral("import/studioLibraryPath"),

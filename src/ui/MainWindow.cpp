@@ -265,6 +265,18 @@ MainWindow::MainWindow(parts::PartsLibrary& parts, QWidget* parent)
     addDockWidget(Qt::LeftDockWidgetArea, partsBrowser_);
     connect(partsBrowser_, &PartsBrowser::partActivated,
             mapView_, &MapView::addPartAtViewCenter);
+    // After the user deletes an imported part the on-disk files are
+    // gone, but the in-memory parts library still has the entry. Run
+    // a full rescan against every configured library path so the
+    // deleted part disappears from the grid + part-resolve lookups.
+    connect(partsBrowser_, &PartsBrowser::partDeleted, this, [this]{
+        QStringList paths;
+        const QString vendored = defaultVendoredPartsRoot();
+        if (!vendored.isEmpty()) paths << vendored;
+        paths << loadUserLibraryPaths();
+        rescanLibrary(paths);
+        partsBrowser_->rebuild();
+    });
 
     modulesPanel_ = new ModulesPanel(this);
     addDockWidget(Qt::RightDockWidgetArea, modulesPanel_);

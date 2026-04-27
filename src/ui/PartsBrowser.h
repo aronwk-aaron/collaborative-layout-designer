@@ -29,6 +29,12 @@ public:
 signals:
     void partActivated(const QString& key);
 
+    // Emitted when the user deletes an imported part from disk via
+    // the right-click menu. MainWindow listens to trigger a parts-
+    // library rescan so the deleted entry stops appearing in the
+    // grid.
+    void partDeleted();
+
 private:
     void applyFilter();
     QString categoryForPath(const QString& absPath) const;
