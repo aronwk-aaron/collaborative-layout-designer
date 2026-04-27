@@ -73,15 +73,18 @@ QString writeImportedModelAsLibraryPart(
         key = baseKey + QStringLiteral("-") + QString::number(n);
     }
 
-    const QString gifPath = dir.filePath(key + QStringLiteral(".gif"));
+    // Image sibling. Try GIF first to match BlueBrickParts naming; if
+    // the local Qt build wasn't compiled with GIF write support
+    // (common on minimal images), drop to PNG with a clean `.png`
+    // extension. The parts-library scanner accepts either via its
+    // candidate-extension search, so the resulting library entry
+    // works the same way regardless of which one we actually wrote.
     const QString xmlPath = dir.filePath(key + QStringLiteral(".xml"));
-
-    // Qt's built-in GIF writer handles indexed color + transparency for
-    // flat sprites. Fall back to PNG with a warning if GIF isn't
-    // available on this platform build.
-    if (!renderedSprite.save(gifPath, "GIF")) {
-        if (!renderedSprite.save(gifPath + QStringLiteral(".png"), "PNG")) {
-            if (error) *error = QStringLiteral("Could not write sprite to %1").arg(gifPath);
+    QString imagePath = dir.filePath(key + QStringLiteral(".gif"));
+    if (!renderedSprite.save(imagePath, "GIF")) {
+        imagePath = dir.filePath(key + QStringLiteral(".png"));
+        if (!renderedSprite.save(imagePath, "PNG")) {
+            if (error) *error = QStringLiteral("Could not write sprite to %1").arg(imagePath);
             return {};
         }
     }

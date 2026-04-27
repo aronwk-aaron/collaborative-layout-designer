@@ -130,9 +130,39 @@ int PartsLibrary::scan() {
             meta.colorCode  = colorCode;
             meta.xmlFilePath = xmlPath;
 
-            // Sibling GIF (same basename).
-            QString gifCandidate = info.absolutePath() + QLatin1Char('/') + info.completeBaseName() + QStringLiteral(".gif");
-            if (QFile::exists(gifCandidate)) meta.gifFilePath = gifCandidate;
+            // Sibling sprite. BlueBrickParts uses .gif but our import
+            // pipeline falls back to .png on Qt builds without GIF
+            // write support, and some user-imported parts arrive as
+            // .jpg or .jpeg. Try each in order so the parts panel
+            // gets a thumbnail regardless of which format the writer
+            // actually produced.
+            const QString stemPath = info.absolutePath() + QLatin1Char('/') + info.completeBaseName();
+            for (const QString& ext : { QStringLiteral(".gif"),
+                                          QStringLiteral(".png"),
+                                          QStringLiteral(".jpg"),
+                                          QStringLiteral(".jpeg") }) {
+                const QString candidate = stemPath + ext;
+                if (QFile::exists(candidate)) {
+                    meta.gifFilePath = candidate;
+                    break;
+                }
+            }
+            // One-time migration: an older import bug wrote PNG bytes
+            // to "<stem>.gif.png" when GIF support was missing in Qt.
+            // Rename those to "<stem>.png" so the parts panel finally
+            // picks them up. Only fires when no real sibling was
+            // found above.
+            if (meta.gifFilePath.isEmpty()) {
+                const QString legacy = stemPath + QStringLiteral(".gif.png");
+                if (QFile::exists(legacy)) {
+                    const QString fixed = stemPath + QStringLiteral(".png");
+                    if (!QFile::exists(fixed) && QFile::rename(legacy, fixed)) {
+                        meta.gifFilePath = fixed;
+                    } else {
+                        meta.gifFilePath = legacy;  // accept as-is
+                    }
+                }
+            }
 
             if (!parsePartXml(xmlPath, meta)) continue;
 
