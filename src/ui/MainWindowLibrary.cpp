@@ -10,9 +10,12 @@
 
 #include "../parts/PartsLibrary.h"
 
+#include <QFileInfo>
+
 #include <QCoreApplication>
 #include <QDir>
 #include <QSettings>
+#include <QStandardPaths>
 #include <QStatusBar>
 
 namespace cld::ui {
@@ -72,12 +75,39 @@ QString MainWindow::defaultVendoredPartsRoot() const {
     return {};
 }
 
+QString MainWindow::registerImportedPart(const QString& xmlAbsPath) {
+    if (xmlAbsPath.isEmpty()) return {};
+
+    // Make sure the parent directory is on the search-path list so future
+    // full rescans (Reload Library, Manage Libraries) keep finding this
+    // part. addSearchPath is a no-op when the path is already present.
+    parts_.addSearchPath(QFileInfo(xmlAbsPath).absolutePath());
+
+    const QString libKey = parts_.scanFile(xmlAbsPath);
+    if (libKey.isEmpty()) return {};
+    partsBrowser_->addOne(libKey);
+    return libKey;
+}
+
+QString MainWindow::importedPartsRoot() const {
+    const QString configured = QSettings().value(QStringLiteral("modules/libraryPath")).toString();
+    const QString base = configured.isEmpty()
+        ? QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)
+        : configured;
+    if (base.isEmpty()) return {};
+    return base + QStringLiteral("/imports");
+}
+
 void MainWindow::onReloadLibrary() {
     QStringList allPaths;
     const QString vendored = defaultVendoredPartsRoot();
     if (!vendored.isEmpty() && QDir(vendored).exists()) allPaths << vendored;
     for (const QString& p : loadUserLibraryPaths()) {
         if (!allPaths.contains(p) && QDir(p).exists()) allPaths << p;
+    }
+    const QString imports = importedPartsRoot();
+    if (!imports.isEmpty() && QDir(imports).exists() && !allPaths.contains(imports)) {
+        allPaths << imports;
     }
     rescanLibrary(allPaths);
     partsBrowser_->rebuild();

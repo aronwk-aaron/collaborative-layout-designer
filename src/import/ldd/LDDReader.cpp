@@ -45,8 +45,14 @@ QByteArray extractLxfmlFromLxf(const QString& path, QString* err) {
 #endif
 }
 
-// Parse an LDD transformation string: "m00,m01,m02,m10,m11,m12,m20,m21,m22,tx,ty,tz".
-// Returns sentinel transformation on parse failure.
+// Parse an LDD transformation string. The 12 values serialize as
+// "a,b,c,d,e,f,g,h,i,tx,ty,tz" — despite looking like row-major
+// "m00,m01,m02,...", LDD actually stores the rotation **column-major**:
+// (a,d,g) is the first column, (b,e,h) the second, etc. (Confirmed
+// against lu-toolbox importldd.py, which multiplies via n11/n21/n31
+// — the first column.) We transpose into row-major here so every
+// downstream consumer can treat LDrawPartRef::m the same as LDraw's.
+// Returns a sentinel (ok=false) on parse failure.
 struct LddTransform {
     double m[9] = { 1, 0, 0, 0, 1, 0, 0, 0, 1 };
     double tx = 0, ty = 0, tz = 0;
@@ -56,7 +62,12 @@ LddTransform parseTransform(QStringView s) {
     LddTransform t;
     const auto parts = s.toString().split(QLatin1Char(','));
     if (parts.size() < 12) return t;
-    for (int i = 0; i < 9; ++i) t.m[i] = parts[i].toDouble();
+    double col[9];
+    for (int i = 0; i < 9; ++i) col[i] = parts[i].toDouble();
+    // col is in (col0, col1, col2) layout; transpose to row-major.
+    t.m[0] = col[0]; t.m[1] = col[3]; t.m[2] = col[6];
+    t.m[3] = col[1]; t.m[4] = col[4]; t.m[5] = col[7];
+    t.m[6] = col[2]; t.m[7] = col[5]; t.m[8] = col[8];
     t.tx = parts[9].toDouble();
     t.ty = parts[10].toDouble();
     t.tz = parts[11].toDouble();
@@ -88,19 +99,12 @@ LDrawReadResult readLDD(const QString& path) {
     }
 
     QXmlStreamReader r(xmlBytes);
-    // LXFML coordinate system: LDD units = studs (8 mm each).
-    // Sample LXFML transforms have tx/ty/tz in the 0.01..3 range
-    // for a few-stud-wide model like pq_trike, which only matches
-    // "1 LDD unit = 1 stud". To land in LDU (the unit cld_geom
-    // shares with LDraw, where 1 stud = 20 LDU) we multiply by 20.
-    //
-    // The previous kLddToStuds × kLduPerStud combo was 1.25 × 20 = 25
-    // (wrong — way too far), and a brief intermediate "1.0" landed
-    // every part at the origin (also wrong — too close). 20 lines
-    // up with what lu-toolbox sees natively: it imports LDD coords
-    // verbatim into Blender at "1 BU = 1 stud" then a 20× scale-up
-    // happens during sprite render anyway. Same end result.
-    constexpr double kLddToLdu = 20.0;
+    // LXFML coordinate system: 1 LDD unit = 1.25 studs (= 0.4 mm
+    // unit, with 1 stud = 8 mm; 8 / 6.4 = 1.25). LDU is 1 stud / 20,
+    // so 1 LDD unit = 25 LDU. Verified empirically: at 20 the rendered
+    // sprite measured 16 studs wide for a brick known to be 20 studs
+    // (16/20 = 0.8 = 20/25, exactly the missing factor).
+    constexpr double kLddToLdu = 25.0;
 
     while (!r.atEnd() && !r.hasError()) {
         const auto token = r.readNext();
@@ -134,9 +138,9 @@ LDrawReadResult readLDD(const QString& path) {
             if (!xform.ok) continue;
             LDrawPartRef ref;
             ref.colorCode = matId > 0 ? matId : 1;  // default to light-gray
-            // LDD ↔ LDraw 1:1 unit mapping (both 0.4 mm units, 20
-            // per stud). MeshRasterize divides by 20 LDU per stud
-            // when converting to the final sprite.
+            // LDD ↔ LDraw 1:1 unit mapping; we kept LDD's native axes
+            // (Y up, Z toward viewer). MeshRasterize projects (X,Z)
+            // for the top-down sprite.
             ref.x = xform.tx * kLddToLdu;
             ref.y = xform.ty * kLddToLdu;
             ref.z = xform.tz * kLddToLdu;

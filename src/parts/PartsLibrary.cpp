@@ -93,6 +93,11 @@ bool parsePartXml(const QString& xmlPath, PartMetadata& out) {
             else if (n == QStringLiteral("Description")) readDescriptions(r, out.descriptions);
             else if (n == QStringLiteral("ConnexionList")) readConnexionList(r, out.connections);
             else if (n == QStringLiteral("SubPartList"))   readSubPartList(r, out.subparts);
+            else if (n == QStringLiteral("PixelsPerStud")) {
+                bool ok = false;
+                const int v = r.readElementText().trimmed().toInt(&ok);
+                if (ok && v >= 4 && v <= 256) out.pxPerStud = v;
+            }
             else r.skipCurrentElement();
         }
         return !r.hasError();
@@ -106,76 +111,79 @@ void PartsLibrary::addSearchPath(const QString& path) {
     if (!searchPaths_.contains(path)) searchPaths_.push_back(path);
 }
 
+QString PartsLibrary::scanFile(const QString& xmlPath) {
+    QFileInfo info(xmlPath);
+    if (!info.exists() || !info.isFile()) return {};
+
+    // Strip ".xml". Then also strip ".set" if present (composite/group parts
+    // use the ".set.xml" convention in BlueBrickParts). Remaining string is
+    // "<PartNumber>.<ColorCode>".
+    QString stem = info.completeBaseName();  // filename without ".xml"
+    if (stem.endsWith(QStringLiteral(".set"), Qt::CaseInsensitive)) {
+        stem.chop(4);
+    }
+
+    const auto [partNum, colorCode] = splitPartKey(stem);
+    if (partNum.isEmpty()) return {};
+
+    PartMetadata meta;
+    meta.partNumber = partNum;
+    meta.colorCode  = colorCode;
+    meta.xmlFilePath = xmlPath;
+
+    // Sibling sprite. BlueBrickParts uses .gif but our import
+    // pipeline falls back to .png on Qt builds without GIF
+    // write support, and some user-imported parts arrive as
+    // .jpg or .jpeg. Try each in order so the parts panel
+    // gets a thumbnail regardless of which format the writer
+    // actually produced.
+    const QString stemPath = info.absolutePath() + QLatin1Char('/') + info.completeBaseName();
+    for (const QString& ext : { QStringLiteral(".gif"),
+                                  QStringLiteral(".png"),
+                                  QStringLiteral(".jpg"),
+                                  QStringLiteral(".jpeg") }) {
+        const QString candidate = stemPath + ext;
+        if (QFile::exists(candidate)) {
+            meta.gifFilePath = candidate;
+            break;
+        }
+    }
+    // One-time migration: an older import bug wrote PNG bytes
+    // to "<stem>.gif.png" when GIF support was missing in Qt.
+    // Rename those to "<stem>.png" so the parts panel finally
+    // picks them up. Only fires when no real sibling was
+    // found above.
+    if (meta.gifFilePath.isEmpty()) {
+        const QString legacy = stemPath + QStringLiteral(".gif.png");
+        if (QFile::exists(legacy)) {
+            const QString fixed = stemPath + QStringLiteral(".png");
+            if (!QFile::exists(fixed) && QFile::rename(legacy, fixed)) {
+                meta.gifFilePath = fixed;
+            } else {
+                meta.gifFilePath = legacy;  // accept as-is
+            }
+        }
+    }
+
+    if (!parsePartXml(xmlPath, meta)) return {};
+
+    // Library keys are the full stem (case-folded) so lookup matches
+    // both "TABLE96X190" and "3811.1" naturally — the stored key
+    // always includes the color suffix when the filename has one.
+    const QString key = colorCode.isEmpty()
+        ? partNum.toLower()
+        : QStringLiteral("%1.%2").arg(partNum, colorCode).toLower();
+    if (index_.contains(key)) return {};
+    index_.insert(key, meta);
+    return key;
+}
+
 int PartsLibrary::scan() {
     int added = 0;
     for (const QString& root : std::as_const(searchPaths_)) {
         QDirIterator it(root, { QStringLiteral("*.xml") }, QDir::Files, QDirIterator::Subdirectories);
         while (it.hasNext()) {
-            const QString xmlPath = it.next();
-            QFileInfo info(xmlPath);
-
-            // Strip ".xml". Then also strip ".set" if present (composite/group parts
-            // use the ".set.xml" convention in BlueBrickParts). Remaining string is
-            // "<PartNumber>.<ColorCode>".
-            QString stem = info.completeBaseName();  // filename without ".xml"
-            if (stem.endsWith(QStringLiteral(".set"), Qt::CaseInsensitive)) {
-                stem.chop(4);
-            }
-
-            const auto [partNum, colorCode] = splitPartKey(stem);
-            if (partNum.isEmpty()) continue;
-
-            PartMetadata meta;
-            meta.partNumber = partNum;
-            meta.colorCode  = colorCode;
-            meta.xmlFilePath = xmlPath;
-
-            // Sibling sprite. BlueBrickParts uses .gif but our import
-            // pipeline falls back to .png on Qt builds without GIF
-            // write support, and some user-imported parts arrive as
-            // .jpg or .jpeg. Try each in order so the parts panel
-            // gets a thumbnail regardless of which format the writer
-            // actually produced.
-            const QString stemPath = info.absolutePath() + QLatin1Char('/') + info.completeBaseName();
-            for (const QString& ext : { QStringLiteral(".gif"),
-                                          QStringLiteral(".png"),
-                                          QStringLiteral(".jpg"),
-                                          QStringLiteral(".jpeg") }) {
-                const QString candidate = stemPath + ext;
-                if (QFile::exists(candidate)) {
-                    meta.gifFilePath = candidate;
-                    break;
-                }
-            }
-            // One-time migration: an older import bug wrote PNG bytes
-            // to "<stem>.gif.png" when GIF support was missing in Qt.
-            // Rename those to "<stem>.png" so the parts panel finally
-            // picks them up. Only fires when no real sibling was
-            // found above.
-            if (meta.gifFilePath.isEmpty()) {
-                const QString legacy = stemPath + QStringLiteral(".gif.png");
-                if (QFile::exists(legacy)) {
-                    const QString fixed = stemPath + QStringLiteral(".png");
-                    if (!QFile::exists(fixed) && QFile::rename(legacy, fixed)) {
-                        meta.gifFilePath = fixed;
-                    } else {
-                        meta.gifFilePath = legacy;  // accept as-is
-                    }
-                }
-            }
-
-            if (!parsePartXml(xmlPath, meta)) continue;
-
-            // Library keys are the full stem (case-folded) so lookup matches
-            // both "TABLE96X190" and "3811.1" naturally — the stored key
-            // always includes the color suffix when the filename has one.
-            const QString key = colorCode.isEmpty()
-                ? partNum.toLower()
-                : QStringLiteral("%1.%2").arg(partNum, colorCode).toLower();
-            if (!index_.contains(key)) {
-                index_.insert(key, meta);
-                ++added;
-            }
+            if (!scanFile(it.next()).isEmpty()) ++added;
         }
     }
     return added;

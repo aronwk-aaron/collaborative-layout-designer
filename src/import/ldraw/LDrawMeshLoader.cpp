@@ -109,7 +109,23 @@ const LDrawMeshLoader::ParsedDat* LDrawMeshLoader::parse(const QString& absolute
                 parsed.primitives.push_back(t2);
                 break;
             }
-            // 2 / 5 / other: ignore.
+            case 2: {
+                // 2 <c> x1 y1 z1 x2 y2 z2 — a wireframe edge.
+                if (toks.size() < 8) continue;
+                bool colorOk = false;
+                const int color = toks[1].toInt(&colorOk);
+                if (!colorOk) continue;
+                auto vals = readDoubles(toks, 2, 6);
+                if (!vals) continue;
+                ParsedDat::RawEdge re;
+                re.color = color;
+                re.v[0] = { (*vals)[0], (*vals)[1], (*vals)[2] };
+                re.v[1] = { (*vals)[3], (*vals)[4], (*vals)[5] };
+                parsed.edges.push_back(re);
+                break;
+            }
+            // 5 / other: ignore (5 is "optional/conditional line",
+            // not relevant for top-down silhouettes).
             default: break;
         }
     }
@@ -146,6 +162,18 @@ void LDrawMeshLoader::appendBaked(geom::Mesh& out,
         t.v[2]  = parentXform.transform(prim.v[2]);
         t.color = resolveColor(prim.color);
         out.tris.push_back(t);
+    }
+
+    // Same for type-2 edges. Code 24 = "edge colour", which the LDraw
+    // palette resolves to a darker companion of the parent colour —
+    // exactly what we want for visible-but-not-overpowering wireframe.
+    out.edges.reserve(out.edges.size() + dat.edges.size());
+    for (const auto& e : dat.edges) {
+        geom::Edge ge;
+        ge.v[0]  = parentXform.transform(e.v[0]);
+        ge.v[1]  = parentXform.transform(e.v[1]);
+        ge.color = resolveColor(e.color);
+        out.edges.push_back(ge);
     }
 
     // Recurse into each subfile reference. Compose transforms (parent *

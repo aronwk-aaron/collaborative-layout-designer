@@ -22,6 +22,12 @@ public:
 
     void rebuild();   // re-read the library and repopulate
 
+    // Insert a single library entry into the grid without touching the
+    // other thousands of items. Used by the importer right after a
+    // freshly-scanned part is registered with the library, so the user
+    // sees the new thumbnail immediately without a UI freeze.
+    void addOne(const QString& key);
+
     // MIME type used when a thumbnail is dragged out of this panel. MapView
     // recognises the same string in its drop handler.
     static constexpr const char* kPartMimeType = "application/x-cld-part";

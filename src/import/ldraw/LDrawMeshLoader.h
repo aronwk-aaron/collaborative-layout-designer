@@ -68,8 +68,18 @@ private:
             int       color = 16;
             geom::Vec3 v[3];
         };
+        // LDraw type-2 line: a wireframe edge between two points. We
+        // load these so the rasterizer can stroke them as feature
+        // edges over the filled triangles — that's how stud outlines,
+        // brick seams, and embossed-print silhouettes show up on a
+        // top-down sprite without needing per-pixel depth tricks.
+        struct RawEdge {
+            int       color = 24;        // LDraw "edge" code
+            geom::Vec3 v[2];
+        };
         std::vector<SubRef>  subrefs;
         std::vector<RawTri>  primitives;  // tris already split from quads
+        std::vector<RawEdge> edges;
     };
     const ParsedDat* parse(const QString& absolutePath);
     void appendBaked(geom::Mesh& out,

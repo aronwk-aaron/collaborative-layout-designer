@@ -103,6 +103,10 @@ MainWindow::MainWindow(parts::PartsLibrary& parts, QWidget* parent)
     for (const QString& p : loadUserLibraryPaths()) {
         if (!allPaths.contains(p) && QDir(p).exists()) allPaths << p;
     }
+    const QString imports = importedPartsRoot();
+    if (!imports.isEmpty() && QDir(imports).exists() && !allPaths.contains(imports)) {
+        allPaths << imports;
+    }
     rescanLibrary(allPaths);
 
     mapView_ = new MapView(parts_, this);
@@ -1254,6 +1258,10 @@ void MainWindow::onSaveSelectionAsSet() {
     if (!vendored.isEmpty() && QDir(vendored).exists()) allPaths << vendored;
     for (const QString& p : loadUserLibraryPaths()) {
         if (!allPaths.contains(p) && QDir(p).exists()) allPaths << p;
+    }
+    const QString imports = importedPartsRoot();
+    if (!imports.isEmpty() && QDir(imports).exists() && !allPaths.contains(imports)) {
+        allPaths << imports;
     }
     rescanLibrary(allPaths);
     partsBrowser_->rebuild();

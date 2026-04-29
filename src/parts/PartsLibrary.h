@@ -68,6 +68,13 @@ struct PartMetadata {
     // Populated only when kind == Group — the parts that make up the
     // set (from <SubPartList> in the XML).
     QList<PartSubPart>         subparts;
+
+    // Pixels per stud the GIF was authored at. Vanilla BlueBrick parts
+    // implicitly use 8; our LDD/LDraw imports may use a higher value
+    // (16, 24, 32) to keep small detail visible. Read from the
+    // <PixelsPerStud> element in the part XML; defaults to 8 when
+    // absent so existing libraries keep working unchanged.
+    int      pxPerStud = 8;
 };
 
 class PartsLibrary {
@@ -79,6 +86,13 @@ public:
     // pair found. Returns the number of parts indexed. Safe to call repeatedly —
     // subsequent calls append new parts without clearing the index.
     int scan();
+
+    // Index a single .xml file into the library. Returns the inserted key
+    // (lower-cased "<partNum>.<colorCode>" or just "<partNum>") on success,
+    // or an empty string if the file isn't a valid part XML or is already
+    // indexed. Used by the importer to register a freshly-written library
+    // part without re-scanning every search path on the UI thread.
+    QString scanFile(const QString& xmlPath);
 
     int partCount() const { return static_cast<int>(index_.size()); }
 

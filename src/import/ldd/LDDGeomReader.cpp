@@ -2,17 +2,23 @@
 
 #include <QtEndian>
 
+#include <algorithm>
+#include <cmath>
 #include <cstring>
+#include <unordered_map>
+#include <vector>
 
 namespace cld::import {
 
 namespace {
 
-// LDD .g vertex coords are in LDD coordinate units = studs (8 mm
-// each). LDraw uses LDU at 0.4 mm, so 1 LDD unit = 20 LDU. Apply
-// that scaling so .g triangles share the LDU coord system used by
-// the LDraw mesh-loader and the rasterizer.
-constexpr double kLddToLdu = 20.0;
+// LDD .g vertex coords are in LDD coordinate units. 1 LDD unit =
+// 1.25 studs and 1 stud = 20 LDU, so 1 LDD unit = 25 LDU. Apply that
+// scale here so .g triangles share the LDU coord system used by the
+// LDraw mesh-loader and the rasterizer. Verified by an LXFML import
+// where a 20-stud-wide brick measured 16 studs at 20× — the missing
+// factor was exactly 25/20.
+constexpr double kLddToLdu = 25.0;
 
 bool readU32(const QByteArray& d, qsizetype& off, quint32& out) {
     if (off + 4 > d.size()) return false;
@@ -63,8 +69,7 @@ LDDGeomReadResult readLDDGeom(const QByteArray& bytes) {
     const bool hasBones = (options & 48) == 48;
     (void)hasBones;  // bone data is at the tail and skipped — we only need pos+tri.
 
-    // Position buffer. We don't need normals for the top-down sprite,
-    // but we have to read them to advance the cursor past the buffer.
+    // Position buffer.
     std::vector<geom::Vec3> positions;
     positions.reserve(vCount);
     for (quint32 i = 0; i < vCount; ++i) {
@@ -75,12 +80,24 @@ LDDGeomReadResult readLDDGeom(const QByteArray& bytes) {
         }
         positions.push_back(geom::Vec3{ x * kLddToLdu, y * kLddToLdu, z * kLddToLdu });
     }
-    // Skip normals (vCount * 12 bytes).
+    // Normals — we keep these to detect "top-facing" vertices (stud
+    // rim tracing in the wireframe overlay). LDD `.g` stores one
+    // normal per vertex; we don't transform them yet because the bake
+    // pipeline applies the world transform later.
+    std::vector<geom::Vec3> normals;
     if (off + qsizetype(vCount) * 12 > bytes.size()) {
         r.error = QStringLiteral("Truncated vertex normals");
         return r;
     }
-    off += qsizetype(vCount) * 12;
+    normals.reserve(vCount);
+    for (quint32 i = 0; i < vCount; ++i) {
+        float nx, ny, nz;
+        if (!readF32(bytes, off, nx) || !readF32(bytes, off, ny) || !readF32(bytes, off, nz)) {
+            r.error = QStringLiteral("Truncated normal at vertex %1").arg(i);
+            return r;
+        }
+        normals.push_back(geom::Vec3{ nx, ny, nz });
+    }
 
     // Skip UVs when present.
     if (hasUVs) {
@@ -99,6 +116,14 @@ LDDGeomReadResult readLDDGeom(const QByteArray& bytes) {
     }
     r.mesh.tris.reserve(triCount);
     const QColor whiteOpaque = QColor::fromRgb(220, 220, 220);
+
+    // First pass: read every triangle, store (indices + face normal).
+    // We need two passes because crease detection looks at the *pair*
+    // of triangles sharing an edge — we can only know that after every
+    // triangle has been seen.
+    struct FaceTri { quint32 ia, ib, ic; geom::Vec3 fn; };
+    std::vector<FaceTri> faces;
+    faces.reserve(triCount);
     for (quint32 t = 0; t < triCount; ++t) {
         quint32 ia, ib, ic;
         if (!readU32(bytes, off, ia) || !readU32(bytes, off, ib) || !readU32(bytes, off, ic)) {
@@ -114,8 +139,98 @@ LDDGeomReadResult readLDDGeom(const QByteArray& bytes) {
         tri.v[0] = positions[ia];
         tri.v[1] = positions[ib];
         tri.v[2] = positions[ic];
+        tri.n[0] = normals[ia];
+        tri.n[1] = normals[ib];
+        tri.n[2] = normals[ic];
         tri.color = whiteOpaque;
         r.mesh.tris.push_back(tri);
+
+        // Face normal from the geometry (not the per-vertex normals,
+        // which are smoothed across cylinder walls and would falsely
+        // collapse the wall/cap crease). Right-hand rule on (v1-v0,
+        // v2-v0).
+        const geom::Vec3 e1{ positions[ib].x - positions[ia].x,
+                             positions[ib].y - positions[ia].y,
+                             positions[ib].z - positions[ia].z };
+        const geom::Vec3 e2{ positions[ic].x - positions[ia].x,
+                             positions[ic].y - positions[ia].y,
+                             positions[ic].z - positions[ia].z };
+        geom::Vec3 fn{
+            e1.y*e2.z - e1.z*e2.y,
+            e1.z*e2.x - e1.x*e2.z,
+            e1.x*e2.y - e1.y*e2.x };
+        const double fnLen = std::sqrt(fn.x*fn.x + fn.y*fn.y + fn.z*fn.z);
+        if (fnLen > 1e-9) { fn.x /= fnLen; fn.y /= fnLen; fn.z /= fnLen; }
+        faces.push_back({ ia, ib, ic, fn });
+    }
+
+    // Second pass: build edge → adjacent-faces map, then emit only
+    // crease edges between two top-facing triangles. That's exactly
+    // the stud-top rim where the cylinder wall meets the flat cap —
+    // the visual outline we want without the interior fan diagonals.
+    // Encode edge as (min<<32 | max) for cheap hashing.
+    std::unordered_map<quint64, std::vector<quint32>> edgeToFaces;
+    edgeToFaces.reserve(triCount * 3);
+    auto edgeKey = [](quint32 a, quint32 b) -> quint64 {
+        const quint32 lo = std::min(a, b), hi = std::max(a, b);
+        return (quint64(hi) << 32) | quint64(lo);
+    };
+    for (quint32 t = 0; t < faces.size(); ++t) {
+        const auto& f = faces[t];
+        edgeToFaces[edgeKey(f.ia, f.ib)].push_back(t);
+        edgeToFaces[edgeKey(f.ib, f.ic)].push_back(t);
+        edgeToFaces[edgeKey(f.ic, f.ia)].push_back(t);
+    }
+    const QColor edgeColor = QColor::fromRgb(40, 40, 40, 220);
+    r.mesh.edges.reserve(triCount);
+    for (const auto& [key, adjFaces] : edgeToFaces) {
+        const quint32 ia = static_cast<quint32>(key & 0xFFFFFFFFu);
+        const quint32 ib = static_cast<quint32>(key >> 32);
+
+        // Gate by FACE normal, not vertex normal: a vertex sitting on
+        // a cylinder seam has its smooth-shaded normal averaged with
+        // the side wall, so its y-component drops well below 0.7 even
+        // though that vertex IS on a top-facing cap triangle. Using
+        // the face normal of the adjacent triangle is exact: the cap
+        // triangle's geometric normal really does point straight up.
+        // We require AT LEAST ONE adjacent face to be top-facing —
+        // that's the visibility criterion (the edge has to bound a
+        // surface visible from above) — and then apply the crease
+        // filter to drop interior fan diagonals.
+        bool anyTopFacing = false;
+        for (quint32 fi : adjFaces) {
+            if (faces[fi].fn.y > 0.7) { anyTopFacing = true; break; }
+        }
+        if (!anyTopFacing) continue;
+
+        // Decide if this edge is a real outline:
+        //  - Boundary edges (shared by 1 face) — silhouette of an
+        //    open mesh, always draw.
+        //  - Interior edges — draw only when the two adjacent faces
+        //    have noticeably different face normals (a crease ≥ ~25°).
+        //    Across a flat tile/stud top both faces point straight up
+        //    (dot ≈ 1) → the diagonal is dropped. At the rim of a tile
+        //    or stud the top-facing cap meets a side-wall whose normal
+        //    is horizontal (dot ≈ 0) → we keep the silhouette.
+        //  - Edges shared by 3+ faces (non-manifold) — keep, treat as
+        //    feature edges.
+        bool keep = false;
+        if (adjFaces.size() == 1 || adjFaces.size() >= 3) {
+            keep = true;
+        } else {
+            const geom::Vec3& na = faces[adjFaces[0]].fn;
+            const geom::Vec3& nb = faces[adjFaces[1]].fn;
+            const double dot = na.x*nb.x + na.y*nb.y + na.z*nb.z;
+            // cos(25°) ≈ 0.906. Anything below that is a visible crease.
+            if (dot < 0.906) keep = true;
+        }
+        if (!keep) continue;
+
+        geom::Edge e;
+        e.v[0] = positions[ia];
+        e.v[1] = positions[ib];
+        e.color = edgeColor;
+        r.mesh.edges.push_back(e);
     }
     r.ok = true;
     return r;

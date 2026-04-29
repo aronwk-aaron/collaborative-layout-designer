@@ -44,6 +44,20 @@ protected:
 
     QString defaultVendoredPartsRoot() const;
 
+    // Path where Tools → Import lands rendered library parts. Computed
+    // the same way the importer does so the parts panel finds them on
+    // every launch — modules library + "/imports" if configured,
+    // otherwise AppDataLocation/imports as the universal fallback.
+    QString importedPartsRoot() const;
+
+    // Register a freshly-written library part with the in-memory
+    // parts library and the parts panel without re-scanning every
+    // configured search path or rebuilding the whole grid (which
+    // freezes the UI for thousands-of-parts libraries). Returns the
+    // library key on success, or an empty string if the file isn't
+    // a valid part XML or is already indexed.
+    QString registerImportedPart(const QString& xmlAbsPath);
+
 private slots:
     void onNew();
     void onOpen();

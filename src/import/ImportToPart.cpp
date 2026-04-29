@@ -112,6 +112,19 @@ QString writeImportedModelAsLibraryPart(
             .arg(widthStuds).arg(heightStuds));
     w.writeEndElement();
 
+    // Pixels per stud: derived from the sprite dimensions vs. its
+    // declared stud footprint. The map's pixmap renderer reads this
+    // back to scale the sprite at placement so high-DPI imports still
+    // occupy the right number of studs. Vanilla (8 px/stud) parts
+    // omit this field entirely; we only emit it when it differs.
+    const int pxPerStud = (widthStuds > 0)
+        ? std::max(1, qRound(static_cast<double>(renderedSprite.width()) / widthStuds))
+        : 8;
+    if (pxPerStud != 8) {
+        w.writeTextElement(QStringLiteral("PixelsPerStud"),
+                            QString::number(pxPerStud));
+    }
+
     // <ConnexionList> so the composite part snaps like a real track
     // tile. Omitted when `connections` is empty (falls back to the
     // pure-visual tile shape).

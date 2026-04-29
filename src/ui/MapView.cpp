@@ -1133,10 +1133,16 @@ void MapView::resolvePartPlacement(const QString& partKey, QPointF cursorScenePx
     }
 
     QPixmap pm = parts_.pixmap(partKey);
-    const double widthStuds  = pm.isNull() ? 2.0 : pm.width()  / pxPerStud;
-    const double heightStuds = pm.isNull() ? 2.0 : pm.height() / pxPerStud;
-
     auto newMeta = parts_.metadata(partKey);
+    // Some imports author at higher DPI than the scene's 8 px/stud.
+    // Use the part's authored pxPerStud (recorded in <PixelsPerStud>)
+    // to convert pixmap pixels back to studs — otherwise a 16 px/stud
+    // sprite renders at twice the right size on the map. Guard against
+    // a missing/zero value so we never divide by zero.
+    const double partPxPerStud = (newMeta && newMeta->pxPerStud > 0)
+        ? newMeta->pxPerStud : 8.0;
+    const double widthStuds  = pm.isNull() ? 2.0 : pm.width()  / partPxPerStud;
+    const double heightStuds = pm.isNull() ? 2.0 : pm.height() / partPxPerStud;
 
     // Selected-brick anchor: if exactly one brick is selected with a free
     // compatible connection, lock the new piece to that connection.
@@ -1290,8 +1296,10 @@ void MapView::addPartAtScenePos(const QString& partKey, QPointF sceneCenterPx) {
                 if (subMeta && !subMeta->gifFilePath.isEmpty()) {
                     QPixmap pm(subMeta->gifFilePath);
                     if (!pm.isNull()) {
-                        wStuds = pm.width()  / pxPerStud;
-                        hStuds = pm.height() / pxPerStud;
+                        const double subPxPerStud = (subMeta->pxPerStud > 0)
+                            ? subMeta->pxPerStud : 8.0;
+                        wStuds = pm.width()  / subPxPerStud;
+                        hStuds = pm.height() / subPxPerStud;
                     }
                 }
                 // BlueBrick convention (verified against MapData/
@@ -1355,8 +1363,11 @@ void MapView::addPartAtScenePos(const QString& partKey, QPointF sceneCenterPx) {
 
     QPixmap pm = parts_.pixmap(partKey);
     const double pxPerStud = rendering::SceneBuilder::kPixelsPerStud;
-    const double widthStuds  = pm.isNull() ? 2.0 : pm.width()  / pxPerStud;
-    const double heightStuds = pm.isNull() ? 2.0 : pm.height() / pxPerStud;
+    auto placeMeta = parts_.metadata(partKey);
+    const double placePartPxPerStud = (placeMeta && placeMeta->pxPerStud > 0)
+        ? placeMeta->pxPerStud : 8.0;
+    const double widthStuds  = pm.isNull() ? 2.0 : pm.width()  / placePartPxPerStud;
+    const double heightStuds = pm.isNull() ? 2.0 : pm.height() / placePartPxPerStud;
 
     QPointF centreStuds;
     float   orientation = 0.0f;

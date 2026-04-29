@@ -35,6 +35,20 @@ struct RasterizeOptions {
     double  studsPerLdu = 1.0 / 20.0;     // 20 LDU per stud
     int     marginPx = 2;
     bool    antialias = true;
+
+    // Supersampling factor: rasterise at (pxPerStud * ssaa) internally,
+    // then smooth-downscale to pxPerStud. ssaa=4 is a good quality/cost
+    // sweet spot — visibly cleaner edges than QPainter AA alone, while
+    // 16× memory/time stays cheap for typical part sprites.
+    int     ssaa = 4;
+
+    // Stroke the mesh's `edges` (LDraw type-2 wireframe lines) over
+    // the filled triangles. Without this, flat baseplates and plate
+    // tops render as featureless colour blobs — the stud outlines,
+    // brick seams, and embossed-print silhouettes all live in the
+    // type-2 lines. With this on, the sprite reads as a real LEGO
+    // top-down rather than a flat fill.
+    bool    wireframe = false;
 };
 
 struct RasterizeResult {

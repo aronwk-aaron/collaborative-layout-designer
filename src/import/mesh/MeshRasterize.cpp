@@ -1,25 +1,48 @@
 #include "MeshRasterize.h"
 
+#include <QColor>
 #include <QPainter>
-#include <QPainterPath>
-#include <QPolygonF>
+#include <QPen>
 
 #include <algorithm>
+#include <cmath>
+#include <limits>
+#include <vector>
 
 namespace cld::import {
 
 namespace {
 
-// Sort triangles by their max Y ascending so QPainter paints higher
-// pieces (LDraw Y-up = closer to camera in top-down) on top of lower
-// ones. This is the orthographic equivalent of a depth sort and gives
-// correct fill ordering for the common case where triangles don't
-// interpenetrate. It does NOT handle interpenetration — for the
-// top-down sprite use case nothing relevant interpenetrates.
-struct Sortable {
-    const geom::Triangle* tri;
-    double maxY;
+// Per-pixel z-buffering replaces painter's-algorithm sort. With
+// thousands of overlapping bricks, no sort key (min-Y, max-Y, centroid)
+// is correct everywhere — the same triangle can be both above one face
+// and below another. Z-buffer is exact at the pixel level. lxfml-viewer's
+// clean output is what proper depth testing looks like.
+//
+// We rasterise each triangle in the XZ plane with barycentric edge
+// functions, interpolate the world-Y at each fragment, and keep the
+// fragment with the maximum Y (closest to the top-down camera; LDD is
+// Y-up). Anti-aliasing is supersampled — render at (final px/stud × ssaa)
+// resolution, then bilinear-downscale.
+
+struct Frag {
+    float    yWorld;   // depth (interpolated world Y; bigger = closer to camera)
+    quint32  argb;     // packed ARGB premultiplied
 };
+
+// Pack QColor into premultiplied ARGB32. Zero alpha collapses to 0
+// so the empty-cell sentinel stays transparent.
+inline quint32 packPremul(QColor c) {
+    const int a = c.alpha();
+    if (a == 0) return 0u;
+    const int r = (c.red()   * a + 127) / 255;
+    const int g = (c.green() * a + 127) / 255;
+    const int b = (c.blue()  * a + 127) / 255;
+    return (static_cast<quint32>(a) << 24) |
+           (static_cast<quint32>(r) << 16) |
+           (static_cast<quint32>(g) <<  8) |
+            static_cast<quint32>(b);
+}
 
 }  // namespace
 
@@ -44,53 +67,205 @@ RasterizeResult rasterizeMeshTopDown(const geom::Mesh& mesh,
     }
     out.meshBoundsXZ = QRectF(QPointF(xmin, zmin), QPointF(xmax, zmax));
 
-    // Pixel canvas size with margin so anti-aliased edges don't clip.
-    const double widthPx  = (xmax - xmin) * opt.pxPerStud + 2.0 * opt.marginPx;
-    const double heightPx = (zmax - zmin) * opt.pxPerStud + 2.0 * opt.marginPx;
-    if (widthPx <= 0.0 || heightPx <= 0.0) return out;
+    // Render at supersampled px/stud, then smooth-downscale at the end.
+    const int ssaa = std::max(1, opt.ssaa);
+    const int superPxPerStud = opt.pxPerStud * ssaa;
+    const int superMarginPx  = opt.marginPx  * ssaa;
 
-    QImage img(static_cast<int>(std::ceil(widthPx)),
-               static_cast<int>(std::ceil(heightPx)),
-               QImage::Format_ARGB32_Premultiplied);
-    img.fill(Qt::transparent);
+    const int W = static_cast<int>(std::ceil((xmax - xmin) * superPxPerStud + 2.0 * superMarginPx));
+    const int H = static_cast<int>(std::ceil((zmax - zmin) * superPxPerStud + 2.0 * superMarginPx));
+    if (W <= 0 || H <= 0) return out;
 
-    // Origin offset: image (0,0) corresponds to stud (xmin - margin, zmin - margin).
     out.imageOriginInStuds = QPointF(xmin - opt.marginPx / static_cast<double>(opt.pxPerStud),
                                       zmin - opt.marginPx / static_cast<double>(opt.pxPerStud));
 
-    // Build sortable list, then stable sort by max Y ascending.
-    std::vector<Sortable> sorted;
-    sorted.reserve(mesh.tris.size());
-    for (const auto& t : mesh.tris) {
-        const double maxY = std::max({ t.v[0].y, t.v[1].y, t.v[2].y });
-        sorted.push_back({ &t, maxY });
+    // Z-buffer + colour buffer. Initial depth is -inf so any valid
+    // fragment beats it; initial colour is transparent.
+    std::vector<Frag> buf(static_cast<size_t>(W) * static_cast<size_t>(H));
+    for (auto& f : buf) {
+        f.yWorld = -std::numeric_limits<float>::infinity();
+        f.argb   = 0u;
     }
-    std::stable_sort(sorted.begin(), sorted.end(),
-                     [](const Sortable& a, const Sortable& b){ return a.maxY < b.maxY; });
 
-    QPainter p(&img);
-    if (opt.antialias) {
-        p.setRenderHint(QPainter::Antialiasing);
-        p.setRenderHint(QPainter::SmoothPixmapTransform);
-    }
-    p.setPen(Qt::NoPen);
+    // Directional light from straight up — top-down sprite, so the
+    // light shares the camera direction. Heavy ambient so flat tile
+    // tops (e.g. hazard-stripe tiles laid flat) read as solid colour
+    // blocks instead of getting broken up by stud-cylinder shading
+    // from neighbouring bricks.
+    constexpr double kLx = 0.0, kLy = 1.0, kLz = 0.0;
+    constexpr double kAmbient = 0.85;
+    constexpr double kDiffuse = 0.15;
 
-    for (const auto& s : sorted) {
-        const auto& t = *s.tri;
-        QPolygonF poly;
+    // Rasterise each triangle. Project each vertex into (px, py) screen
+    // space, interpolate world Y for depth and the world-space normal
+    // for lighting.
+    for (const auto& tri : mesh.tris) {
+        double px[3], py[3], wy[3];
         for (int k = 0; k < 3; ++k) {
-            const double xs = t.v[k].x * opt.studsPerLdu;
-            const double zs = t.v[k].z * opt.studsPerLdu;
-            const double xPx = (xs - xmin) * opt.pxPerStud + opt.marginPx;
-            const double yPx = (zs - zmin) * opt.pxPerStud + opt.marginPx;
-            poly << QPointF(xPx, yPx);
+            const double xs = tri.v[k].x * opt.studsPerLdu;
+            const double zs = tri.v[k].z * opt.studsPerLdu;
+            px[k] = (xs - xmin) * superPxPerStud + superMarginPx;
+            py[k] = (zs - zmin) * superPxPerStud + superMarginPx;
+            wy[k] = tri.v[k].y;
         }
-        p.setBrush(t.color);
-        p.drawPolygon(poly);
-    }
-    p.end();
 
-    out.image = std::move(img);
+        double bxMin = std::min({px[0], px[1], px[2]});
+        double bxMax = std::max({px[0], px[1], px[2]});
+        double byMin = std::min({py[0], py[1], py[2]});
+        double byMax = std::max({py[0], py[1], py[2]});
+        const int xLo = std::max(0, static_cast<int>(std::floor(bxMin)));
+        const int xHi = std::min(W - 1, static_cast<int>(std::ceil(bxMax)));
+        const int yLo = std::max(0, static_cast<int>(std::floor(byMin)));
+        const int yHi = std::min(H - 1, static_cast<int>(std::ceil(byMax)));
+        if (xLo > xHi || yLo > yHi) continue;
+
+        const double dx10 = px[1] - px[0], dy10 = py[1] - py[0];
+        const double dx20 = px[2] - px[0], dy20 = py[2] - py[0];
+        const double denom = dx10 * dy20 - dy10 * dx20;
+        if (std::abs(denom) < 1e-9) continue;
+        const double invDenom = 1.0 / denom;
+
+        // Per-triangle pre-shade. We use the average of the three
+        // vertex normals (flat shade, sufficient at sprite resolution
+        // and avoids per-pixel barycentric interpolation of normals).
+        double nx = tri.n[0].x + tri.n[1].x + tri.n[2].x;
+        double ny = tri.n[0].y + tri.n[1].y + tri.n[2].y;
+        double nz = tri.n[0].z + tri.n[1].z + tri.n[2].z;
+        const double nLen = std::sqrt(nx*nx + ny*ny + nz*nz);
+        double shade = 1.0;
+        if (nLen > 1e-6) {
+            nx /= nLen; ny /= nLen; nz /= nLen;
+            const double NdotL = nx * kLx + ny * kLy + nz * kLz;
+            shade = kAmbient + kDiffuse * std::max(0.0, NdotL);
+            if (shade > 1.0) shade = 1.0;
+        }
+
+        // Apply shading to the triangle's base colour.
+        const QColor base = tri.color;
+        const int alpha = base.alpha();
+        if (alpha == 0) continue;
+        const int rr = static_cast<int>(std::lround(base.red()   * shade));
+        const int gg = static_cast<int>(std::lround(base.green() * shade));
+        const int bb = static_cast<int>(std::lround(base.blue()  * shade));
+        const int rrC = std::clamp(rr, 0, 255);
+        const int ggC = std::clamp(gg, 0, 255);
+        const int bbC = std::clamp(bb, 0, 255);
+        const quint32 argb = packPremul(QColor::fromRgb(rrC, ggC, bbC, alpha));
+        if (argb == 0u) continue;
+
+        for (int yy = yLo; yy <= yHi; ++yy) {
+            const double sampY = yy + 0.5;
+            for (int xx = xLo; xx <= xHi; ++xx) {
+                const double sampX = xx + 0.5;
+                const double dx = sampX - px[0], dy = sampY - py[0];
+                const double b1 = (dx * dy20 - dy * dx20) * invDenom;
+                const double b2 = (dy * dx10 - dx * dy10) * invDenom;
+                const double b0 = 1.0 - b1 - b2;
+                if (b0 < -1e-7 || b1 < -1e-7 || b2 < -1e-7) continue;
+                const float depth = static_cast<float>(b0 * wy[0] + b1 * wy[1] + b2 * wy[2]);
+                Frag& f = buf[static_cast<size_t>(yy) * W + static_cast<size_t>(xx)];
+                if (depth > f.yWorld) {
+                    f.yWorld = depth;
+                    f.argb   = argb;
+                }
+            }
+        }
+    }
+
+    // Materialise the supersampled image from the colour buffer.
+    QImage img(W, H, QImage::Format_ARGB32_Premultiplied);
+    img.fill(Qt::transparent);
+    for (int yy = 0; yy < H; ++yy) {
+        auto* row = reinterpret_cast<quint32*>(img.scanLine(yy));
+        const Frag* src = buf.data() + static_cast<size_t>(yy) * W;
+        for (int xx = 0; xx < W; ++xx) row[xx] = src[xx].argb;
+    }
+
+    // Smooth-downscale to the final resolution. The final pixel size
+    // must be a clean multiple of pxPerStud — placement code re-derives
+    // the brick's stud footprint as (pixels / pxPerStud), so any non-
+    // integer-stud final size translates directly into a fractional
+    // footprint and the brick won't grid-snap. Round each axis to its
+    // nearest whole stud, then multiply back by pxPerStud.
+    int finalW = 0, finalH = 0;
+    {
+        const double widthStudsExact  = (xmax - xmin);
+        const double heightStudsExact = (zmax - zmin);
+        const int wStud = std::max(1, static_cast<int>(std::round(widthStudsExact)));
+        const int hStud = std::max(1, static_cast<int>(std::round(heightStudsExact)));
+        finalW = wStud * opt.pxPerStud + 2 * opt.marginPx;
+        finalH = hStud * opt.pxPerStud + 2 * opt.marginPx;
+        if (ssaa > 1 || finalW != W || finalH != H) {
+            out.image = img.scaled(finalW, finalH,
+                                   Qt::IgnoreAspectRatio,
+                                   Qt::SmoothTransformation);
+        } else {
+            out.image = std::move(img);
+        }
+    }
+
+    // Wireframe overlay. Stud rims (LDD-synthesised) and brick-top
+    // silhouettes (LDraw type-2 edges) trace the visible top of the
+    // model with thin dark lines. Depth-tested against the supersampled
+    // buffer so an edge that lies under a brick above it is skipped.
+    if (opt.wireframe && !mesh.edges.empty() && !out.image.isNull()) {
+        QPainter p(&out.image);
+        p.setRenderHint(QPainter::Antialiasing);
+        QPen pen;
+        pen.setWidthF(std::max(0.5, opt.pxPerStud / 32.0));
+        pen.setCapStyle(Qt::RoundCap);
+        // Final-image (x,y) → supersampled depth-buffer Y at that pixel.
+        const double scaleSX = double(W) / out.image.width();
+        const double scaleSZ = double(H) / out.image.height();
+        auto bufDepthAt = [&](double finalX, double finalY) -> float {
+            const int sx = static_cast<int>(finalX * scaleSX);
+            const int sz = static_cast<int>(finalY * scaleSZ);
+            if (sx < 0 || sx >= W || sz < 0 || sz >= H) {
+                return -std::numeric_limits<float>::infinity();
+            }
+            return buf[static_cast<size_t>(sz) * W + static_cast<size_t>(sx)].yWorld;
+        };
+        const double finalPxPerStudW = (xmax > xmin)
+            ? out.image.width()  / (xmax - xmin) : opt.pxPerStud;
+        const double finalPxPerStudH = (zmax > zmin)
+            ? out.image.height() / (zmax - zmin) : opt.pxPerStud;
+        for (const auto& e : mesh.edges) {
+            const double xs0 = e.v[0].x * opt.studsPerLdu;
+            const double zs0 = e.v[0].z * opt.studsPerLdu;
+            const double xs1 = e.v[1].x * opt.studsPerLdu;
+            const double zs1 = e.v[1].z * opt.studsPerLdu;
+            const double x0 = (xs0 - xmin) * finalPxPerStudW;
+            const double y0 = (zs0 - zmin) * finalPxPerStudH;
+            const double x1 = (xs1 - xmin) * finalPxPerStudW;
+            const double y1 = (zs1 - zmin) * finalPxPerStudH;
+
+            // Depth test: skip edges that are occluded by a brick
+            // above them. Sample three points along the edge and
+            // require all three to be visible (within tolerance) so
+            // partly-occluded edges still render where they're seen.
+            const double midY = 0.5 * (e.v[0].y + e.v[1].y);
+            int visibleSamples = 0;
+            for (int s = 0; s < 3; ++s) {
+                const double t = (s + 1) / 4.0;  // 0.25, 0.5, 0.75
+                const double sx = x0 + (x1 - x0) * t;
+                const double sy = y0 + (y1 - y0) * t;
+                const double sampY = e.v[0].y + (e.v[1].y - e.v[0].y) * t;
+                const float bufY = bufDepthAt(sx, sy);
+                if (!std::isfinite(bufY) || bufY - sampY <= 1.0) ++visibleSamples;
+            }
+            if (visibleSamples == 0) continue;
+            (void)midY;
+
+            QColor c = e.color;
+            if (!c.isValid()) c = QColor(40, 40, 40);
+            else c.setAlpha(160);
+            pen.setColor(c);
+            p.setPen(pen);
+            p.drawLine(QPointF(x0, y0), QPointF(x1, y1));
+        }
+        p.end();
+    }
+
     return out;
 }
 

@@ -45,8 +45,29 @@ BakedModel bakeMeshFromLDraw(const LDrawReadResult& src,
             world.v[0] = xform.transform(t.v[0]);
             world.v[1] = xform.transform(t.v[1]);
             world.v[2] = xform.transform(t.v[2]);
+            // Flat-shaded face normal from the post-transform vertices.
+            // LDraw `.dat` doesn't ship per-vertex normals; one normal
+            // per triangle is sufficient for our top-down lighting pass.
+            const geom::Vec3 e1 = world.v[1] - world.v[0];
+            const geom::Vec3 e2 = world.v[2] - world.v[0];
+            geom::Vec3 fn{
+                e1.y * e2.z - e1.z * e2.y,
+                e1.z * e2.x - e1.x * e2.z,
+                e1.x * e2.y - e1.y * e2.x,
+            };
+            world.n[0] = fn;
+            world.n[1] = fn;
+            world.n[2] = fn;
             world.color = t.color;
             out.mesh.tris.push_back(world);
+        }
+        out.mesh.edges.reserve(out.mesh.edges.size() + partMesh.edges.size());
+        for (const auto& e : partMesh.edges) {
+            geom::Edge world;
+            world.v[0] = xform.transform(e.v[0]);
+            world.v[1] = xform.transform(e.v[1]);
+            world.color = e.color;
+            out.mesh.edges.push_back(world);
         }
     }
 
@@ -71,8 +92,9 @@ BakedModel bakeMeshFromLDraw(const LDrawReadResult& src,
             for (int k = 0; k < 4; ++k) {
                 p[k] = { prim.v[k][0], prim.v[k][1], prim.v[k][2] };
             }
-            geom::Triangle t1{ { p[0], p[1], p[2] }, finalColor };
-            geom::Triangle t2{ { p[0], p[2], p[3] }, finalColor };
+            geom::Triangle t1, t2;
+            t1.v[0] = p[0]; t1.v[1] = p[1]; t1.v[2] = p[2]; t1.color = finalColor;
+            t2.v[0] = p[0]; t2.v[1] = p[2]; t2.v[2] = p[3]; t2.color = finalColor;
             out.mesh.tris.push_back(t1);
             out.mesh.tris.push_back(t2);
         }

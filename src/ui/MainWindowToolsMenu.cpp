@@ -208,22 +208,25 @@ void MainWindow::setupToolsMenu() {
         QString err;
         const QString author = mapView_->currentMap()
                                    ? mapView_->currentMap()->author : QString();
-        const QString key = import::writeImportedModelAsLibraryPart(
+        const QString fileKey = import::writeImportedModelAsLibraryPart(
             dlg.partName(), sprite, wStud, hStud, libRoot, author,
             externalConns, &err);
-        if (key.isEmpty()) {
+        if (fileKey.isEmpty()) {
             QMessageBox::warning(this, kindLabel,
                 tr("Could not write library part: %1").arg(err));
             return;
         }
 
-        rescanLibrary(loadUserLibraryPaths() << libRoot);
-        partsBrowser_->rebuild();
-        mapView_->addPartAtViewCenter(key);
+        // Incrementally register the new part instead of clearing the
+        // library and re-scanning thousands of vendored parts on the UI
+        // thread (which froze the app for 5–10s on big libraries).
+        const QString xmlPath = QDir(libRoot).filePath(fileKey + QStringLiteral(".xml"));
+        const QString libKey = registerImportedPart(xmlPath);
+        if (!libKey.isEmpty()) mapView_->addPartAtViewCenter(libKey);
 
         statusBar()->showMessage(
             tr("Imported %1 as part '%2' (%3 × %4 studs, %5 source parts)")
-                .arg(QFileInfo(source).fileName(), key)
+                .arg(QFileInfo(source).fileName(), fileKey)
                 .arg(wStud).arg(hStud).arg(read.parts.size()), 6000);
     };
 
@@ -262,7 +265,20 @@ void MainWindow::setupToolsMenu() {
                 if (cancel.requested()) return;
                 if (!baked.mesh.tris.empty()) {
                     import::RasterizeOptions ropt;
-                    ropt.pxPerStud = 8;
+                    // Author imports at 32 px/stud — 4× the map's
+                    // 8 px/stud. The map renderer reads <PixelsPerStud>
+                    // from the part XML and scales the pixmap by
+                    // (8/32 = 0.25) at draw time, so the brick still
+                    // occupies the right number of studs while small
+                    // detail (studs, hazard-stripes, embossed prints)
+                    // stays sharp at any zoom. marginPx=0 + whole-stud
+                    // rounding keep the snap-grid alignment exact.
+                    // SSAA=4 multiplied by pxPerStud=32 means we render
+                    // internally at 128 px/stud, downsampled smoothly.
+                    ropt.pxPerStud   = 32;
+                    ropt.marginPx    = 0;
+                    ropt.ssaa        = 4;
+                    ropt.wireframe   = true;
                     rast = import::rasterizeMeshTopDown(baked.mesh, ropt);
                 }
             });
@@ -316,20 +332,20 @@ void MainWindow::setupToolsMenu() {
         QString err;
         const QString author = mapView_->currentMap()
                                    ? mapView_->currentMap()->author : QString();
-        const QString key = import::writeImportedModelAsLibraryPart(
+        const QString fileKey = import::writeImportedModelAsLibraryPart(
             dlg.partName(), rast.image, wStud, hStud, modulesRoot, author,
             {}, &err);
-        if (key.isEmpty()) {
+        if (fileKey.isEmpty()) {
             QMessageBox::warning(this, kindLabel,
                 tr("Could not write library part: %1").arg(err));
             return true;
         }
-        rescanLibrary(loadUserLibraryPaths() << modulesRoot);
-        partsBrowser_->rebuild();
-        mapView_->addPartAtViewCenter(key);
+        const QString xmlPath = QDir(modulesRoot).filePath(fileKey + QStringLiteral(".xml"));
+        const QString libKey = registerImportedPart(xmlPath);
+        if (!libKey.isEmpty()) mapView_->addPartAtViewCenter(libKey);
         statusBar()->showMessage(
             tr("Imported %1 as '%2' — %3 part(s) resolved, %4 unresolved")
-                .arg(QFileInfo(source).fileName(), key)
+                .arg(QFileInfo(source).fileName(), fileKey)
                 .arg(baked.resolvedRefs).arg(baked.unresolvedRefs), 8000);
         return true;
     };
@@ -392,83 +408,11 @@ void MainWindow::setupToolsMenu() {
             }
         }
 
-        // Keep the original LDD-flavoured ref list so the LDD-only
-        // fallback path can render parts that have NO LDraw mapping
-        // by loading their .g geometry directly.
+        // We render every brick from its LDD .g geometry, so the
+        // original ref list IS the working set.
         const auto originalRead = read;
 
-        // ----- LDraw-mapped path ---------------------------------------
-        int translated = 0, unmapped = 0;
-        for (auto& ref : read.parts) {
-            QString designId = ref.filename;
-            if (designId.endsWith(QStringLiteral(".dat"), Qt::CaseInsensitive))
-                designId.chop(4);
-            const int dot = designId.indexOf(QChar('.'));
-            if (dot > 0) designId = designId.left(dot);
-            const QString ldraw = mapping.partFor(designId);
-            if (ldraw.isEmpty()) { ++unmapped; ref.filename.clear(); continue; }
-            ref.filename = ldraw;
-            const int newColour = mapping.colourFor(ref.colorCode);
-            if (newColour >= 0) ref.colorCode = newColour;
-
-            // Apply per-part LDD↔LDraw frame correction from
-            // <Transformation> if present. The correction is an
-            // axis-angle rotation + translation in the LDraw frame
-            // applied INSIDE the ref's own placement, so we
-            // post-multiply: refMatrix * correction. This keeps the
-            // ref's own translation/rotation as the outer transform
-            // (where the LDD model placed the brick) while baking
-            // the per-design coord-frame fixup just before the
-            // mesh-load step picks up the geometry.
-            const auto t = mapping.transformFor(ldraw);
-            if (t.exists) {
-                const double angle = t.angle;
-                const double c = std::cos(angle);
-                const double s = std::sin(angle);
-                const double C = 1.0 - c;
-                // Normalise axis (the file sometimes ships unnormalised).
-                double ax = t.ax, ay = t.ay, az = t.az;
-                const double mag = std::sqrt(ax*ax + ay*ay + az*az);
-                if (mag > 1e-9) { ax /= mag; ay /= mag; az /= mag; }
-                // Rodrigues' rotation matrix (3x3).
-                const double r00 = c + ax*ax*C;
-                const double r01 = ax*ay*C - az*s;
-                const double r02 = ax*az*C + ay*s;
-                const double r10 = ay*ax*C + az*s;
-                const double r11 = c + ay*ay*C;
-                const double r12 = ay*az*C - ax*s;
-                const double r20 = az*ax*C - ay*s;
-                const double r21 = az*ay*C + ax*s;
-                const double r22 = c + az*az*C;
-                // Compose ref.m (3x3) with the correction:
-                //   newM = oldM * R
-                //   newT = oldM * tCorrection + oldT
-                double oldM[9];
-                for (int k = 0; k < 9; ++k) oldM[k] = ref.m[k];
-                ref.m[0] = oldM[0]*r00 + oldM[1]*r10 + oldM[2]*r20;
-                ref.m[1] = oldM[0]*r01 + oldM[1]*r11 + oldM[2]*r21;
-                ref.m[2] = oldM[0]*r02 + oldM[1]*r12 + oldM[2]*r22;
-                ref.m[3] = oldM[3]*r00 + oldM[4]*r10 + oldM[5]*r20;
-                ref.m[4] = oldM[3]*r01 + oldM[4]*r11 + oldM[5]*r21;
-                ref.m[5] = oldM[3]*r02 + oldM[4]*r12 + oldM[5]*r22;
-                ref.m[6] = oldM[6]*r00 + oldM[7]*r10 + oldM[8]*r20;
-                ref.m[7] = oldM[6]*r01 + oldM[7]*r11 + oldM[8]*r21;
-                ref.m[8] = oldM[6]*r02 + oldM[7]*r12 + oldM[8]*r22;
-                ref.x += oldM[0]*t.tx + oldM[1]*t.ty + oldM[2]*t.tz;
-                ref.y += oldM[3]*t.tx + oldM[4]*t.ty + oldM[5]*t.tz;
-                ref.z += oldM[6]*t.tx + oldM[7]*t.ty + oldM[8]*t.tz;
-            }
-
-            ++translated;
-        }
-        read.parts.erase(std::remove_if(read.parts.begin(), read.parts.end(),
-            [](const auto& r){ return r.filename.isEmpty(); }), read.parts.end());
-
-        // Bake LDraw-translated subset + LDD-only-fallback subset on
-        // a worker thread; both stages can each take 10s+ on dense
-        // models. Final rasterize joins them.
         geom::Mesh combined;
-        int ldrawResolved = 0;
         QStringList allErrors;
         import::LDDLDrawBakedModel lddBaked;
         import::RasterizeResult rast;
@@ -484,34 +428,44 @@ void MainWindow::setupToolsMenu() {
         const bool ok = runBackground(this,
             tr("Importing %1...").arg(QFileInfo(source).fileName()),
             [&](CancelToken& cancel){
-                if (!ldrawRoot.isEmpty()) {
-                    import::LDrawLibrary lib(ldrawRoot);
-                    if (lib.looksValid()) {
-                        import::LDrawPalette palette;
-                        palette.loadFromLDConfig(QDir(ldrawRoot).absoluteFilePath(
-                            QStringLiteral("LDConfig.ldr")));
-                        import::LDrawMeshLoader loader(lib, palette);
-                        auto baked = import::bakeMeshFromLDraw(read, loader, palette);
-                        ldrawResolved = baked.resolvedRefs;
-                        allErrors += baked.errors;
-                        for (const auto& tri : baked.mesh.tris) combined.tris.push_back(tri);
-                    }
-                }
-                if (cancel.requested()) return;
-
+                // LDD-only render path. The LDraw fallback (which used to
+                // resolve ldraw.xml-mapped designIDs through the LDraw
+                // .dat library) is intentionally skipped — mixing LDraw-
+                // mesh and LDD-mesh outputs in one sprite produced
+                // inconsistent stud detail and orientation glitches that
+                // are not worth reconciling. Bricks for which LDD has
+                // no .g geometry are reported in lddBaked.errors and
+                // will simply be missing from the sprite (matches what
+                // the lxfml-viewer reference does in the same case).
                 import::LDDMeshBuilder lddBuilder;
                 lddBuilder.setOnDiskRoot(lddRoot);
-                lddBuilder.setMapping(&mapping);
+                // Pass a null mapping so LDDMeshBuilder doesn't skip any
+                // bricks just because they HAVE an LDraw mapping — we
+                // want EVERY brick rendered from its .g geometry now.
                 lddBuilder.setMaterials(&materials);
                 if (dbLif) lddBuilder.setLifReader(dbLif.get());
                 lddBaked = lddBuilder.bake(originalRead);
-                for (const auto& tri : lddBaked.mesh.tris) combined.tris.push_back(tri);
+                for (const auto& tri : lddBaked.mesh.tris)  combined.tris.push_back(tri);
+                for (const auto& e   : lddBaked.mesh.edges) combined.edges.push_back(e);
                 allErrors += lddBaked.errors;
                 if (cancel.requested()) return;
 
                 if (!combined.tris.empty()) {
                     import::RasterizeOptions ropt;
-                    ropt.pxPerStud = 8;
+                    // Author imports at 32 px/stud — 4× the map's
+                    // 8 px/stud. The map renderer reads <PixelsPerStud>
+                    // from the part XML and scales the pixmap by
+                    // (8/32 = 0.25) at draw time, so the brick still
+                    // occupies the right number of studs while small
+                    // detail (studs, hazard-stripes, embossed prints)
+                    // stays sharp at any zoom. marginPx=0 + whole-stud
+                    // rounding keep the snap-grid alignment exact.
+                    // SSAA=4 multiplied by pxPerStud=32 means we render
+                    // internally at 128 px/stud, downsampled smoothly.
+                    ropt.pxPerStud   = 32;
+                    ropt.marginPx    = 0;
+                    ropt.ssaa        = 4;
+                    ropt.wireframe   = true;
                     rast = import::rasterizeMeshTopDown(combined, ropt);
                 }
             });
@@ -522,9 +476,8 @@ void MainWindow::setupToolsMenu() {
 
         if (combined.tris.empty()) {
             QMessageBox::warning(this, kindLabel,
-                tr("LDD model couldn't be rendered: %1 parts translated to LDraw, "
-                   "%2 unmapped, %3 LDD-rendered, %4 skipped.\n\n%5")
-                    .arg(translated).arg(unmapped)
+                tr("LDD model couldn't be rendered: %1 LDD-rendered, "
+                   "%2 skipped (no .g).\n\n%3")
                     .arg(lddBaked.rendered).arg(lddBaked.skipped)
                     .arg(allErrors.join('\n')));
             return true;
@@ -533,10 +486,10 @@ void MainWindow::setupToolsMenu() {
 
         // Preview before commit. Same dialog the LDraw path uses.
         ImportPreviewDialog::Stats st;
-        st.ldrawResolved = ldrawResolved;
+        st.ldrawResolved = 0;
         st.lddRendered   = lddBaked.rendered;
-        st.translated    = translated;
-        st.unmapped      = unmapped;
+        st.translated    = 0;
+        st.unmapped      = 0;
         st.skipped       = lddBaked.skipped;
         ImportPreviewDialog dlg(source, kindLabel, rast.image,
                                 static_cast<int>(std::round(rast.meshBoundsXZ.width())),
@@ -562,22 +515,21 @@ void MainWindow::setupToolsMenu() {
         QString err;
         const QString author = mapView_->currentMap()
                                    ? mapView_->currentMap()->author : QString();
-        const QString key = import::writeImportedModelAsLibraryPart(
+        const QString fileKey = import::writeImportedModelAsLibraryPart(
             dlg.partName(), rast.image, wStud, hStud, modulesRoot, author,
             {}, &err);
-        if (key.isEmpty()) {
+        if (fileKey.isEmpty()) {
             QMessageBox::warning(this, kindLabel,
                 tr("Could not write library part: %1").arg(err));
             return true;
         }
-        rescanLibrary(loadUserLibraryPaths() << modulesRoot);
-        partsBrowser_->rebuild();
-        mapView_->addPartAtViewCenter(key);
+        const QString partXml = QDir(modulesRoot).filePath(fileKey + QStringLiteral(".xml"));
+        const QString libKey = registerImportedPart(partXml);
+        if (!libKey.isEmpty()) mapView_->addPartAtViewCenter(libKey);
         statusBar()->showMessage(
-            tr("Imported %1 as '%2' — %3 LDraw-rendered + %4 LDD-rendered (%5 translated, %6 unmapped, %7 skipped)")
-                .arg(QFileInfo(source).fileName(), key)
-                .arg(ldrawResolved).arg(lddBaked.rendered)
-                .arg(translated).arg(unmapped).arg(lddBaked.skipped), 10000);
+            tr("Imported %1 as '%2' — %3 LDD-rendered (%4 skipped)")
+                .arg(QFileInfo(source).fileName(), fileKey)
+                .arg(lddBaked.rendered).arg(lddBaked.skipped), 10000);
         return true;
     };
 

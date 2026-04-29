@@ -58,10 +58,10 @@ TEST(LDDGeomReader, ParsesMinimalSingleTriangle) {
     auto r = import::readLDDGeom(makeMinimalGeom());
     ASSERT_TRUE(r.ok) << r.error.toStdString();
     ASSERT_EQ(r.mesh.tris.size(), 1u);
-    // LDD-unit-to-LDU scale is 20 (1 stud = 20 LDU), so the (1,0,0)
-    // vertex lands at x=20.
-    EXPECT_DOUBLE_EQ(r.mesh.tris[0].v[1].x, 20.0);
-    EXPECT_DOUBLE_EQ(r.mesh.tris[0].v[2].z, 20.0);
+    // LDD-unit-to-LDU scale is 25 (1 LDD unit = 1.25 stud × 20 LDU/stud),
+    // so the (1,0,0) source vertex lands at x=25.
+    EXPECT_DOUBLE_EQ(r.mesh.tris[0].v[1].x, 25.0);
+    EXPECT_DOUBLE_EQ(r.mesh.tris[0].v[2].z, 25.0);
 }
 
 TEST(LDDGeomReader, RejectsTruncatedHeader) {

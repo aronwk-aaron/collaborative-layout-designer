@@ -201,6 +201,50 @@ QString PartsBrowser::categoryForPath(const QString& absPath) const {
     return parent.isEmpty() ? tr("Other") : parent;
 }
 
+namespace {
+
+// Build one grid item from a library entry. Shared between rebuild()
+// (which calls it for every key) and addOne() (single insert after an
+// import). Returns nullptr if the key isn't in the library.
+QListWidgetItem* makePartItem(parts::PartsLibrary& lib,
+                              const QString& key,
+                              const QString& cat) {
+    auto meta = lib.metadata(key);
+    if (!meta) return nullptr;
+
+    QString desc;
+    for (const auto& d : meta->descriptions) {
+        if (d.language == QStringLiteral("en")) { desc = d.text; break; }
+    }
+    if (desc.isEmpty() && !meta->descriptions.isEmpty()) {
+        desc = meta->descriptions.front().text;
+    }
+
+    QString descShort = desc;
+    if (descShort.size() > 28) descShort = descShort.left(27) + QChar(0x2026);
+    const QString caption = descShort.isEmpty() ? key : descShort;
+
+    auto* item = new QListWidgetItem(caption);
+    item->setToolTip(desc.isEmpty() ? key : QStringLiteral("%1\n(%2)").arg(desc, key));
+    item->setTextAlignment(Qt::AlignHCenter | Qt::AlignTop);
+
+    if (!meta->gifFilePath.isEmpty()) {
+        QPixmap pm(meta->gifFilePath);
+        if (!pm.isNull()) {
+            item->setIcon(QIcon(pm.scaled(kIconSize, kIconSize,
+                                          Qt::KeepAspectRatio,
+                                          Qt::SmoothTransformation)));
+        }
+    }
+
+    item->setData(kPartKeyRole,  key);
+    item->setData(kCategoryRole, cat);
+    item->setData(kFuzzyHayRole, (key + QLatin1Char(' ') + desc).toLower());
+    return item;
+}
+
+}  // namespace
+
 void PartsBrowser::rebuild() {
     grid_->clear();
     const QString previousCat = category_->currentText();
@@ -215,45 +259,9 @@ void PartsBrowser::rebuild() {
         if (!meta) continue;
         const QString cat = categoryForPath(meta->xmlFilePath);
         cats.insert(cat);
-
-        // Pick a display description, preferring English but falling back to
-        // whatever's present.
-        QString desc;
-        for (const auto& d : meta->descriptions) {
-            if (d.language == QStringLiteral("en")) { desc = d.text; break; }
+        if (auto* item = makePartItem(lib_, key, cat)) {
+            grid_->addItem(item);
         }
-        if (desc.isEmpty() && !meta->descriptions.isEmpty()) {
-            desc = meta->descriptions.front().text;
-        }
-
-        // Caption = the description (the "nice name") instead of the
-        // internal part key like "9vhalf-straight.8". The tooltip still
-        // surfaces the internal key so the user can reference it when
-        // needed, and the drag MIME still carries the key for placement.
-        QString descShort = desc;
-        if (descShort.size() > 28) descShort = descShort.left(27) + QChar(0x2026);  // …
-        const QString caption = descShort.isEmpty() ? key : descShort;
-
-        auto* item = new QListWidgetItem(caption);
-        item->setToolTip(desc.isEmpty() ? key : QStringLiteral("%1\n(%2)").arg(desc, key));
-        item->setTextAlignment(Qt::AlignHCenter | Qt::AlignTop);
-
-        // Icon from the part GIF, scaled to kIconSize.
-        if (!meta->gifFilePath.isEmpty()) {
-            QPixmap pm(meta->gifFilePath);
-            if (!pm.isNull()) {
-                item->setIcon(QIcon(pm.scaled(kIconSize, kIconSize,
-                                              Qt::KeepAspectRatio,
-                                              Qt::SmoothTransformation)));
-            }
-        }
-
-        item->setData(kPartKeyRole,  key);
-        item->setData(kCategoryRole, cat);
-        // Haystack: key + description, lowercased once here so the filter
-        // doesn't re-lower on every keystroke.
-        item->setData(kFuzzyHayRole, (key + QLatin1Char(' ') + desc).toLower());
-        grid_->addItem(item);
     }
 
     // Sort category list and re-select what was active.
@@ -266,6 +274,40 @@ void PartsBrowser::rebuild() {
 
     grid_->sortItems(Qt::AscendingOrder);
     applyFilter();
+}
+
+void PartsBrowser::addOne(const QString& key) {
+    auto meta = lib_.metadata(key);
+    if (!meta) return;
+    // Skip if the grid already has this key — protects against duplicate
+    // adds when a caller rescans a path that contains an already-imported
+    // part.
+    for (int i = 0; i < grid_->count(); ++i) {
+        if (grid_->item(i)->data(kPartKeyRole).toString() == key) return;
+    }
+    const QString cat = categoryForPath(meta->xmlFilePath);
+    // Add the category to the dropdown if it's new. blockSignals so the
+    // category-changed handler doesn't trigger applyFilter() mid-add.
+    if (category_->findText(cat) < 0) {
+        category_->blockSignals(true);
+        category_->addItem(cat);
+        // Keep the dropdown sorted (alphabetical, with "All categories"
+        // sticky at index 0).
+        QStringList items;
+        for (int i = 1; i < category_->count(); ++i) items << category_->itemText(i);
+        std::sort(items.begin(), items.end());
+        const QString prev = category_->currentText();
+        while (category_->count() > 1) category_->removeItem(1);
+        category_->addItems(items);
+        const int restoreIdx = category_->findText(prev);
+        category_->setCurrentIndex(restoreIdx >= 0 ? restoreIdx : 0);
+        category_->blockSignals(false);
+    }
+    if (auto* item = makePartItem(lib_, key, cat)) {
+        grid_->addItem(item);
+        grid_->sortItems(Qt::AscendingOrder);
+        applyFilter();
+    }
 }
 
 void PartsBrowser::applyFilter() {

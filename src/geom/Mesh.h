@@ -77,8 +77,22 @@ struct Mat4 {
 // Color is the final per-tri colour after walking the LDraw colour
 // inheritance chain (16 = inherit from parent ref, 24 = inherit edge).
 // Quads from LDraw type-4 lines are split into two triangles at load.
+// Per-vertex normals (transformed into world space alongside the
+// vertex) drive the rasterizer's lighting pass — without them, flat
+// surfaces render as featureless colour blobs and you can't see
+// studs on a baseplate top.
 struct Triangle {
     Vec3   v[3];
+    Vec3   n[3];   // world-space vertex normals; zero ⇒ skip lighting
+    QColor color;
+};
+
+// A line segment between two world-space points. LDraw type-2 lines
+// in a .dat file get loaded as Edges so the top-down rasterizer can
+// stroke them as a wireframe overlay (essential for showing stud
+// outlines on flat plates). Colour is the resolved palette colour.
+struct Edge {
+    Vec3   v[2];
     QColor color;
 };
 
@@ -88,6 +102,7 @@ struct Triangle {
 // rasterizer never sees nested transforms.
 struct Mesh {
     std::vector<Triangle> tris;
+    std::vector<Edge>     edges;
 
     // Bbox helpers, lazily computed by callers as needed.
     QRectF bbox2dXZ() const {  // top-down projection: drop Y

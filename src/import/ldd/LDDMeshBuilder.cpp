@@ -35,6 +35,17 @@ geom::Mat4 ldrawTransformOf(const LDrawPartRef& ref) {
         ref.m[6], ref.m[7], ref.m[8]);
 }
 
+// Rotation-only application to a normal: drop the translation column,
+// no length normalisation here (the rasterizer normalises before use,
+// and this saves a sqrt per vertex on huge models).
+geom::Vec3 rotateNormal(const geom::Mat4& m, geom::Vec3 n) {
+    return {
+        m.m[0][0]*n.x + m.m[0][1]*n.y + m.m[0][2]*n.z,
+        m.m[1][0]*n.x + m.m[1][1]*n.y + m.m[1][2]*n.z,
+        m.m[2][0]*n.x + m.m[2][1]*n.y + m.m[2][2]*n.z,
+    };
+}
+
 }  // namespace
 
 QByteArray LDDMeshBuilder::fetchPart(const QString& designId) {
@@ -94,9 +105,23 @@ LDDLDrawBakedModel LDDMeshBuilder::bake(const LDrawReadResult& read) {
         const geom::Mat4 xform = ldrawTransformOf(ref);
         for (const auto& tri : geomResult.mesh.tris) {
             geom::Triangle baked;
-            for (int k = 0; k < 3; ++k) baked.v[k] = xform.transform(tri.v[k]);
+            for (int k = 0; k < 3; ++k) {
+                baked.v[k] = xform.transform(tri.v[k]);
+                baked.n[k] = rotateNormal(xform, tri.n[k]);
+            }
             baked.color = partColor;
             out.mesh.tris.push_back(baked);
+        }
+        // Carry the synthesized stud-rim / top-edge wireframe through
+        // the same transform so it lands at the same world position
+        // as the triangles.
+        out.mesh.edges.reserve(out.mesh.edges.size() + geomResult.mesh.edges.size());
+        for (const auto& e : geomResult.mesh.edges) {
+            geom::Edge baked;
+            baked.v[0] = xform.transform(e.v[0]);
+            baked.v[1] = xform.transform(e.v[1]);
+            baked.color = e.color;
+            out.mesh.edges.push_back(baked);
         }
         ++out.rendered;
     }

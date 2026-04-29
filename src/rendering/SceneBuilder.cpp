@@ -187,6 +187,19 @@ void addBrickLayer(const core::LayerBrick& L, LayerSink& sink, parts::PartsLibra
                 p->setShapeMode(QGraphicsPixmapItem::BoundingRectShape);
                 p->setOffset(-pm.width() / 2.0, -pm.height() / 2.0);
                 p->setTransformOriginPoint(0, 0);
+                // High-DPI imports: a part authored at e.g. 16 px/stud
+                // has 2× the pixel dimensions of the same brick at 8.
+                // The scene runs at 8 px/stud (kPixelsPerStud), so we
+                // scale the pixmap item by (kPixelsPerStud / partPxPerStud)
+                // to land at the correct stud footprint. Vanilla 8-px
+                // parts get scale 1.0 (no-op).
+                const int authoredPxPerStud = (meta->pxPerStud > 0)
+                    ? meta->pxPerStud : SceneBuilder::kPixelsPerStud;
+                if (authoredPxPerStud != SceneBuilder::kPixelsPerStud) {
+                    const double s = static_cast<double>(SceneBuilder::kPixelsPerStud)
+                                   / static_cast<double>(authoredPxPerStud);
+                    p->setScale(s);
+                }
                 p->setRotation(brick.orientation);
                 p->setPos(centerPx);
                 p->setZValue(brick.altitude);
@@ -550,16 +563,17 @@ void addRulerLayer(const core::LayerRuler& L, LayerSink& sink, int layerIndex,
                                               offsetP2.x() - offsetP1.x()) * 180.0 / M_PI;
                 if (angleDeg > 90.0 || angleDeg < -90.0) angleDeg += 180.0;
 
-                // Build label to measure its width, then split the line around it.
+                // Build label sized proportionally to the ruler's length.
+                // Scaling to length (not to zoom) keeps the text legible
+                // without ballooning at high zoom. Targets ~6% of the
+                // ruler's pixel length for readout height, capped so a
+                // huge ruler (like a 64-stud baseplate measurement)
+                // doesn't get a heading-sized label.
                 QFont f(r.measureFont.familyName);
                 f.setBold(r.measureFont.styleString.contains(QStringLiteral("Bold")));
                 f.setItalic(r.measureFont.styleString.contains(QStringLiteral("Italic")));
-                // Upstream's font is pt-sized and renders at screen size; we
-                // bump the pixel size generously so it's readable at normal
-                // zoom. Matches the visual weight of vanilla's "36.12 ft"
-                // label instead of the tiny clipped fragment we had before.
-                const int pxSize = std::max(16, static_cast<int>(r.measureFont.sizePt * 3.5));
-                f.setPixelSize(pxSize);
+                const double targetLabelPx = std::clamp(len * 0.06, 9.0, 36.0);
+                f.setPixelSize(std::max(8, static_cast<int>(targetLabelPx)));
                 QFontMetricsF fm(f);
                 const double halfText = fm.horizontalAdvance(text) / 2.0 + 6.0;
 
