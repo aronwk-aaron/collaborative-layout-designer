@@ -4,6 +4,8 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QImage>
+#include <QPainter>
+#include <QTransform>
 #include <QXmlStreamReader>
 
 #include <algorithm>
@@ -204,11 +206,109 @@ QPixmap PartsLibrary::pixmap(const QString& key) {
     auto cached = pixmapCache_.constFind(lk);
     if (cached != pixmapCache_.constEnd()) return cached.value();
     auto meta = metadata(lk);
-    if (!meta || meta->gifFilePath.isEmpty()) return {};
-    QPixmap pm;
-    pm.load(meta->gifFilePath);
-    pixmapCache_.insert(lk, pm);
-    return pm;
+    if (!meta) return {};
+
+    // Prefer a sibling sprite on disk — vanilla BlueBrick sets like
+    // Castle/3739-1.set.gif or Town/00-1.set.gif ship with one and the
+    // authored thumbnail is more tightly framed than what we can synthesize.
+    if (!meta->gifFilePath.isEmpty()) {
+        QPixmap pm;
+        pm.load(meta->gifFilePath);
+        pixmapCache_.insert(lk, pm);
+        return pm;
+    }
+
+    // Fallback for sets without a companion image — BrickTracks/TrixBrix/
+    // 4DBrix and our own onSaveSelectionAsSet write only the .set.xml.
+    // Composite the icon by painting each subpart's pixmap at its set-local
+    // position and angle. Convention follows MapView::placePart(): sp.position
+    // is the rotated-hull bbox centre in set-local studs, so we add
+    // hullBboxOffsetStuds(subKey, angle) to recover the image bbox centre.
+    // Output is at 8 px/stud (kPixelsPerStud), matching how leaf-part GIFs
+    // are authored — PartsBrowser scales it down to icon size from there.
+    if (meta->kind == PartKind::Group && !meta->subparts.isEmpty()) {
+        constexpr double kPxPerStud = 8.0;
+
+        struct Placed {
+            QPixmap pm;
+            double  angleDeg = 0.0;
+            QPointF centreStuds;     // image bbox centre in set-local studs
+            double  scale = 1.0;     // kPxPerStud / authoredPxPerStud
+        };
+        QList<Placed> placed;
+        placed.reserve(meta->subparts.size());
+
+        double minX = std::numeric_limits<double>::infinity();
+        double minY = std::numeric_limits<double>::infinity();
+        double maxX = -std::numeric_limits<double>::infinity();
+        double maxY = -std::numeric_limits<double>::infinity();
+
+        for (const PartSubPart& sp : meta->subparts) {
+            QPixmap sub = pixmap(sp.subKey);
+            if (sub.isNull()) continue;
+
+            auto subMeta = metadata(sp.subKey);
+            const double subPxPerStud = (subMeta && subMeta->pxPerStud > 0)
+                ? static_cast<double>(subMeta->pxPerStud) : kPxPerStud;
+            const double s = kPxPerStud / subPxPerStud;
+
+            double angle = std::fmod(sp.angleDegrees, 360.0);
+            if (angle >  180.0) angle -= 360.0;
+            if (angle <= -180.0) angle += 360.0;
+
+            const QPointF off = hullBboxOffsetStuds(sp.subKey, angle);
+            const QPointF centreStuds = sp.position + off;
+
+            const double wStuds = (sub.width()  * s) / kPxPerStud;
+            const double hStuds = (sub.height() * s) / kPxPerStud;
+            const double r = angle * M_PI / 180.0;
+            const double cs = std::abs(std::cos(r));
+            const double sn = std::abs(std::sin(r));
+            const double rotW = wStuds * cs + hStuds * sn;
+            const double rotH = wStuds * sn + hStuds * cs;
+
+            minX = std::min(minX, centreStuds.x() - rotW / 2.0);
+            minY = std::min(minY, centreStuds.y() - rotH / 2.0);
+            maxX = std::max(maxX, centreStuds.x() + rotW / 2.0);
+            maxY = std::max(maxY, centreStuds.y() + rotH / 2.0);
+
+            placed.push_back({ sub, angle, centreStuds, s });
+        }
+
+        QPixmap composite;
+        if (!placed.isEmpty() && std::isfinite(minX)) {
+            // 1-stud margin so anti-aliased edges don't get clipped.
+            constexpr double kMarginStuds = 1.0;
+            const double widthStuds  = (maxX - minX) + 2.0 * kMarginStuds;
+            const double heightStuds = (maxY - minY) + 2.0 * kMarginStuds;
+            const int wPx = std::max(1, static_cast<int>(std::ceil(widthStuds  * kPxPerStud)));
+            const int hPx = std::max(1, static_cast<int>(std::ceil(heightStuds * kPxPerStud)));
+
+            QImage img(wPx, hPx, QImage::Format_ARGB32_Premultiplied);
+            img.fill(Qt::transparent);
+            {
+                QPainter painter(&img);
+                painter.setRenderHint(QPainter::Antialiasing,            true);
+                painter.setRenderHint(QPainter::SmoothPixmapTransform,   true);
+                for (const Placed& p : placed) {
+                    const double cx = (p.centreStuds.x() - minX + kMarginStuds) * kPxPerStud;
+                    const double cy = (p.centreStuds.y() - minY + kMarginStuds) * kPxPerStud;
+                    QTransform t;
+                    t.translate(cx, cy);
+                    t.rotate(p.angleDeg);
+                    t.scale(p.scale, p.scale);
+                    t.translate(-p.pm.width() / 2.0, -p.pm.height() / 2.0);
+                    painter.setTransform(t);
+                    painter.drawPixmap(0, 0, p.pm);
+                }
+            }
+            composite = QPixmap::fromImage(img);
+        }
+        pixmapCache_.insert(lk, composite);
+        return composite;
+    }
+
+    return {};
 }
 
 namespace {

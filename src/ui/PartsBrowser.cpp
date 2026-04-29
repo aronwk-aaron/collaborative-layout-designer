@@ -228,13 +228,14 @@ QListWidgetItem* makePartItem(parts::PartsLibrary& lib,
     item->setToolTip(desc.isEmpty() ? key : QStringLiteral("%1\n(%2)").arg(desc, key));
     item->setTextAlignment(Qt::AlignHCenter | Qt::AlignTop);
 
-    if (!meta->gifFilePath.isEmpty()) {
-        QPixmap pm(meta->gifFilePath);
-        if (!pm.isNull()) {
-            item->setIcon(QIcon(pm.scaled(kIconSize, kIconSize,
-                                          Qt::KeepAspectRatio,
-                                          Qt::SmoothTransformation)));
-        }
+    // Go through PartsLibrary::pixmap() rather than loading meta->gifFilePath
+    // directly — sets without a companion image (BrickTracks/4DBrix/TrixBrix
+    // and any user-saved set) get a composite synthesized from their subparts.
+    QPixmap pm = lib.pixmap(key);
+    if (!pm.isNull()) {
+        item->setIcon(QIcon(pm.scaled(kIconSize, kIconSize,
+                                      Qt::KeepAspectRatio,
+                                      Qt::SmoothTransformation)));
     }
 
     item->setData(kPartKeyRole,  key);
