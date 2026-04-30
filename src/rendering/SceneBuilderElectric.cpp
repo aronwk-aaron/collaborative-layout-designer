@@ -193,65 +193,80 @@ void SceneBuilder::addElectricCircuits(const core::Map& map) {
     }
 
     // -------------------------------------------------------------------
-    // 3. Render: two parallel lines per circuit (OrangeRed + Cyan),
-    //    offset 0.5 studs perpendicularly. Width = 0.5 studs in pixels.
-    //    Then shortcut diamonds on top.
+    // 3. Render: one thin cosmetic line per in-part circuit rail, from
+    //    connection point to connection point. +1 rail = OrangeRed,
+    //    -1 rail = Cyan. Both semi-transparent, 1.5px cosmetic width.
+    //    Yellow dots at every electric connection point.
+    //    Shortcut diamonds on top for short-circuited connections.
     // -------------------------------------------------------------------
     const double px = kPixelsPerStud;
-    const double halfOffset = 0.5 * px;    // perpendicular offset in px
-    const double lineWidth  = 0.5 * px;    // pen width in px
 
-    static const QColor kRed  = QColor(255, 69, 0);    // OrangeRed
-    static const QColor kBlue = QColor(  0, 255, 255); // Cyan
-    static const QColor kShortcut = QColor(255, 165, 0); // Orange
+    static const QColor kRed      = QColor(255,  69,   0, 210); // OrangeRed, slight alpha
+    static const QColor kBlue     = QColor(  0, 255, 255, 210); // Cyan, slight alpha
+    static const QColor kDot      = QColor(255, 230,   0);      // Yellow
+    static const QColor kShortcut = QColor(255, 165,   0);      // Orange
 
     LayerSink sink{ scene_, electricItems_, 5e5, true };
 
-    auto makePen = [&](QColor col) {
+    auto makePen = [](QColor col) {
         QPen p(col);
-        p.setWidthF(lineWidth);
+        p.setWidthF(1.5);
+        p.setCosmetic(true);
         return p;
     };
 
-    // Draw the two-rail lines for every in-part circuit.
+    // For each in-part circuit, draw a line between the two connection
+    // points coloured by which rail (+1 = red, -1 = blue). Polarity from
+    // BFS determines which index is the + side; unvisited (0) defaults red.
     for (auto it = entries.cbegin(); it != entries.cend(); ++it) {
         const BrickEntry& e = it.value();
         for (const auto& circuit : e.meta->electricCircuits) {
             const QPointF p1 = connWorldPx(*e.brick, e.meta->connections[circuit.index1], px);
             const QPointF p2 = connWorldPx(*e.brick, e.meta->connections[circuit.index2], px);
+            if (std::hypot(p2.x() - p1.x(), p2.y() - p1.y()) < 0.5) continue;
 
-            const QPointF delta = p2 - p1;
-            const double len = std::hypot(delta.x(), delta.y());
-            if (len < 0.5) continue;
-
-            // Unit direction and perpendicular normal.
-            const QPointF dir(delta.x() / len, delta.y() / len);
-            const QPointF norm(-dir.y() * halfOffset, dir.x() * halfOffset);
-
-            // Determine which line gets red vs blue based on polarity.
-            // positive polarity on index1 → line1 (norm side) = red.
             const ConnState& cs1 = e.state[circuit.index1];
-            const bool posOnSide1 = (cs1.polarity >= 0);  // 0 = unvisited, treat as +
-            const QPen pen1 = makePen(posOnSide1 ? kRed : kBlue);
-            const QPen pen2 = makePen(posOnSide1 ? kBlue : kRed);
+            const bool posOnIdx1 = (cs1.polarity >= 0);
 
-            auto* line1 = new QGraphicsLineItem(
-                QLineF(p1 + norm, p2 + norm));
-            line1->setPen(pen1);
-            line1->setZValue(500);
-            sink.add(line1);
-
-            auto* line2 = new QGraphicsLineItem(
-                QLineF(p1 - norm, p2 - norm));
-            line2->setPen(pen2);
-            line2->setZValue(500);
-            sink.add(line2);
+            // line from index1 to index2 coloured by index1's rail
+            auto* lineA = new QGraphicsLineItem(QLineF(p1, p2));
+            lineA->setPen(makePen(posOnIdx1 ? kRed : kBlue));
+            lineA->setZValue(500);
+            sink.add(lineA);
         }
     }
 
-    // Draw shortcut diamonds over any connection with hasShortcut.
-    const double dw = 3.0 * px;   // half-width of diamond in px
-    const QPen shortcutPen(kShortcut, lineWidth * 3.0);
+    // Yellow dot at every electric connection point.
+    constexpr double kDotR = 3.5;
+    QPen dotPen(QColor(80, 60, 0), 1.0);
+    dotPen.setCosmetic(true);
+
+    for (auto it = entries.cbegin(); it != entries.cend(); ++it) {
+        const BrickEntry& e = it.value();
+        for (const auto& circuit : e.meta->electricCircuits) {
+            for (int idx : { circuit.index1, circuit.index2 }) {
+                const QPointF c = connWorldPx(*e.brick, e.meta->connections[idx], px);
+                auto* dot = new QGraphicsEllipseItem(c.x() - kDotR, c.y() - kDotR,
+                                                     kDotR * 2, kDotR * 2);
+                dot->setPen(dotPen);
+                dot->setBrush(QBrush(kDot));
+                dot->setZValue(501);
+                // Make the dot cosmetic-sized (fixed screen pixels).
+                // QGraphicsEllipseItem doesn't have a cosmetic flag, so we
+                // set it non-transformable so it stays the same screen size.
+                dot->setFlag(QGraphicsItem::ItemIgnoresTransformations, true);
+                // Reposition to scene coords (setFlag resets pos to item coords).
+                dot->setPos(c);
+                dot->setRect(-kDotR, -kDotR, kDotR * 2, kDotR * 2);
+                sink.add(dot);
+            }
+        }
+    }
+
+    // Shortcut diamond — orange outline, no fill, cosmetic 2px.
+    QPen shortcutPen(kShortcut, 2.0);
+    shortcutPen.setCosmetic(true);
+    constexpr double kDW = 6.0;  // half-width in screen px
 
     for (auto it = entries.cbegin(); it != entries.cend(); ++it) {
         const BrickEntry& e = it.value();
@@ -260,13 +275,14 @@ void SceneBuilder::addElectricCircuits(const core::Map& map) {
                 if (!e.state[idx].hasShortcut) continue;
                 const QPointF c = connWorldPx(*e.brick, e.meta->connections[idx], px);
                 QPolygonF diamond;
-                diamond << QPointF(c.x() - dw, c.y())
-                        << QPointF(c.x(), c.y() - dw)
-                        << QPointF(c.x(), c.y() + dw)
-                        << QPointF(c.x() + dw, c.y());
+                diamond << QPointF(-kDW,    0) << QPointF(0, -kDW)
+                        << QPointF( kDW,    0) << QPointF(0,  kDW)
+                        << QPointF(-kDW,    0);
                 auto* poly = new QGraphicsPolygonItem(diamond);
                 poly->setPen(shortcutPen);
                 poly->setBrush(Qt::NoBrush);
+                poly->setFlag(QGraphicsItem::ItemIgnoresTransformations, true);
+                poly->setPos(c);
                 poly->setZValue(502);
                 sink.add(poly);
             }
