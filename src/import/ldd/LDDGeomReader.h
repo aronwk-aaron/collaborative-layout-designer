@@ -5,7 +5,7 @@
 #include <QByteArray>
 #include <QString>
 
-namespace cld::import {
+namespace bld::import {
 
 // Read LDD's binary `.g` brick-geometry format into a flat triangle
 // list ready for the rasterizer.
@@ -48,4 +48,4 @@ struct LDDGeomReadResult {
 // repaint with the LDD material colour before rasterizing.
 LDDGeomReadResult readLDDGeom(const QByteArray& bytes);
 
-}  // namespace cld::import
+}  // namespace bld::import

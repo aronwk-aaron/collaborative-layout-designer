@@ -6,7 +6,7 @@
 
 #include <QPoint>
 
-namespace cld::core {
+namespace bld::core {
 
 enum class CellIndexType {
     Letters = 0,

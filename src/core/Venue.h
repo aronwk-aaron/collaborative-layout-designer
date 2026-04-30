@@ -7,7 +7,7 @@
 #include <QString>
 #include <QVector>
 
-namespace cld::core {
+namespace bld::core {
 
 enum class EdgeKind {
     Wall,

@@ -9,7 +9,7 @@
 #include <QPushButton>
 #include <QVBoxLayout>
 
-namespace cld::ui {
+namespace bld::ui {
 
 LibraryPathsDialog::LibraryPathsDialog(QStringList initial, QWidget* parent)
     : QDialog(parent) {

@@ -4,7 +4,7 @@
 // anchored labels as child items, and handles snap/grid rendering.
 // Stub header for build hygiene.
 
-namespace cld::rendering {
+namespace bld::rendering {
 
 class MapScene {};
 

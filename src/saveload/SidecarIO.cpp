@@ -11,7 +11,7 @@
 #include <QJsonValue>
 #include <QSaveFile>
 
-namespace cld::saveload {
+namespace bld::saveload {
 
 namespace {
 
@@ -199,7 +199,7 @@ core::Venue decodeVenue(const QJsonObject& o) {
 }
 
 QString sidecarPathFor(const QString& bbmPath) {
-    return bbmPath + QStringLiteral(".cld");
+    return bbmPath + QStringLiteral(".bld");
 }
 
 QByteArray sha256Hex(const QByteArray& bytes) {

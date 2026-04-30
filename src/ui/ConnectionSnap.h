@@ -6,10 +6,10 @@
 
 #include <optional>
 
-namespace cld::core  { class Map; struct Brick; }
-namespace cld::parts { class PartsLibrary; }
+namespace bld::core  { class Map; struct Brick; }
+namespace bld::parts { class PartsLibrary; }
 
-namespace cld::ui {
+namespace bld::ui {
 
 // Master-brick connection snap, matching BlueBrick's getMovedSnapPoint in
 // MapData/LayerBrick.cs.
@@ -76,4 +76,4 @@ ConnectionSnapResult newPartPlacementSnap(
     float   placementOrientation,
     double  thresholdStuds);
 
-}  // namespace cld::ui
+}  // namespace bld::ui

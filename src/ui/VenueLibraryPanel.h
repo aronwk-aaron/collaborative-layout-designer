@@ -12,9 +12,9 @@ class QListWidget;
 class QListWidgetItem;
 class QPushButton;
 
-namespace cld::ui {
+namespace bld::ui {
 
-// Persistent dock panel listing all .cld-venue files in the library folder.
+// Persistent dock panel listing all .bld-venue files in the library folder.
 // Backed by QSettings key "venue/libraryPath" (same as the menu actions used
 // before). Signals:
 //   venueLoadRequested   — user wants to replace the project venue
@@ -63,4 +63,4 @@ private:
     QString      path_;
 };
 
-}  // namespace cld::ui
+}  // namespace bld::ui

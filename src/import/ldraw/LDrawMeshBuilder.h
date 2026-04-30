@@ -9,7 +9,7 @@
 #include <QString>
 #include <QStringList>
 
-namespace cld::import {
+namespace bld::import {
 
 // Bake an entire parsed LDraw / Studio model into one flat triangle
 // mesh, in part-local coords (LDU). Walks every type-1 ref in the
@@ -38,4 +38,4 @@ BakedModel bakeMeshFromLDraw(const LDrawReadResult& src,
                              LDrawMeshLoader& loader,
                              const LDrawPalette& palette);
 
-}  // namespace cld::import
+}  // namespace bld::import

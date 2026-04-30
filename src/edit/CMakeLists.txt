@@ -1,4 +1,4 @@
-add_library(cld_edit STATIC
+add_library(bld_edit STATIC
     EditCommands.cpp
     EditCommands.h
     ModuleCommands.cpp
@@ -23,11 +23,11 @@ add_library(cld_edit STATIC
     Budget.h
 )
 
-target_include_directories(cld_edit PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)
-target_link_libraries(cld_edit
+target_include_directories(bld_edit PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)
+target_link_libraries(bld_edit
     PUBLIC
-        cld_core
-        cld_parts
+        bld_core
+        bld_parts
         Qt6::Core
         Qt6::Widgets     # QUndoCommand lives in QtWidgets
 )

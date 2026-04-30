@@ -5,7 +5,7 @@
 #include <QStringList>
 #include <QTextStream>
 
-namespace cld::import {
+namespace bld::import {
 
 namespace {
 
@@ -216,4 +216,4 @@ geom::Mesh LDrawMeshLoader::loadPart(const QString& datRef, int topColor) {
     return out;
 }
 
-}  // namespace cld::import
+}  // namespace bld::import

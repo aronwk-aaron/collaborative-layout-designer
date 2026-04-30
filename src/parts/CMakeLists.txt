@@ -1,7 +1,7 @@
-add_library(cld_parts STATIC
+add_library(bld_parts STATIC
     PartsLibrary.cpp
     PartsLibrary.h
 )
 
-target_include_directories(cld_parts PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)
-target_link_libraries(cld_parts PUBLIC Qt6::Core Qt6::Gui)
+target_include_directories(bld_parts PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)
+target_link_libraries(bld_parts PUBLIC Qt6::Core Qt6::Gui)

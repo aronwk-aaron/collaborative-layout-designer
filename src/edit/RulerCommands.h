@@ -7,9 +7,9 @@
 #include <optional>
 #include <vector>
 
-namespace cld::core { class Map; }
+namespace bld::core { class Map; }
 
-namespace cld::edit {
+namespace bld::edit {
 
 // Append a ruler item (linear or circular) to a LayerRuler at a given index.
 class AddRulerItemCommand : public QUndoCommand {

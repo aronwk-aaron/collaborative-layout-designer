@@ -32,7 +32,7 @@
 #include <cmath>
 #include <optional>
 
-namespace cld::ui {
+namespace bld::ui {
 
 using detail::kBrickDataLayerIndex;
 using detail::kBrickDataGuid;
@@ -305,7 +305,7 @@ void MapView::applyLiveConnectionSnap() {
     for (const auto& fc : free) {
         const QPointF centerPx = fc.snap->item->scenePos();
         const QPointF centerStuds(centerPx.x() / px, centerPx.y() / px);
-        auto r = ::cld::ui::masterBrickSnap(*map_, parts_, *fc.brick, centerStuds,
+        auto r = ::bld::ui::masterBrickSnap(*map_, parts_, *fc.brick, centerStuds,
                                             fc.connIdx, movingGuids, threshold);
         if (!r.applied) continue;
         const double magSq = r.translationStuds.x() * r.translationStuds.x()
@@ -531,7 +531,7 @@ void MapView::commitDragIfMoved() {
         constexpr double kTieStudsSq = 4.0 * 4.0;
 
         for (const auto& fc : free) {
-            auto r = ::cld::ui::masterBrickSnap(*map_, parts_, *fc.brick, fc.centerStuds,
+            auto r = ::bld::ui::masterBrickSnap(*map_, parts_, *fc.brick, fc.centerStuds,
                                                 fc.connIdx, movingGuids, threshold);
             if (!r.applied) continue;
             const double magSq = r.translationStuds.x() * r.translationStuds.x()
@@ -598,4 +598,4 @@ void MapView::commitDragIfMoved() {
                                               : tr("Moved"), 1500);
 }
 
-}  // namespace cld::ui
+}  // namespace bld::ui

@@ -9,10 +9,10 @@ class QLineEdit;
 class QLabel;
 class QAction;
 
-namespace cld::core  { class Map; }
-namespace cld::parts { class PartsLibrary; }
+namespace bld::core  { class Map; }
+namespace bld::parts { class PartsLibrary; }
 
-namespace cld::ui {
+namespace bld::ui {
 
 class MapView;
 
@@ -48,4 +48,4 @@ private:
     QString filterText() const;
 };
 
-}  // namespace cld::ui
+}  // namespace bld::ui

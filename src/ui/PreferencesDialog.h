@@ -2,7 +2,7 @@
 
 #include <QDialog>
 
-namespace cld::ui {
+namespace bld::ui {
 
 // Preferences dialog — tabbed editor mirroring upstream's
 // PreferencesForm.cs. Persists every value through QSettings so reopening

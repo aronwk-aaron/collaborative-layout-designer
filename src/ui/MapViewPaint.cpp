@@ -28,7 +28,7 @@
 #include <cmath>
 #include <limits>
 
-namespace cld::ui {
+namespace bld::ui {
 
 using detail::kBrickDataGuid;
 using detail::isRulerItem;
@@ -268,4 +268,4 @@ void MapView::refreshSelectionOverlay() {
     ov->setOutlines(std::move(polys));
 }
 
-}  // namespace cld::ui
+}  // namespace bld::ui

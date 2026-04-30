@@ -5,7 +5,7 @@
 #include <QString>
 #include <QStringList>
 
-namespace cld::import {
+namespace bld::import {
 
 // Read-only access to the contents of a `.lif` archive (LEGO Digital
 // Designer's packed asset bundle). LDD's `Assets.lif` contains every
@@ -19,7 +19,7 @@ namespace cld::import {
 // Names are UTF-16BE.
 //
 // Port of JrMasterModelBuilder/LIF-Extractor (GPL-3.0). Same algorithm,
-// rewritten in idiomatic C++/Qt to match the rest of cld_import. The
+// rewritten in idiomatic C++/Qt to match the rest of bld_import. The
 // public surface here intentionally exposes "lookup-by-path" and
 // "extract-to-bytes" rather than the python "extract-everything-to-
 // disk" mode — for our use case we only need a handful of files at a
@@ -73,4 +73,4 @@ private:
     bool parseTableOfContents();
 };
 
-}  // namespace cld::import
+}  // namespace bld::import

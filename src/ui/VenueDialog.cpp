@@ -16,7 +16,7 @@
 
 #include <memory>
 
-namespace cld::ui {
+namespace bld::ui {
 
 namespace {
 const char* kindLabels[] = { "Wall", "Door", "Open" };

@@ -1,4 +1,4 @@
-# Collaborative Layout Designer
+# Brick Layout Designer
 
 > ### ⚠️ AI-assisted ("vibe-coded") project — use at your own risk
 >
@@ -99,7 +99,7 @@ skin on top.
     non-blocking validation warnings.
 
 Forward-compatibility with vanilla BlueBrick 1.9.2 is maintained via a
-sidecar `.bbm.cld` file for the fork-only metadata — vanilla BlueBrick
+sidecar `.bbm.bld` file for the fork-only metadata — vanilla BlueBrick
 reads the `.bbm` normally and ignores the sidecar.
 
 ## Status
@@ -140,7 +140,7 @@ reads the `.bbm` normally and ignores the sidecar.
   LDD `.lxf`/`.lxfml`), covering archive extraction, material mapping,
   missing-component fallbacks.
 - Top-down sprite generation for parts not in BlueBrickParts: inline
-  LDraw primitive rasteriser + [`cld_sprite_gen`](src/app/cld_sprite_gen.cpp)
+  LDraw primitive rasteriser + [`bld_sprite_gen`](src/app/bld_sprite_gen.cpp)
   CLI for batch converting `.ldr` / `.io` / `.lxf` files into BlueBrick-
   compatible PNG/GIF sprites without launching the app.
 
@@ -189,7 +189,7 @@ Requires CMake 3.25+, a C++20 compiler, and Qt 6.7+.
 
 ```sh
 git clone --recurse-submodules <this-repo>
-cd collaborative-layout-designer
+cd brick-layout-designer
 cmake -S . -B build -G Ninja
 cmake --build build
 ```

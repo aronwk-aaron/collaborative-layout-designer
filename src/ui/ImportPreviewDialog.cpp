@@ -15,7 +15,7 @@
 #include <QVBoxLayout>
 #include <QWheelEvent>
 
-namespace cld::ui {
+namespace bld::ui {
 
 namespace {
 
@@ -231,4 +231,4 @@ QString ImportPreviewDialog::partName() const {
     return nameEdit_ ? nameEdit_->text().trimmed() : QString();
 }
 
-}  // namespace cld::ui
+}  // namespace bld::ui

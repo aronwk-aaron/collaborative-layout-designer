@@ -3,9 +3,9 @@
 #include <QByteArray>
 #include <QString>
 
-namespace cld::core { struct Sidecar; }
+namespace bld::core { struct Sidecar; }
 
-namespace cld::saveload {
+namespace bld::saveload {
 
 struct SidecarLoadResult {
     bool ok = false;
@@ -13,7 +13,7 @@ struct SidecarLoadResult {
     bool hashMismatch = false;   // true if the stored hash differs from the current .bbm
 };
 
-// Compute the canonical sidecar path for a .bbm: "foo.bbm" -> "foo.bbm.cld".
+// Compute the canonical sidecar path for a .bbm: "foo.bbm" -> "foo.bbm.bld".
 QString sidecarPathFor(const QString& bbmPath);
 
 // Read the sidecar at `cldPath` and populate `out`. If `bbmBytes` is non-empty,

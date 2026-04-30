@@ -1,4 +1,4 @@
-add_executable(cld_import_tests
+add_executable(bld_import_tests
     LDrawReaderTest.cpp
     LDrawLibraryTest.cpp
     LDrawMeshLoaderTest.cpp
@@ -13,30 +13,30 @@ add_executable(cld_import_tests
     LDrawRasterizeTest.cpp
 )
 
-target_link_libraries(cld_import_tests
+target_link_libraries(bld_import_tests
     PRIVATE
-        cld_import
-        cld_core
+        bld_import
+        bld_core
         GTest::gtest_main
         Qt6::Core
         Qt6::Gui
 )
 
 # Studio/LDD tests construct synthetic ZIPs in temp dirs using Qt's
-# private QZipWriter — same approach the reader side uses. cld_import's
+# private QZipWriter — same approach the reader side uses. bld_import's
 # CMakeLists.txt already located the private header dir and cached it
-# in CLD_QZIPREADER_INCLUDE_DIR; reuse it here so the tests can include
+# in BLD_QZIPREADER_INCLUDE_DIR; reuse it here so the tests can include
 # <private/qzipwriter_p.h>.
-if(CLD_QZIPREADER_INCLUDE_DIR)
-    target_include_directories(cld_import_tests PRIVATE
-        "${CLD_QZIPREADER_INCLUDE_DIR}")
+if(BLD_QZIPREADER_INCLUDE_DIR)
+    target_include_directories(bld_import_tests PRIVATE
+        "${BLD_QZIPREADER_INCLUDE_DIR}")
     get_filename_component(_qtcore_private_parent
-        "${CLD_QZIPREADER_INCLUDE_DIR}" DIRECTORY)
-    target_include_directories(cld_import_tests PRIVATE
+        "${BLD_QZIPREADER_INCLUDE_DIR}" DIRECTORY)
+    target_include_directories(bld_import_tests PRIVATE
         "${_qtcore_private_parent}")
 endif()
 
-gtest_discover_tests(cld_import_tests
+gtest_discover_tests(bld_import_tests
     PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
     DISCOVERY_TIMEOUT 60
 )

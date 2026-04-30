@@ -7,7 +7,7 @@
 
 #include <functional>
 
-namespace cld::import {
+namespace bld::import {
 
 namespace {
 
@@ -203,4 +203,4 @@ int LifReader::extractAll(const QString& destRoot) {
     return written;
 }
 
-}  // namespace cld::import
+}  // namespace bld::import

@@ -12,7 +12,7 @@
 #include <cmath>
 #include <vector>
 
-namespace cld::edit {
+namespace bld::edit {
 
 using core::Brick;
 using core::LayerBrick;
@@ -134,4 +134,4 @@ void rebuildConnectivity(core::Map& map, parts::PartsLibrary& lib) {
     }
 }
 
-}  // namespace cld::edit
+}  // namespace bld::edit

@@ -8,7 +8,7 @@
 #include <QPolygonF>
 #include <QRectF>
 
-namespace cld::ui {
+namespace bld::ui {
 
 // Persistent scene item that paints the selection outline around every
 // currently-selected brick/text/ruler/label/venue. Lives at an enormous
@@ -41,4 +41,4 @@ private:
     QPointF snapPoint_;
 };
 
-}  // namespace cld::ui
+}  // namespace bld::ui

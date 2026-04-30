@@ -9,9 +9,9 @@
 
 #include <vector>
 
-namespace cld::core { class Map; }
+namespace bld::core { class Map; }
 
-namespace cld::edit {
+namespace bld::edit {
 
 // Create a sidecar module grouping the given (layer, guid) pairs. No brick data
 // is mutated — this is pure sidecar bookkeeping. Redo appends to sidecar.modules;

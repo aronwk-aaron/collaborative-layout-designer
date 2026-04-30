@@ -14,7 +14,7 @@
 #include <QBuffer>
 #include <QByteArray>
 
-using namespace cld;
+using namespace bld;
 
 namespace {
 

@@ -6,7 +6,7 @@
 
 #include <QObject>
 
-namespace cld::edit {
+namespace bld::edit {
 
 namespace {
 

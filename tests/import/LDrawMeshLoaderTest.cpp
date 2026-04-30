@@ -8,7 +8,7 @@
 #include <QFile>
 #include <QTemporaryDir>
 
-using namespace cld;
+using namespace bld;
 
 namespace {
 

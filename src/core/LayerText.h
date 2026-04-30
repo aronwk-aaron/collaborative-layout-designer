@@ -6,7 +6,7 @@
 
 #include <vector>
 
-namespace cld::core {
+namespace bld::core {
 
 class LayerText : public Layer {
 public:

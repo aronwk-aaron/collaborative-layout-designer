@@ -1,6 +1,6 @@
 #include "LDrawMeshBuilder.h"
 
-namespace cld::import {
+namespace bld::import {
 
 namespace {
 
@@ -104,4 +104,4 @@ BakedModel bakeMeshFromLDraw(const LDrawReadResult& src,
     return out;
 }
 
-}  // namespace cld::import
+}  // namespace bld::import

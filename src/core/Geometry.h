@@ -1,6 +1,6 @@
 #pragma once
 
-namespace cld::core {
+namespace bld::core {
 
 struct PointMm {
     double x = 0.0;

@@ -18,7 +18,7 @@
 #include <QStandardPaths>
 #include <QStatusBar>
 
-namespace cld::ui {
+namespace bld::ui {
 
 void MainWindow::onManageLibraries() {
     QStringList current;
@@ -69,13 +69,13 @@ QString MainWindow::defaultVendoredPartsRoot() const {
     const QString exeDir = QCoreApplication::applicationDirPath();
     // Probes in preference order:
     //   macOS .app bundle: Contents/MacOS/ → ../Resources/BlueBrickParts/parts
-    //   AppImage: usr/bin/ → ../share/collaborative-layout-designer/parts/BlueBrickParts/parts
+    //   AppImage: usr/bin/ → ../share/brick-layout-designer/parts/BlueBrickParts/parts
     //   Linux tar.gz / Windows zip: <exeDir>/parts/BlueBrickParts/parts
     //   Flat zip variant: <exeDir>/BlueBrickParts/parts
     //   Build-tree fallback (macOS cmake --build): ../../../../parts/BlueBrickParts/parts
     for (const QString& rel : {
              QStringLiteral("/../Resources/BlueBrickParts/parts"),
-             QStringLiteral("/../share/collaborative-layout-designer/parts/BlueBrickParts/parts"),
+             QStringLiteral("/../share/brick-layout-designer/parts/BlueBrickParts/parts"),
              QStringLiteral("/parts/BlueBrickParts/parts"),
              QStringLiteral("/BlueBrickParts/parts"),
              QStringLiteral("/../../../parts/BlueBrickParts/parts") }) {
@@ -126,4 +126,4 @@ void MainWindow::onReloadLibrary() {
             .arg(parts_.partCount()).arg(allPaths.size()), 4000);
 }
 
-}  // namespace cld::ui
+}  // namespace bld::ui

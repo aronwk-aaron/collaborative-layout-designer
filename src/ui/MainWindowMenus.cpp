@@ -70,7 +70,7 @@
 #include <QStatusBar>
 #include <QUndoStack>
 
-namespace cld::ui {
+namespace bld::ui {
 
 void MainWindow::setupMenus() {
     auto* file = menuBar()->addMenu(tr("&File"));
@@ -319,7 +319,7 @@ void MainWindow::setupMenus() {
     //   Select All / Deselect All / Select Path / Group▸ (Group, Ungroup)
     //   Transform▸ (Move Step▸ / Send Back / Bring Front / -- /
     //               Rotation Step▸ / Rotate CW / Rotate CCW)
-    //   Insert▸    (CLD-specific: Add Text, Add Anchored Label)
+    //   Insert▸    (BLD-specific: Add Text, Add Anchored Label)
     //   Preferences
     auto* edit = menuBar()->addMenu(tr("&Edit"));
     undoAct_ = mapView_->undoStack()->createUndoAction(this, tr("&Undo"));
@@ -426,7 +426,7 @@ void MainWindow::setupMenus() {
         mapView_->rotateSelected(static_cast<float>(-mapView_->rotationStepDegrees()));
     });
 
-    // Insert submenu — CLD additions for items BlueBrick doesn't have.
+    // Insert submenu — BLD additions for items BlueBrick doesn't have.
     auto* insertMenu = edit->addMenu(tr("&Insert"));
     auto* addTextAct = insertMenu->addAction(tr("&Text..."));
     addTextAct->setShortcut(QKeySequence(tr("Ctrl+T")));
@@ -584,10 +584,10 @@ void MainWindow::setupMenus() {
     connect(saveSetAct, &QAction::triggered, this, &MainWindow::onSaveSelectionAsSet);
 
     auto* help = menuBar()->addMenu(tr("&Help"));
-    auto* aboutAct = help->addAction(tr("&About CLD..."));
+    auto* aboutAct = help->addAction(tr("&About BLD..."));
     connect(aboutAct, &QAction::triggered, this, &MainWindow::onAbout);
     auto* aboutQtAct = help->addAction(tr("About &Qt..."));
     connect(aboutQtAct, &QAction::triggered, qApp, &QApplication::aboutQt);
 }
 
-}  // namespace cld::ui
+}  // namespace bld::ui

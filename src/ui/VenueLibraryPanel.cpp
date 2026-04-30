@@ -18,7 +18,7 @@
 #include <QVBoxLayout>
 #include <QWidget>
 
-namespace cld::ui {
+namespace bld::ui {
 
 namespace {
 
@@ -38,11 +38,11 @@ QString sanitize(QString n) {
     return n;
 }
 
-QString detailText(const cld::core::Venue& v) {
+QString detailText(const bld::core::Venue& v) {
     const int walls  = static_cast<int>(std::count_if(v.edges.begin(), v.edges.end(),
-        [](const auto& e){ return e.kind == cld::core::EdgeKind::Wall; }));
+        [](const auto& e){ return e.kind == bld::core::EdgeKind::Wall; }));
     const int doors  = static_cast<int>(std::count_if(v.edges.begin(), v.edges.end(),
-        [](const auto& e){ return e.kind == cld::core::EdgeKind::Door; }));
+        [](const auto& e){ return e.kind == bld::core::EdgeKind::Door; }));
     const int obs    = v.obstacles.size();
     const double mW  = v.minWalkwayStuds * 0.8;  // ~mm (8 studs/10mm)
     return QStringLiteral("%1\n%2 wall seg · %3 door · %4 obstacle · walkway ≥ %5 mm")
@@ -66,7 +66,7 @@ VenueLibraryPanel::VenueLibraryPanel(QWidget* parent)
     pathLabel_->setWordWrap(true);
     pathLabel_->setTextInteractionFlags(Qt::TextSelectableByMouse);
     auto* folderBtn = new QPushButton(tr("Folder…"), host);
-    folderBtn->setToolTip(tr("Choose the folder to scan for venue .cld-venue files"));
+    folderBtn->setToolTip(tr("Choose the folder to scan for venue .bld-venue files"));
     auto* refreshBtn = new QPushButton(tr("Refresh"), host);
     headerRow->addWidget(pathLabel_, 1);
     headerRow->addWidget(folderBtn);
@@ -138,7 +138,7 @@ void VenueLibraryPanel::refresh() {
     pathLabel_->setText(path_);
 
     QDir d(path_);
-    const QStringList files = d.entryList({ QStringLiteral("*.cld-venue") },
+    const QStringList files = d.entryList({ QStringLiteral("*.bld-venue") },
                                             QDir::Files, QDir::Name | QDir::IgnoreCase);
     for (const QString& f : files) {
         const QString absPath = d.absoluteFilePath(f);
@@ -174,7 +174,7 @@ void VenueLibraryPanel::saveVenue(const std::optional<core::Venue>& venue) {
         tr("Name for this venue:"), QLineEdit::Normal, defName, &ok);
     if (!ok || raw.trimmed().isEmpty()) return;
 
-    const QString filename = sanitize(raw.trimmed()) + QStringLiteral(".cld-venue");
+    const QString filename = sanitize(raw.trimmed()) + QStringLiteral(".bld-venue");
     const QString target   = QDir(path_).filePath(filename);
 
     if (QFile::exists(target)) {
@@ -245,7 +245,7 @@ void VenueLibraryPanel::onRename() {
         tr("New name:"), QLineEdit::Normal, oldName, &ok);
     if (!ok || raw.trimmed().isEmpty() || sanitize(raw.trimmed()) == oldName) return;
     const QString newPath = QDir(QFileInfo(p).dir()).filePath(
-        sanitize(raw.trimmed()) + QStringLiteral(".cld-venue"));
+        sanitize(raw.trimmed()) + QStringLiteral(".bld-venue"));
     if (QFile::exists(newPath)) {
         QMessageBox::warning(this, tr("Rename venue"),
             tr("\"%1\" already exists.").arg(sanitize(raw.trimmed())));
@@ -289,4 +289,4 @@ QString VenueLibraryPanel::selectedPath() const {
     return item->data(Qt::UserRole).toString();
 }
 
-}  // namespace cld::ui
+}  // namespace bld::ui

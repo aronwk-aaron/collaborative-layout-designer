@@ -53,16 +53,16 @@ constexpr int kChannelTolerance = 8;
 // = 768 px brick = 0.04 % missing already reads as "real change").
 constexpr double kMaxPixelDiffFraction = 0.001;
 
-QString corpusDir()     { return QString::fromUtf8(CLD_BBM_CORPUS_DIR); }
-QString partsLibRoot()  { return QString::fromUtf8(CLD_PARTS_LIBRARY_ROOT); }
-QString goldensDir()    { return QString::fromUtf8(CLD_RENDER_GOLDENS_DIR); }
+QString corpusDir()     { return QString::fromUtf8(BLD_BBM_CORPUS_DIR); }
+QString partsLibRoot()  { return QString::fromUtf8(BLD_PARTS_LIBRARY_ROOT); }
+QString goldensDir()    { return QString::fromUtf8(BLD_RENDER_GOLDENS_DIR); }
 
 class QtFixture : public ::testing::Environment {
 public:
     void SetUp() override {
         if (!app_) {
             static int argc = 1;
-            static char name[] = "cld_rendering_tests";
+            static char name[] = "bld_rendering_tests";
             static char* argv[] = { name, nullptr };
             app_ = new QApplication(argc, argv);
         }
@@ -74,11 +74,11 @@ private:
 ::testing::Environment* const kEnv2 = ::testing::AddGlobalTestEnvironment(new QtFixture());
 
 // Render one .bbm file to an in-memory QImage at the golden resolution.
-QImage renderBbm(const QString& path, cld::parts::PartsLibrary& lib) {
-    auto loaded = cld::saveload::readBbm(path);
+QImage renderBbm(const QString& path, bld::parts::PartsLibrary& lib) {
+    auto loaded = bld::saveload::readBbm(path);
     if (!loaded.ok()) return {};
     QGraphicsScene scene;
-    cld::rendering::SceneBuilder builder(scene, lib);
+    bld::rendering::SceneBuilder builder(scene, lib);
     builder.build(*loaded.map);
     const QRectF bounds = scene.itemsBoundingRect();
     if (bounds.isEmpty()) return {};
@@ -134,7 +134,7 @@ void checkGolden(const QString& bbmPath) {
     const QString stem = QFileInfo(bbmPath).completeBaseName();
     const QString golden = QDir(goldensDir()).filePath(stem + QStringLiteral(".png"));
 
-    cld::parts::PartsLibrary lib;
+    bld::parts::PartsLibrary lib;
     lib.addSearchPath(partsLibRoot());
     ASSERT_GT(lib.scan(), 100) << "parts library didn't load any parts";
 
@@ -182,17 +182,17 @@ void checkGolden(const QString& bbmPath) {
 // (and across Qt minor versions within the same platform) because
 // font hinting, image scaler, and GIF decode all differ. The only
 // environment that can meaningfully enforce them is "the same box
-// the references were captured on". Set CLD_ENABLE_RENDER_GOLDENS=1
+// the references were captured on". Set BLD_ENABLE_RENDER_GOLDENS=1
 // to actually run — CI doesn't, so cross-platform nightly builds
 // don't break every time antialiasing shifts.
 bool goldensEnabled() {
-    return qEnvironmentVariableIsSet("CLD_ENABLE_RENDER_GOLDENS")
-        && !qEnvironmentVariable("CLD_ENABLE_RENDER_GOLDENS").isEmpty()
-        && qEnvironmentVariable("CLD_ENABLE_RENDER_GOLDENS") != QStringLiteral("0");
+    return qEnvironmentVariableIsSet("BLD_ENABLE_RENDER_GOLDENS")
+        && !qEnvironmentVariable("BLD_ENABLE_RENDER_GOLDENS").isEmpty()
+        && qEnvironmentVariable("BLD_ENABLE_RENDER_GOLDENS") != QStringLiteral("0");
 }
 
 TEST(RenderGoldens, TightCorner) {
-    if (!goldensEnabled()) GTEST_SKIP() << "set CLD_ENABLE_RENDER_GOLDENS=1 to run";
+    if (!goldensEnabled()) GTEST_SKIP() << "set BLD_ENABLE_RENDER_GOLDENS=1 to run";
     const QString path = corpusDir() + QStringLiteral("/tight-corner.bbm");
     if (!QFile::exists(path)) GTEST_SKIP() << "tight-corner.bbm missing";
     if (!QDir(partsLibRoot()).exists()) GTEST_SKIP() << "BlueBrickParts submodule missing";
@@ -200,7 +200,7 @@ TEST(RenderGoldens, TightCorner) {
 }
 
 TEST(RenderGoldens, Fordyce2026) {
-    if (!goldensEnabled()) GTEST_SKIP() << "set CLD_ENABLE_RENDER_GOLDENS=1 to run";
+    if (!goldensEnabled()) GTEST_SKIP() << "set BLD_ENABLE_RENDER_GOLDENS=1 to run";
     const QString path = corpusDir() + QStringLiteral("/fordyce-2026.bbm");
     if (!QFile::exists(path)) GTEST_SKIP() << "fordyce-2026.bbm missing";
     if (!QDir(partsLibRoot()).exists()) GTEST_SKIP() << "BlueBrickParts submodule missing";

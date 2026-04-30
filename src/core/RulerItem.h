@@ -9,7 +9,7 @@
 
 #include <vector>
 
-namespace cld::core {
+namespace bld::core {
 
 enum class RulerKind {
     Linear,

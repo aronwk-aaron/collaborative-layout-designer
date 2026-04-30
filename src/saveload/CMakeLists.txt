@@ -1,4 +1,4 @@
-add_library(cld_saveload STATIC
+add_library(bld_saveload STATIC
     XmlPrimitives.cpp
     XmlPrimitives.h
     XmlCanonicalWriter.cpp
@@ -17,4 +17,4 @@ add_library(cld_saveload STATIC
     SetIO.h
 )
 
-target_link_libraries(cld_saveload PUBLIC cld_core Qt6::Core Qt6::Gui)
+target_link_libraries(bld_saveload PUBLIC bld_core Qt6::Core Qt6::Gui)

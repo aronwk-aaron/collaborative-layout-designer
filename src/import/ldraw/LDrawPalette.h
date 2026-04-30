@@ -4,7 +4,7 @@
 #include <QHash>
 #include <QString>
 
-namespace cld::import {
+namespace bld::import {
 
 // LDraw colour code → RGB(A) lookup, populated from LDConfig.ldr in a
 // real LDraw distribution.
@@ -53,4 +53,4 @@ private:
     QHash<int, Entry> entries_;
 };
 
-}  // namespace cld::import
+}  // namespace bld::import

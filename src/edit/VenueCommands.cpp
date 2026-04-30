@@ -5,7 +5,7 @@
 
 #include <QObject>
 
-namespace cld::edit {
+namespace bld::edit {
 
 SetVenueCommand::SetVenueCommand(core::Map& map, std::optional<core::Venue> next,
                                  QUndoCommand* parent)

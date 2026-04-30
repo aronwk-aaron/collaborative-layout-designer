@@ -4,7 +4,7 @@
 #include <QPainter>
 #include <QPen>
 
-namespace cld::ui {
+namespace bld::ui {
 
 SelectionOverlay::SelectionOverlay() {
     setZValue(1e9);
@@ -67,4 +67,4 @@ void SelectionOverlay::setSnapState(bool active, QPointF snapPoint) {
     update();
 }
 
-}  // namespace cld::ui
+}  // namespace bld::ui

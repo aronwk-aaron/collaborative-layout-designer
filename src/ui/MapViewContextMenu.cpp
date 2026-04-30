@@ -28,7 +28,7 @@
 #include <QSet>
 #include <QUndoStack>
 
-namespace cld::ui {
+namespace bld::ui {
 
 using detail::kBrickDataLayerIndex;
 using detail::kBrickDataGuid;
@@ -245,4 +245,4 @@ void MapView::contextMenuEvent(QContextMenuEvent* e) {
     e->accept();
 }
 
-}  // namespace cld::ui
+}  // namespace bld::ui

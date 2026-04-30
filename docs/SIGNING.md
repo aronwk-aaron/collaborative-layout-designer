@@ -80,8 +80,8 @@ RFC-3161 timestamp authority works if you prefer.
 
 After a signed release:
 
-- **macOS**: `codesign -dvv CollaborativeLayoutDesigner.app` and
-  `spctl --assess --verbose=4 CollaborativeLayoutDesigner.app` —
+- **macOS**: `codesign -dvv BrickLayoutDesigner.app` and
+  `spctl --assess --verbose=4 BrickLayoutDesigner.app` —
   should report your team ID and `accepted`.
 - **Windows**: right-click the `.msi` → Properties → Digital
   Signatures → should list your certificate with a valid timestamp.

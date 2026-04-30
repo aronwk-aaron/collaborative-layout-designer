@@ -2,7 +2,7 @@
 
 #include <QString>
 
-namespace cld::core {
+namespace bld::core {
 
 // Opaque representation of a System.Drawing.Font as serialized by vanilla BlueBrick.
 // We preserve the raw family/size/style trio so round-trip writes emit the same XML

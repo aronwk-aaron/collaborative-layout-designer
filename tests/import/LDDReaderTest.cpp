@@ -12,7 +12,7 @@
 
 #include <private/qzipwriter_p.h>
 
-using namespace cld;
+using namespace bld;
 
 namespace {
 

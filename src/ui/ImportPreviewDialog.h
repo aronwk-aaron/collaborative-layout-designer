@@ -11,7 +11,7 @@ class QPlainTextEdit;
 class QLineEdit;
 class QSpinBox;
 
-namespace cld::ui {
+namespace bld::ui {
 
 // Preview dialog shown after parsing + rasterizing an LDraw / Studio /
 // LDD model but BEFORE writing it as a library part. Lets the user
@@ -51,4 +51,4 @@ private:
     QLineEdit*     nameEdit_   = nullptr;
 };
 
-}  // namespace cld::ui
+}  // namespace bld::ui

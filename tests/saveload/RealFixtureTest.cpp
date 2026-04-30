@@ -12,11 +12,11 @@
 #include <QDir>
 #include <QFile>
 
-using namespace cld;
+using namespace bld;
 
 namespace {
 
-QString corpusDir() { return QString::fromUtf8(CLD_BBM_CORPUS_DIR); }
+QString corpusDir() { return QString::fromUtf8(BLD_BBM_CORPUS_DIR); }
 
 bool corpusAvailable() { return QDir(corpusDir()).exists(); }
 

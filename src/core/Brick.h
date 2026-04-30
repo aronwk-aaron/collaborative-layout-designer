@@ -6,7 +6,7 @@
 
 #include <vector>
 
-namespace cld::core {
+namespace bld::core {
 
 // Vanilla <Connexion id="GUID"><LinkedTo>GUID-or-empty</LinkedTo></Connexion>.
 // We preserve the link GUID as a string; rebuilding the in-memory graph against

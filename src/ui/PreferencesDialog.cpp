@@ -31,11 +31,11 @@
 #include <QUrl>
 #include <QVBoxLayout>
 
-#ifndef CLD_NO_QZIPREADER
+#ifndef BLD_NO_QZIPREADER
 #  include <private/qzipreader_p.h>
 #endif
 
-namespace cld::ui {
+namespace bld::ui {
 
 namespace {
 
@@ -345,7 +345,7 @@ QWidget* buildImportTab(QDialog* parent) {
         QNetworkRequest req(QUrl(QStringLiteral(
             "https://library.ldraw.org/library/updates/complete.zip")));
         req.setHeader(QNetworkRequest::UserAgentHeader,
-                      QStringLiteral("Collaborative-Layout-Designer/1.0"));
+                      QStringLiteral("Brick-Layout-Designer/1.0"));
         req.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
                          QNetworkRequest::NoLessSafeRedirectPolicy);
         QNetworkReply* rep = nam->get(req);
@@ -401,7 +401,7 @@ QWidget* buildImportTab(QDialog* parent) {
         // Stage to a temp .zip on disk so QZipReader can mmap it.
         QTemporaryFile tmp(QDir(QStandardPaths::writableLocation(
             QStandardPaths::TempLocation)).filePath(
-                QStringLiteral("cld-ldraw-libXXXXXX.zip")));
+                QStringLiteral("bld-ldraw-libXXXXXX.zip")));
         if (!tmp.open()) {
             dlg.close();
             QMessageBox::warning(w, QObject::tr("Extract failed"),
@@ -411,7 +411,7 @@ QWidget* buildImportTab(QDialog* parent) {
         tmp.write(bytes);
         tmp.flush();
 
-#ifndef CLD_NO_QZIPREADER
+#ifndef BLD_NO_QZIPREADER
         // Per-file extract loop instead of QZipReader::extractAll() so
         // the progress dialog stays alive and cancellable. The LDraw
         // archive has ~20 000 entries; processing one file at a time

@@ -2,7 +2,7 @@
 
 #include <QHash>
 
-namespace cld::import {
+namespace bld::import {
 
 namespace {
 
@@ -136,4 +136,4 @@ bool ldrawColorIsTransparent(int code) {
     return it != t.constEnd() && (*it)->transparent;
 }
 
-}  // namespace cld::import
+}  // namespace bld::import

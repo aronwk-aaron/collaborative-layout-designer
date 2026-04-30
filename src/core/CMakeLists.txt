@@ -1,4 +1,4 @@
-add_library(cld_core STATIC
+add_library(bld_core STATIC
     Map.cpp
     Ids.h
     Geometry.h
@@ -22,5 +22,5 @@ add_library(cld_core STATIC
     Sidecar.h
 )
 
-target_include_directories(cld_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)
-target_link_libraries(cld_core PUBLIC Qt6::Core Qt6::Gui)
+target_include_directories(bld_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)
+target_link_libraries(bld_core PUBLIC Qt6::Core Qt6::Gui)

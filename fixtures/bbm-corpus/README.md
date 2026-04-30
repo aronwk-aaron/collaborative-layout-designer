@@ -24,5 +24,5 @@ appropriate to ship under this repo's GPL-3.0 license.
 
 ## Rendering previews
 
-Each fixture has a PNG preview in `docs/preview/` produced by `cld-render`,
+Each fixture has a PNG preview in `docs/preview/` produced by `bld-render`,
 refreshed manually when the rendering pipeline changes.

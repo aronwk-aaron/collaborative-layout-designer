@@ -30,11 +30,11 @@
 #include <QUrl>
 #include <QVBoxLayout>
 
-#ifndef CLD_NO_QZIPREADER
+#ifndef BLD_NO_QZIPREADER
 #  include <private/qzipreader_p.h>
 #endif
 
-namespace cld::ui {
+namespace bld::ui {
 
 namespace {
 
@@ -138,7 +138,7 @@ QString DownloadCenterDialog::fetchUrl(const QUrl& url, QString* error) {
     // Match BlueBrick's user-agent so servers that filter on UA still
     // serve us a directory listing.
     req.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral(
-        "Mozilla/5.0 (compatible; CLD/1.0; +https://github.com/aronwk/collaborative-layout-designer)"));
+        "Mozilla/5.0 (compatible; BLD/1.0; +https://github.com/brick-layout-designer/brick-layout-designer)"));
     req.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
                      QNetworkRequest::NoLessSafeRedirectPolicy);
     req.setTransferTimeout(kFetchTimeoutMs);
@@ -314,7 +314,7 @@ bool DownloadCenterDialog::downloadAndInstall(const Package& pkg, QString* error
     QNetworkAccessManager nam;
     QNetworkRequest req(QUrl(pkg.sourceUrl));
     req.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral(
-        "Mozilla/5.0 (compatible; CLD/1.0; +https://github.com/aronwk/collaborative-layout-designer)"));
+        "Mozilla/5.0 (compatible; BLD/1.0; +https://github.com/brick-layout-designer/brick-layout-designer)"));
     req.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
                      QNetworkRequest::NoLessSafeRedirectPolicy);
     QNetworkReply* rep = nam.get(req);
@@ -346,7 +346,7 @@ bool DownloadCenterDialog::downloadAndInstall(const Package& pkg, QString* error
 
     QTemporaryFile tmp(QDir(QStandardPaths::writableLocation(
         QStandardPaths::TempLocation)).filePath(
-            QStringLiteral("cld-dlcXXXXXX.zip")));
+            QStringLiteral("bld-dlcXXXXXX.zip")));
     if (!tmp.open()) {
         if (error) *error = tmp.errorString();
         return false;
@@ -354,7 +354,7 @@ bool DownloadCenterDialog::downloadAndInstall(const Package& pkg, QString* error
     tmp.write(bytes);
     tmp.flush();
 
-#ifdef CLD_NO_QZIPREADER
+#ifdef BLD_NO_QZIPREADER
     if (error) *error = tr("This build was compiled without ZIP support.");
     return false;
 #else
@@ -436,4 +436,4 @@ void DownloadCenterDialog::onDownloadClicked() {
     }
 }
 
-}  // namespace cld::ui
+}  // namespace bld::ui

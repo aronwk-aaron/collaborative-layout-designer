@@ -6,7 +6,7 @@
 #include <QPointF>
 #include <QString>
 
-namespace cld::core {
+namespace bld::core {
 
 enum class AnchorKind {
     World,   // offset is in world studs (absolute position)
@@ -16,7 +16,7 @@ enum class AnchorKind {
 };
 
 // Fork-only: text that sticks to its anchor when the anchor moves or rotates.
-// Lives in the .bbm.cld sidecar so vanilla BlueBrick still opens the .bbm
+// Lives in the .bbm.bld sidecar so vanilla BlueBrick still opens the .bbm
 // cleanly (no new element kinds inside the vanilla XML).
 struct AnchoredLabel {
     QString    id;               // sidecar-scope unique identifier (UUID)

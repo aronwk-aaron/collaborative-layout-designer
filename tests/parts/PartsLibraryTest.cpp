@@ -7,13 +7,13 @@
 #include <QImage>
 #include <QString>
 
-using namespace cld;
+using namespace bld;
 
 namespace {
 
 QString libraryRoot() {
-    // CLD_PARTS_LIBRARY_ROOT is set by CMakeLists to the vendored submodule path.
-    return QString::fromUtf8(CLD_PARTS_LIBRARY_ROOT);
+    // BLD_PARTS_LIBRARY_ROOT is set by CMakeLists to the vendored submodule path.
+    return QString::fromUtf8(BLD_PARTS_LIBRARY_ROOT);
 }
 
 bool librarySubmoduleAvailable() {

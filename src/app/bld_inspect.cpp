@@ -14,7 +14,7 @@
 
 #include <cstdio>
 
-using namespace cld;
+using namespace bld;
 
 namespace {
 
@@ -71,7 +71,7 @@ int main(int argc, char** argv) {
     QCoreApplication app(argc, argv);
 
     if (argc < 2) {
-        std::fprintf(stderr, "Usage: cld-inspect <file.bbm>\n");
+        std::fprintf(stderr, "Usage: bld-inspect <file.bbm>\n");
         return 1;
     }
     const QString path = QString::fromUtf8(argv[1]);

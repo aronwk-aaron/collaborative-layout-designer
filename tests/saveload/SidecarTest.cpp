@@ -10,12 +10,12 @@
 #include <QTemporaryDir>
 #include <QUuid>
 
-using namespace cld;
+using namespace bld;
 
 TEST(Sidecar, RoundTripEmptyReports) {
     core::Sidecar sc;
     QTemporaryDir dir;
-    const QString path = dir.filePath("t.bbm.cld");
+    const QString path = dir.filePath("t.bbm.bld");
     const QByteArray bbm = "<dummy bbm>";
     QString err;
     ASSERT_TRUE(saveload::writeSidecar(path, bbm, sc, &err)) << err.toStdString();
@@ -44,7 +44,7 @@ TEST(Sidecar, RoundTripAnchoredLabels) {
     sc.anchoredLabels.push_back(a);
 
     QTemporaryDir dir;
-    const QString path = dir.filePath("a.bbm.cld");
+    const QString path = dir.filePath("a.bbm.bld");
     const QByteArray bbm = "bbm-bytes";
     ASSERT_TRUE(saveload::writeSidecar(path, bbm, sc));
 
@@ -79,7 +79,7 @@ TEST(Sidecar, RoundTripModules) {
     sc.modules.push_back(m);
 
     QTemporaryDir dir;
-    const QString path = dir.filePath("m.bbm.cld");
+    const QString path = dir.filePath("m.bbm.bld");
     const QByteArray bbm = "x";
     ASSERT_TRUE(saveload::writeSidecar(path, bbm, sc));
 
@@ -124,7 +124,7 @@ TEST(Sidecar, RoundTripVenue) {
     sc.venue = v;
 
     QTemporaryDir dir;
-    const QString path = dir.filePath("v.bbm.cld");
+    const QString path = dir.filePath("v.bbm.bld");
     const QByteArray bbm = "y";
     ASSERT_TRUE(saveload::writeSidecar(path, bbm, sc));
 
@@ -147,7 +147,7 @@ TEST(Sidecar, HashMismatchDetected) {
     sc.anchoredLabels.push_back({ .id = QStringLiteral("x"), .text = QStringLiteral("hi") });
 
     QTemporaryDir dir;
-    const QString path = dir.filePath("h.bbm.cld");
+    const QString path = dir.filePath("h.bbm.bld");
     ASSERT_TRUE(saveload::writeSidecar(path, "original bbm bytes", sc));
 
     core::Sidecar back;

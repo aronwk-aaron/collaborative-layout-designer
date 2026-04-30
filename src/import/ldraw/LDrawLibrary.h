@@ -4,7 +4,7 @@
 #include <QString>
 #include <QStringList>
 
-namespace cld::import {
+namespace bld::import {
 
 // Locates and resolves files inside a user-pointed LDraw library.
 //
@@ -71,4 +71,4 @@ private:
     mutable QHash<QString, QString> resolveCache_;
 };
 
-}  // namespace cld::import
+}  // namespace bld::import

@@ -11,7 +11,7 @@
 
 #include <QXmlStreamAttributes>
 
-namespace cld::saveload {
+namespace bld::saveload {
 
 namespace {
 
@@ -501,7 +501,7 @@ void writeLayer(QXmlStreamWriter& w, const core::Layer& layer) {
         case core::LayerKind::Area:  writeLayerArea (w, static_cast<const core::LayerArea&>(layer));  break;
         case core::LayerKind::Ruler: writeLayerRuler(w, static_cast<const core::LayerRuler&>(layer)); break;
         case core::LayerKind::AnchoredText:
-            // Fork-only; serialized in .bbm.cld sidecar, not in the vanilla .bbm.
+            // Fork-only; serialized in .bbm.bld sidecar, not in the vanilla .bbm.
             break;
     }
 }

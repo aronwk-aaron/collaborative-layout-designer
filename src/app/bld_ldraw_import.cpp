@@ -16,13 +16,13 @@ int main(int argc, char** argv) {
     QCoreApplication app(argc, argv);
     if (argc < 3) {
         std::fprintf(stderr,
-            "Usage: cld-ldraw-import <input.ldr> <output.bbm>\n");
+            "Usage: bld-ldraw-import <input.ldr> <output.bbm>\n");
         return 1;
     }
     const QString inPath  = QString::fromLocal8Bit(argv[1]);
     const QString outPath = QString::fromLocal8Bit(argv[2]);
 
-    auto read = cld::import::readLDraw(inPath);
+    auto read = bld::import::readLDraw(inPath);
     if (!read.ok) {
         std::fprintf(stderr, "Parse failed: %s\n", read.error.toUtf8().constData());
         return 2;
@@ -32,13 +32,13 @@ int main(int argc, char** argv) {
                 read.parts.size(),
                 read.title.toUtf8().constData());
 
-    auto map = cld::import::toBlueBrickMap(read);
-    auto r = cld::saveload::writeBbm(*map, outPath);
+    auto map = bld::import::toBlueBrickMap(read);
+    auto r = bld::saveload::writeBbm(*map, outPath);
     if (!r.ok) {
         std::fprintf(stderr, "Write failed: %s\n", r.error.toUtf8().constData());
         return 3;
     }
     std::printf("Wrote %s (%zu bricks)\n", outPath.toUtf8().constData(),
-                static_cast<const cld::core::LayerBrick*>(map->layers()[0].get())->bricks.size());
+                static_cast<const bld::core::LayerBrick*>(map->layers()[0].get())->bricks.size());
     return 0;
 }

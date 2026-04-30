@@ -11,7 +11,7 @@
 #include <memory>
 #include <vector>
 
-namespace cld::core {
+namespace bld::core {
 
 class Layer;
 
@@ -68,7 +68,7 @@ public:
     std::vector<std::unique_ptr<Layer>>&       layers()       { return layers_; }
 
     // Fork-only metadata (anchored labels, modules, venue). Lives alongside the
-    // .bbm in a .bbm.cld sidecar so vanilla BlueBrick still opens the .bbm.
+    // .bbm in a .bbm.bld sidecar so vanilla BlueBrick still opens the .bbm.
     Sidecar sidecar;
 
 private:

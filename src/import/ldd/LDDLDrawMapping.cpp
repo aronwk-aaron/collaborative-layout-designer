@@ -3,7 +3,7 @@
 #include <QFile>
 #include <QXmlStreamReader>
 
-namespace cld::import {
+namespace bld::import {
 
 bool LDDLDrawMapping::loadFromFile(const QString& path) {
     QFile f(path);
@@ -61,4 +61,4 @@ bool LDDLDrawMapping::loadFromFile(const QString& path) {
     return added > 0 && !r.hasError();
 }
 
-}  // namespace cld::import
+}  // namespace bld::import

@@ -4,9 +4,9 @@
 
 class QListWidget;
 
-namespace cld::core { class Map; }
+namespace bld::core { class Map; }
 
-namespace cld::ui {
+namespace bld::ui {
 
 // List of modules (fork-only cross-layer groups). Right-click invokes Delete.
 // moduleDeleteRequested is emitted with the module id so MainWindow can push

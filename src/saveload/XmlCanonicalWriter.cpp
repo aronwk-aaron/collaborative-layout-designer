@@ -1,6 +1,6 @@
 #include "XmlCanonicalWriter.h"
 
-namespace cld::saveload {
+namespace bld::saveload {
 
 XmlCanonicalWriter::XmlCanonicalWriter(QIODevice* device) : writer_(device) {
     writer_.setAutoFormatting(false);

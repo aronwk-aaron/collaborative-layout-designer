@@ -3,7 +3,7 @@
 #include <QFile>
 #include <QXmlStreamReader>
 
-namespace cld::import {
+namespace bld::import {
 
 namespace {
 
@@ -49,4 +49,4 @@ bool LDDMaterials::loadFromBytes(const QByteArray& bytes) {
     return parseFromReader(r, colors_);
 }
 
-}  // namespace cld::import
+}  // namespace bld::import

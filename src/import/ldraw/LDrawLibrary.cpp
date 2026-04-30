@@ -3,7 +3,7 @@
 #include <QDir>
 #include <QFileInfo>
 
-namespace cld::import {
+namespace bld::import {
 
 LDrawLibrary::LDrawLibrary(QString root) : root_(std::move(root)) {}
 
@@ -116,4 +116,4 @@ QString LDrawLibrary::resolve(const QString& filename) const {
     return saveAndReturn(QString());
 }
 
-}  // namespace cld::import
+}  // namespace bld::import

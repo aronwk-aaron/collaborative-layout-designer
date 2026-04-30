@@ -10,7 +10,7 @@ regression.
 
 ## Opt-in — not default
 
-The `RenderGoldens.*` tests **skip unless `CLD_ENABLE_RENDER_GOLDENS=1`**
+The `RenderGoldens.*` tests **skip unless `BLD_ENABLE_RENDER_GOLDENS=1`**
 is set in the environment when you run `ctest`. Cross-environment
 pixel parity is essentially impossible — Qt versions, font hinting,
 Mesa/ANGLE versions, GIF decoders all drift enough that an 8/255
@@ -20,7 +20,7 @@ Linux/Windows/macOS (or even across Qt 6.7 → 6.10 on the same box).
 Treat them as a local regression gate:
 
 ```sh
-CLD_ENABLE_RENDER_GOLDENS=1 ctest --test-dir build -R RenderGoldens
+BLD_ENABLE_RENDER_GOLDENS=1 ctest --test-dir build -R RenderGoldens
 ```
 
 Run the goldens on the same machine you'll regenerate them on. If
@@ -46,7 +46,7 @@ to launch BlueBrick.exe under wine / Proton-GE:
 4. Save as `fixtures/render-goldens/tight-corner.png` (overwriting
    the current self-captured PNG).
 5. Repeat for every `.bbm` under `fixtures/bbm-corpus/`.
-6. Run `CLD_ENABLE_RENDER_GOLDENS=1 ctest -R RenderGoldens` — any
+6. Run `BLD_ENABLE_RENDER_GOLDENS=1 ctest -R RenderGoldens` — any
    failures now represent a real parity gap.
 
 See [`../../scripts/capture-render-goldens.sh`](../../scripts/capture-render-goldens.sh)

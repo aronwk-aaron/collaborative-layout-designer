@@ -7,7 +7,7 @@
 #include <functional>
 #include <random>
 
-namespace cld::core {
+namespace bld::core {
 
 // Vanilla BlueBrick stores every item GUID (layer ids, brick ids, group ids,
 // ruler ids, connection point ids) as a decimal-formatted 64-bit unsigned
@@ -64,9 +64,9 @@ using ModuleId = Id<ModuleTag>;
 
 namespace std {
 template <class Tag>
-struct hash<cld::core::Id<Tag>> {
-    size_t operator()(const cld::core::Id<Tag>& id) const noexcept {
-        return hash<typename cld::core::Id<Tag>::Value>{}(id.value());
+struct hash<bld::core::Id<Tag>> {
+    size_t operator()(const bld::core::Id<Tag>& id) const noexcept {
+        return hash<typename bld::core::Id<Tag>::Value>{}(id.value());
     }
 };
 }

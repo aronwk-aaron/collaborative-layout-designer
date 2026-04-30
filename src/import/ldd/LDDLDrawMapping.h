@@ -3,7 +3,7 @@
 #include <QHash>
 #include <QString>
 
-namespace cld::import {
+namespace bld::import {
 
 // Parses LEGO Digital Designer's `ldraw.xml` — the rosetta-stone file
 // that maps LDD design IDs and material IDs to LDraw equivalents. With
@@ -66,4 +66,4 @@ private:
     QHash<QString, Transformation> transformations_;  // "X.dat" → correction
 };
 
-}  // namespace cld::import
+}  // namespace bld::import

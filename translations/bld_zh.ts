@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!DOCTYPE TS>
-<TS version="2.1" language="es">
+<TS version="2.1" language="zh">
 <context>
     <name>QObject</name>
     <message>
@@ -649,7 +649,7 @@
     <message>
         <location filename="../src/ui/PreferencesDialog.cpp" line="248"/>
         <source>Remove</source>
-        <translation>Quitar</translation>
+        <translation>移除</translation>
     </message>
     <message>
         <location filename="../src/ui/PreferencesDialog.cpp" line="252"/>
@@ -689,11 +689,11 @@
     <message>
         <location filename="../src/ui/VenueDimensionsDialog.cpp" line="137"/>
         <source>Open</source>
-        <translation>Abrir</translation>
+        <translation>打开</translation>
     </message>
 </context>
 <context>
-    <name>cld::ui::BudgetDialog</name>
+    <name>bld::ui::BudgetDialog</name>
     <message>
         <location filename="../src/ui/BudgetDialog.cpp" line="35"/>
         <source>Budget</source>
@@ -784,7 +784,7 @@
     </message>
 </context>
 <context>
-    <name>cld::ui::FindDialog</name>
+    <name>bld::ui::FindDialog</name>
     <message>
         <location filename="../src/ui/FindDialog.cpp" line="29"/>
         <source>Find &amp;&amp; Replace</source>
@@ -838,15 +838,15 @@
     <message>
         <location filename="../src/ui/FindDialog.cpp" line="55"/>
         <source>Close</source>
-        <translation>Cerrar</translation>
+        <translation>关闭</translation>
     </message>
 </context>
 <context>
-    <name>cld::ui::LayerPanel</name>
+    <name>bld::ui::LayerPanel</name>
     <message>
         <location filename="../src/ui/LayerPanel.cpp" line="51"/>
         <source>Layers</source>
-        <translation>Capas</translation>
+        <translation>图层</translation>
     </message>
     <message>
         <location filename="../src/ui/LayerPanel.cpp" line="59"/>
@@ -1005,7 +1005,7 @@
     </message>
 </context>
 <context>
-    <name>cld::ui::LibraryPathsDialog</name>
+    <name>bld::ui::LibraryPathsDialog</name>
     <message>
         <location filename="../src/ui/LibraryPathsDialog.cpp" line="16"/>
         <source>Parts Library Paths</source>
@@ -1024,7 +1024,7 @@
     <message>
         <location filename="../src/ui/LibraryPathsDialog.cpp" line="34"/>
         <source>Remove</source>
-        <translation>Quitar</translation>
+        <translation>移除</translation>
     </message>
     <message>
         <location filename="../src/ui/LibraryPathsDialog.cpp" line="35"/>
@@ -1043,7 +1043,7 @@
     </message>
 </context>
 <context>
-    <name>cld::ui::MainWindow</name>
+    <name>bld::ui::MainWindow</name>
     <message>
         <location filename="../src/ui/MainWindow.cpp" line="142"/>
         <location filename="../src/ui/MainWindow.cpp" line="228"/>
@@ -1152,7 +1152,7 @@ existing cells at their old indexing — paint over to clean up.</source>
         <location filename="../src/ui/MainWindow.cpp" line="871"/>
         <location filename="../src/ui/MainWindow.cpp" line="935"/>
         <source>Module name:</source>
-        <translation>Nombre del módulo:</translation>
+        <translation>模块名称:</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindow.cpp" line="379"/>
@@ -1379,13 +1379,13 @@ Target path:
         <location filename="../src/ui/MainWindow.cpp" line="901"/>
         <location filename="../src/ui/MainWindow.cpp" line="994"/>
         <source>Select one or more bricks first.</source>
-        <translation>Seleccione primero una o más piezas.</translation>
+        <translation>请先选择一个或多个零件。</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindow.cpp" line="872"/>
         <location filename="../src/ui/MainWindow.cpp" line="936"/>
         <source>New Module</source>
-        <translation>Nuevo módulo</translation>
+        <translation>新建模块</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindow.cpp" line="876"/>
@@ -1396,12 +1396,12 @@ Target path:
         <location filename="../src/ui/MainWindow.cpp" line="900"/>
         <location filename="../src/ui/MainWindow.cpp" line="935"/>
         <source>Save module</source>
-        <translation>Guardar módulo</translation>
+        <translation>保存模块</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindow.cpp" line="949"/>
         <source>Save selection as module</source>
-        <translation>Guardar selección como módulo</translation>
+        <translation>将选区保存为模块</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindow.cpp" line="951"/>
@@ -1413,7 +1413,7 @@ Target path:
     <message>
         <location filename="../src/ui/MainWindow.cpp" line="957"/>
         <source>Save module failed</source>
-        <translation>No se pudo guardar el módulo</translation>
+        <translation>保存模块失败</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindow.cpp" line="960"/>
@@ -1424,22 +1424,22 @@ Target path:
         <location filename="../src/ui/MainWindow.cpp" line="993"/>
         <location filename="../src/ui/MainWindow.cpp" line="1031"/>
         <source>Save set</source>
-        <translation>Guardar set</translation>
+        <translation>保存套件</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindow.cpp" line="1031"/>
         <source>Set name:</source>
-        <translation>Nombre del set:</translation>
+        <translation>套件名称:</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindow.cpp" line="1032"/>
         <source>New Set</source>
-        <translation>Nuevo set</translation>
+        <translation>新建套件</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindow.cpp" line="1057"/>
         <source>Save selection as set</source>
-        <translation>Guardar selección como set</translation>
+        <translation>将选区保存为套件</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindow.cpp" line="1059"/>
@@ -1449,7 +1449,7 @@ Target path:
     <message>
         <location filename="../src/ui/MainWindow.cpp" line="1070"/>
         <source>Save set failed</source>
-        <translation>No se pudo guardar el set</translation>
+        <translation>保存套件失败</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindow.cpp" line="1074"/>
@@ -1494,7 +1494,7 @@ Target path:
     </message>
     <message>
         <location filename="../src/ui/MainWindowFileIO.cpp" line="62"/>
-        <source>%1%2 — Collaborative Layout Designer</source>
+        <source>%1%2 — Brick Layout Designer</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -1625,12 +1625,12 @@ Target path:
     </message>
     <message>
         <location filename="../src/ui/MainWindowFileIO.cpp" line="278"/>
-        <source>About Collaborative Layout Designer</source>
+        <source>About Brick Layout Designer</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowFileIO.cpp" line="279"/>
-        <source>&lt;h3&gt;Collaborative Layout Designer&lt;/h3&gt;&lt;p&gt;Cross-platform C++/Qt 6 fork of &lt;b&gt;BlueBrick&lt;/b&gt; by Alban Nanty and contributors.&lt;/p&gt;&lt;p&gt;Adds cross-layer modules, anchored text labels, and event venues on top of the vanilla &lt;i&gt;.bbm&lt;/i&gt; format (extra metadata stored in a sidecar &lt;i&gt;.bbm.cld&lt;/i&gt; so vanilla BlueBrick 1.9.2 keeps opening our files).&lt;/p&gt;&lt;p&gt;Licensed under GPL-3.0 — same as upstream BlueBrick.&lt;/p&gt;&lt;p&gt;Parts library: %1 parts indexed.&lt;/p&gt;</source>
+        <source>&lt;h3&gt;Brick Layout Designer&lt;/h3&gt;&lt;p&gt;Cross-platform C++/Qt 6 fork of &lt;b&gt;BlueBrick&lt;/b&gt; by Alban Nanty and contributors.&lt;/p&gt;&lt;p&gt;Adds cross-layer modules, anchored text labels, and event venues on top of the vanilla &lt;i&gt;.bbm&lt;/i&gt; format (extra metadata stored in a sidecar &lt;i&gt;.bbm.bld&lt;/i&gt; so vanilla BlueBrick 1.9.2 keeps opening our files).&lt;/p&gt;&lt;p&gt;Licensed under GPL-3.0 — same as upstream BlueBrick.&lt;/p&gt;&lt;p&gt;Parts library: %1 parts indexed.&lt;/p&gt;</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -1696,12 +1696,12 @@ Restore it?</source>
     <message>
         <location filename="../src/ui/MainWindowMapMenu.cpp" line="47"/>
         <source>&amp;Map</source>
-        <translation>&amp;Mapa</translation>
+        <translation>地图(&amp;M)</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMapMenu.cpp" line="48"/>
         <source>Background &amp;Colour...</source>
-        <translation>Color de &amp;fondo...</translation>
+        <translation>背景颜色(&amp;C)...</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMapMenu.cpp" line="53"/>
@@ -1711,7 +1711,7 @@ Restore it?</source>
     <message>
         <location filename="../src/ui/MainWindowMapMenu.cpp" line="61"/>
         <source>General &amp;Info...</source>
-        <translation>&amp;Información general...</translation>
+        <translation>常规信息(&amp;I)...</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMapMenu.cpp" line="66"/>
@@ -1746,12 +1746,12 @@ Restore it?</source>
     <message>
         <location filename="../src/ui/MainWindowMapMenu.cpp" line="92"/>
         <source>&amp;Venue</source>
-        <translation>&amp;Lugar</translation>
+        <translation>场地(&amp;V)</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMapMenu.cpp" line="93"/>
         <source>Draw &amp;Outline...</source>
-        <translation>Dibujar &amp;contorno...</translation>
+        <translation>绘制轮廓(&amp;O)...</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMapMenu.cpp" line="94"/>
@@ -1766,7 +1766,7 @@ Restore it?</source>
     <message>
         <location filename="../src/ui/MainWindowMapMenu.cpp" line="103"/>
         <source>Draw Outline by &amp;Dimensions...</source>
-        <translation>Dibujar por &amp;dimensiones...</translation>
+        <translation>按尺寸绘制轮廓(&amp;D)...</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMapMenu.cpp" line="104"/>
@@ -1781,7 +1781,7 @@ Restore it?</source>
     <message>
         <location filename="../src/ui/MainWindowMapMenu.cpp" line="134"/>
         <source>Add &amp;Obstacle...</source>
-        <translation>Añadir &amp;obstáculo...</translation>
+        <translation>添加障碍物(&amp;O)...</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMapMenu.cpp" line="135"/>
@@ -1806,12 +1806,12 @@ Restore it?</source>
     <message>
         <location filename="../src/ui/MainWindowMapMenu.cpp" line="148"/>
         <source>&amp;Edit Venue Properties...</source>
-        <translation>&amp;Editar propiedades del lugar...</translation>
+        <translation>编辑场地属性(&amp;E)...</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMapMenu.cpp" line="161"/>
         <source>&amp;Clear Venue</source>
-        <translation>&amp;Borrar lugar</translation>
+        <translation>清除场地(&amp;C)</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMapMenu.cpp" line="165"/>
@@ -1921,38 +1921,38 @@ Restore it?</source>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMapMenu.cpp" line="271"/>
-        <source>Venue (*.cld-venue);;All files (*)</source>
+        <source>Venue (*.bld-venue);;All files (*)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="74"/>
         <source>&amp;File</source>
-        <translation>&amp;Archivo</translation>
+        <translation>文件(&amp;F)</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="75"/>
         <source>&amp;New</source>
-        <translation>&amp;Nuevo</translation>
+        <translation>新建(&amp;N)</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="79"/>
         <source>&amp;Open...</source>
-        <translation>&amp;Abrir...</translation>
+        <translation>打开(&amp;O)...</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="83"/>
         <source>Open &amp;Recent</source>
-        <translation>&amp;Recientes</translation>
+        <translation>最近文件(&amp;R)</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="86"/>
         <source>&amp;Save</source>
-        <translation>&amp;Guardar</translation>
+        <translation>保存(&amp;S)</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="90"/>
         <source>Save &amp;As...</source>
-        <translation>Guardar &amp;como...</translation>
+        <translation>另存为(&amp;A)...</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="95"/>
@@ -2074,22 +2074,22 @@ Restore it?</source>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="253"/>
         <source>&amp;Edit</source>
-        <translation>&amp;Edición</translation>
+        <translation>编辑(&amp;E)</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="254"/>
         <source>&amp;Undo</source>
-        <translation>&amp;Deshacer</translation>
+        <translation>撤销(&amp;U)</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="257"/>
         <source>&amp;Redo</source>
-        <translation>&amp;Rehacer</translation>
+        <translation>重做(&amp;R)</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="261"/>
         <source>&amp;Delete</source>
-        <translation>&amp;Eliminar</translation>
+        <translation>删除(&amp;D)</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="264"/>
@@ -2109,22 +2109,22 @@ Restore it?</source>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="276"/>
         <source>Cu&amp;t</source>
-        <translation>Cor&amp;tar</translation>
+        <translation>剪切(&amp;T)</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="280"/>
         <source>&amp;Copy</source>
-        <translation>&amp;Copiar</translation>
+        <translation>复制(&amp;C)</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="284"/>
         <source>&amp;Paste</source>
-        <translation>&amp;Pegar</translation>
+        <translation>粘贴(&amp;P)</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="288"/>
         <source>&amp;Duplicate</source>
-        <translation>&amp;Duplicar</translation>
+        <translation>复制一份(&amp;D)</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="289"/>
@@ -2134,7 +2134,7 @@ Restore it?</source>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="293"/>
         <source>Select &amp;All</source>
-        <translation>Seleccionar &amp;todo</translation>
+        <translation>全选(&amp;A)</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="297"/>
@@ -2149,7 +2149,7 @@ Restore it?</source>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="301"/>
         <source>&amp;Find &amp;&amp; Replace...</source>
-        <translation>&amp;Buscar y reemplazar...</translation>
+        <translation>查找和替换(&amp;F)...</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="309"/>
@@ -2270,22 +2270,22 @@ Restore it?</source>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="392"/>
         <source>&amp;View</source>
-        <translation>&amp;Ver</translation>
+        <translation>视图(&amp;V)</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="393"/>
         <source>Zoom &amp;In</source>
-        <translation>A&amp;cercar</translation>
+        <translation>放大(&amp;I)</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="397"/>
         <source>Zoom &amp;Out</source>
-        <translation>&amp;Alejar</translation>
+        <translation>缩小(&amp;O)</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="401"/>
         <source>&amp;Fit to View</source>
-        <translation>&amp;Ajustar a la vista</translation>
+        <translation>适合视图(&amp;F)</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="413"/>
@@ -2325,7 +2325,7 @@ Restore it?</source>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="448"/>
         <source>&amp;Electric Circuits</source>
-        <translation>Circuitos &amp;eléctricos</translation>
+        <translation>电路(&amp;E)</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="449"/>
@@ -2335,37 +2335,37 @@ Restore it?</source>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="450"/>
         <source>Ruler Attach P&amp;oints</source>
-        <translation>Puntos de anclaje de regla</translation>
+        <translation>标尺锚点</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="451"/>
         <source>&amp;Watermark</source>
-        <translation>Marca de &amp;agua</translation>
+        <translation>水印(&amp;W)</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="452"/>
         <source>Brick &amp;Hulls</source>
-        <translation>Contornos de piezas</translation>
+        <translation>零件轮廓</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="453"/>
         <source>Brick E&amp;levation Labels</source>
-        <translation>Etiquetas de altura</translation>
+        <translation>高度标签</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="454"/>
         <source>&amp;Module Names</source>
-        <translation>Nombres de &amp;módulos</translation>
+        <translation>模块名称(&amp;M)</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="464"/>
         <source>&amp;Layers</source>
-        <translation>&amp;Capas</translation>
+        <translation>图层(&amp;L)</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="466"/>
         <source>&amp;Budget</source>
-        <translation>&amp;Presupuesto</translation>
+        <translation>预算(&amp;B)</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="467"/>
@@ -2375,27 +2375,27 @@ Restore it?</source>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="475"/>
         <source>&amp;Modules</source>
-        <translation>&amp;Módulos</translation>
+        <translation>模块(&amp;M)</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="476"/>
         <source>Create from &amp;Selection...</source>
-        <translation>Crear desde la &amp;selección...</translation>
+        <translation>从选区创建(&amp;S)...</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="478"/>
         <source>&amp;Import .bbm as Module...</source>
-        <translation>Importar .bbm como módulo...</translation>
+        <translation>将 .bbm 作为模块导入...</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="480"/>
         <source>&amp;Save Selection as Module...</source>
-        <translation>&amp;Guardar selección como módulo...</translation>
+        <translation>将选区保存为模块(&amp;S)...</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="482"/>
         <source>Save Selection as &amp;Set...</source>
-        <translation>Guardar selección como &amp;set...</translation>
+        <translation>将选区保存为套件(&amp;S)...</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="483"/>
@@ -2405,37 +2405,37 @@ Restore it?</source>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="487"/>
         <source>&amp;Help</source>
-        <translation>A&amp;yuda</translation>
+        <translation>帮助(&amp;H)</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="488"/>
-        <source>&amp;About CLD...</source>
-        <translation>&amp;Acerca de CLD...</translation>
+        <source>&amp;About BLD...</source>
+        <translation>关于 BLD(&amp;A)...</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="490"/>
         <source>About &amp;Qt...</source>
-        <translation>Acerca de &amp;Qt...</translation>
+        <translation>关于 &amp;Qt...</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowToolsMenu.cpp" line="51"/>
         <source>&amp;Tools</source>
-        <translation>&amp;Herramientas</translation>
+        <translation>工具(&amp;T)</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowToolsMenu.cpp" line="52"/>
         <source>Manage Parts &amp;Libraries...</source>
-        <translation>Administrar &amp;bibliotecas de piezas...</translation>
+        <translation>管理零件库(&amp;L)...</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowToolsMenu.cpp" line="54"/>
         <source>&amp;Reload Parts Library</source>
-        <translation>&amp;Recargar biblioteca de piezas</translation>
+        <translation>重新加载零件库(&amp;R)</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowToolsMenu.cpp" line="58"/>
         <source>&amp;Import</source>
-        <translation>&amp;Importar</translation>
+        <translation>导入(&amp;I)</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowToolsMenu.cpp" line="71"/>
@@ -2525,16 +2525,16 @@ Restore it?</source>
     <message>
         <location filename="../src/ui/MainWindowToolsMenu.cpp" line="226"/>
         <source>Export &amp;Part List (CSV)...</source>
-        <translation>Exportar &amp;lista de piezas (CSV)...</translation>
+        <translation>导出零件清单 (CSV)(&amp;P)...</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowToolsMenu.cpp" line="229"/>
         <source>&amp;Preferences...</source>
-        <translation>&amp;Preferencias...</translation>
+        <translation>偏好设置(&amp;P)...</translation>
     </message>
 </context>
 <context>
-    <name>cld::ui::MapView</name>
+    <name>bld::ui::MapView</name>
     <message>
         <location filename="../src/ui/MapView.cpp" line="435"/>
         <source>Ruler length: %1 studs  (%2)</source>
@@ -2697,7 +2697,7 @@ Restore it?</source>
     <message>
         <location filename="../src/ui/MapViewContextMenu.cpp" line="178"/>
         <source>Delete</source>
-        <translation>Eliminar</translation>
+        <translation>删除</translation>
     </message>
     <message>
         <location filename="../src/ui/MapViewContextMenu.cpp" line="186"/>
@@ -2776,11 +2776,11 @@ Restore it?</source>
     </message>
 </context>
 <context>
-    <name>cld::ui::ModuleLibraryPanel</name>
+    <name>bld::ui::ModuleLibraryPanel</name>
     <message>
         <location filename="../src/ui/ModuleLibraryPanel.cpp" line="48"/>
         <source>Module Library</source>
-        <translation>Biblioteca de módulos</translation>
+        <translation>模块库</translation>
     </message>
     <message>
         <location filename="../src/ui/ModuleLibraryPanel.cpp" line="58"/>
@@ -2795,7 +2795,7 @@ Restore it?</source>
     <message>
         <location filename="../src/ui/ModuleLibraryPanel.cpp" line="60"/>
         <source>Refresh</source>
-        <translation>Actualizar</translation>
+        <translation>刷新</translation>
     </message>
     <message>
         <location filename="../src/ui/ModuleLibraryPanel.cpp" line="88"/>
@@ -2819,16 +2819,16 @@ Restore it?</source>
     </message>
 </context>
 <context>
-    <name>cld::ui::ModulesPanel</name>
+    <name>bld::ui::ModulesPanel</name>
     <message>
         <location filename="../src/ui/ModulesPanel.cpp" line="24"/>
         <source>Modules</source>
-        <translation>Módulos</translation>
+        <translation>模块</translation>
     </message>
     <message>
         <location filename="../src/ui/ModulesPanel.cpp" line="32"/>
         <source>Create</source>
-        <translation>Crear</translation>
+        <translation>创建</translation>
     </message>
     <message>
         <location filename="../src/ui/ModulesPanel.cpp" line="33"/>
@@ -2858,7 +2858,7 @@ Restore it?</source>
     <message>
         <location filename="../src/ui/ModulesPanel.cpp" line="39"/>
         <source>Delete</source>
-        <translation>Eliminar</translation>
+        <translation>删除</translation>
     </message>
     <message>
         <location filename="../src/ui/ModulesPanel.cpp" line="40"/>
@@ -2942,11 +2942,11 @@ Restore it?</source>
     </message>
 </context>
 <context>
-    <name>cld::ui::PartUsagePanel</name>
+    <name>bld::ui::PartUsagePanel</name>
     <message>
         <location filename="../src/ui/PartUsagePanel.cpp" line="52"/>
         <source>Used Parts</source>
-        <translation>Piezas utilizadas</translation>
+        <translation>已用零件</translation>
     </message>
     <message>
         <location filename="../src/ui/PartUsagePanel.cpp" line="62"/>
@@ -3000,11 +3000,11 @@ Restore it?</source>
     </message>
 </context>
 <context>
-    <name>cld::ui::PartsBrowser</name>
+    <name>bld::ui::PartsBrowser</name>
     <message>
         <location filename="../src/ui/PartsBrowser.cpp" line="97"/>
         <source>Parts</source>
-        <translation>Piezas</translation>
+        <translation>零件</translation>
     </message>
     <message>
         <location filename="../src/ui/PartsBrowser.cpp" line="108"/>
@@ -3033,7 +3033,7 @@ Restore it?</source>
     </message>
 </context>
 <context>
-    <name>cld::ui::PreferencesDialog</name>
+    <name>bld::ui::PreferencesDialog</name>
     <message>
         <location filename="../src/ui/PreferencesDialog.cpp" line="275"/>
         <source>Preferences</source>
@@ -3061,7 +3061,7 @@ Restore it?</source>
     </message>
 </context>
 <context>
-    <name>cld::ui::VenueDialog</name>
+    <name>bld::ui::VenueDialog</name>
     <message>
         <location filename="../src/ui/VenueDialog.cpp" line="27"/>
         <source>Venue</source>
@@ -3139,7 +3139,7 @@ Restore it?</source>
     </message>
 </context>
 <context>
-    <name>cld::ui::VenueDimensionsDialog</name>
+    <name>bld::ui::VenueDimensionsDialog</name>
     <message>
         <location filename="../src/ui/VenueDimensionsDialog.cpp" line="75"/>
         <source>Draw venue outline by dimensions</source>

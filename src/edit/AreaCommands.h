@@ -6,9 +6,9 @@
 #include <optional>
 #include <vector>
 
-namespace cld::core { class Map; }
+namespace bld::core { class Map; }
 
-namespace cld::edit {
+namespace bld::edit {
 
 // Paint or erase one or more cells on a LayerArea in a single undoable step.
 // Each entry either sets the cell colour (newColor has value) or erases it

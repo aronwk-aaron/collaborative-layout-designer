@@ -6,9 +6,9 @@
 
 #include <memory>
 
-namespace cld::core { class Layer; }
+namespace bld::core { class Layer; }
 
-namespace cld::saveload {
+namespace bld::saveload {
 
 struct LayerReadOutcome {
     std::unique_ptr<core::Layer> layer;

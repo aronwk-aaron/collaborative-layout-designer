@@ -4,7 +4,7 @@
 
 #include <QString>
 
-namespace cld::core {
+namespace bld::core {
 
 // Vanilla upstream <Group id="GUID"><PartNumber/><MyGroup/></Group>.
 // Groups are written after all items in a layer, as a flat <Groups> list,

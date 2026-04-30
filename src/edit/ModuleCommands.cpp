@@ -12,7 +12,7 @@
 
 #include <cmath>
 
-namespace cld::edit {
+namespace bld::edit {
 
 namespace {
 

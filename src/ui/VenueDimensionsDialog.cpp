@@ -16,7 +16,7 @@
 
 #include <cmath>
 
-namespace cld::ui {
+namespace bld::ui {
 namespace {
 // Compass presets for the Angle column. Users can still type any custom
 // numeric value (the combobox is editable) — these just make the common
@@ -69,7 +69,7 @@ double readAngleFromCombo(QComboBox* c) {
 }
 }
 
-namespace cld::ui {
+namespace bld::ui {
 
 VenueDimensionsDialog::VenueDimensionsDialog(QWidget* parent) : QDialog(parent) {
     setWindowTitle(tr("Draw venue outline by dimensions"));

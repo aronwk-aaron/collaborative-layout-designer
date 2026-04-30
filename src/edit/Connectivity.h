@@ -7,10 +7,10 @@
 // leaves stale linkedToId values and the snap / display logic sees
 // connections as "linked" when they're actually free.
 
-namespace cld::core  { class Map; }
-namespace cld::parts { class PartsLibrary; }
+namespace bld::core  { class Map; }
+namespace bld::parts { class PartsLibrary; }
 
-namespace cld::edit {
+namespace bld::edit {
 
 // Walk every brick, verify every linkedToId against the partner brick's
 // current world connection position, and both:
@@ -21,4 +21,4 @@ namespace cld::edit {
 // Tolerance is 0.5 studs (quarter of a brick unit).
 void rebuildConnectivity(core::Map& map, parts::PartsLibrary& lib);
 
-}  // namespace cld::edit
+}  // namespace bld::edit

@@ -13,7 +13,7 @@
 #include <QSaveFile>
 #include <QXmlStreamWriter>
 
-namespace cld::saveload {
+namespace bld::saveload {
 
 namespace {
 

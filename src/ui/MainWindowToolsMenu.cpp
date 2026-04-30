@@ -61,7 +61,7 @@
 #include <cmath>
 #include <memory>
 
-namespace cld::ui {
+namespace bld::ui {
 
 void MainWindow::setupToolsMenu() {
     auto* tools = menuBar()->addMenu(tr("&Tools"));
@@ -578,4 +578,4 @@ void MainWindow::setupToolsMenu() {
     // Preferences moved to Edit menu (BlueBrick parity).
 }
 
-}  // namespace cld::ui
+}  // namespace bld::ui

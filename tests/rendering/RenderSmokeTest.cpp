@@ -19,7 +19,7 @@ public:
     void SetUp() override {
         if (!app_) {
             static int argc = 1;
-            static char name[] = "cld_rendering_tests";
+            static char name[] = "bld_rendering_tests";
             static char* argv[] = { name, nullptr };
             app_ = new QApplication(argc, argv);
         }
@@ -31,8 +31,8 @@ private:
 
 ::testing::Environment* const kEnv = ::testing::AddGlobalTestEnvironment(new QtFixture());
 
-QString corpusDir()     { return QString::fromUtf8(CLD_BBM_CORPUS_DIR); }
-QString partsLibRoot()  { return QString::fromUtf8(CLD_PARTS_LIBRARY_ROOT); }
+QString corpusDir()     { return QString::fromUtf8(BLD_BBM_CORPUS_DIR); }
+QString partsLibRoot()  { return QString::fromUtf8(BLD_PARTS_LIBRARY_ROOT); }
 
 }
 
@@ -41,15 +41,15 @@ TEST(RenderSmoke, LoadAndRasterizeTightCorner) {
     if (!QFile::exists(path)) GTEST_SKIP() << "tight-corner.bbm missing";
     if (!QDir(partsLibRoot()).exists()) GTEST_SKIP() << "BlueBrickParts submodule missing";
 
-    cld::parts::PartsLibrary lib;
+    bld::parts::PartsLibrary lib;
     lib.addSearchPath(partsLibRoot());
     ASSERT_GT(lib.scan(), 100);
 
-    auto loaded = cld::saveload::readBbm(path);
+    auto loaded = bld::saveload::readBbm(path);
     ASSERT_TRUE(loaded.ok()) << loaded.error.toStdString();
 
     QGraphicsScene scene;
-    cld::rendering::SceneBuilder builder(scene, lib);
+    bld::rendering::SceneBuilder builder(scene, lib);
     builder.build(*loaded.map);
 
     const QRectF bounds = scene.itemsBoundingRect();
@@ -80,15 +80,15 @@ TEST(RenderSmoke, LayerVisibilityToggle) {
     if (!QFile::exists(path)) GTEST_SKIP();
     if (!QDir(partsLibRoot()).exists()) GTEST_SKIP();
 
-    cld::parts::PartsLibrary lib;
+    bld::parts::PartsLibrary lib;
     lib.addSearchPath(partsLibRoot());
     lib.scan();
 
-    auto loaded = cld::saveload::readBbm(path);
+    auto loaded = bld::saveload::readBbm(path);
     ASSERT_TRUE(loaded.ok());
 
     QGraphicsScene scene;
-    cld::rendering::SceneBuilder builder(scene, lib);
+    bld::rendering::SceneBuilder builder(scene, lib);
     builder.build(*loaded.map);
 
     EXPECT_TRUE(builder.setLayerVisible(0, false));

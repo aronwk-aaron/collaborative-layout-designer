@@ -5,7 +5,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 
-namespace cld::saveload {
+namespace bld::saveload {
 
 namespace {
 
@@ -25,7 +25,7 @@ QPointF decodePoint(const QJsonObject& o) {
 
 bool writeVenueFile(const QString& path, const core::Venue& v, QString* errOut) {
     QJsonObject root;
-    root[QStringLiteral("schema")] = QStringLiteral("cld-venue/1");
+    root[QStringLiteral("schema")] = QStringLiteral("bld-venue/1");
     root[QStringLiteral("name")] = v.name;
     root[QStringLiteral("enabled")] = v.enabled;
     root[QStringLiteral("minWalkwayStuds")] = v.minWalkwayStuds;

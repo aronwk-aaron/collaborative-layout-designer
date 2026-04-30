@@ -9,7 +9,7 @@
 #include <QTemporaryDir>
 #include <cstdlib>
 
-using namespace cld;
+using namespace bld;
 
 TEST(LDDMaterials, ParsesBasicEntries) {
     import::LDDMaterials m;
@@ -39,8 +39,8 @@ TEST(LDDMaterials, AlphaDefaultsTo255WhenAbsent) {
 }
 
 TEST(LDDMaterials, RealLDDFileSmoke) {
-    const char* env = std::getenv("CLD_LDD_MATERIALS_XML");
-    if (!env || !*env) GTEST_SKIP() << "CLD_LDD_MATERIALS_XML not set";
+    const char* env = std::getenv("BLD_LDD_MATERIALS_XML");
+    if (!env || !*env) GTEST_SKIP() << "BLD_LDD_MATERIALS_XML not set";
     if (!QFileInfo::exists(QString::fromLocal8Bit(env)))
         GTEST_SKIP() << "no file at " << env;
 

@@ -693,7 +693,7 @@
     </message>
 </context>
 <context>
-    <name>cld::ui::BudgetDialog</name>
+    <name>bld::ui::BudgetDialog</name>
     <message>
         <location filename="../src/ui/BudgetDialog.cpp" line="35"/>
         <source>Budget</source>
@@ -784,7 +784,7 @@
     </message>
 </context>
 <context>
-    <name>cld::ui::FindDialog</name>
+    <name>bld::ui::FindDialog</name>
     <message>
         <location filename="../src/ui/FindDialog.cpp" line="29"/>
         <source>Find &amp;&amp; Replace</source>
@@ -842,7 +842,7 @@
     </message>
 </context>
 <context>
-    <name>cld::ui::LayerPanel</name>
+    <name>bld::ui::LayerPanel</name>
     <message>
         <location filename="../src/ui/LayerPanel.cpp" line="51"/>
         <source>Layers</source>
@@ -1005,7 +1005,7 @@
     </message>
 </context>
 <context>
-    <name>cld::ui::LibraryPathsDialog</name>
+    <name>bld::ui::LibraryPathsDialog</name>
     <message>
         <location filename="../src/ui/LibraryPathsDialog.cpp" line="16"/>
         <source>Parts Library Paths</source>
@@ -1043,7 +1043,7 @@
     </message>
 </context>
 <context>
-    <name>cld::ui::MainWindow</name>
+    <name>bld::ui::MainWindow</name>
     <message>
         <location filename="../src/ui/MainWindow.cpp" line="142"/>
         <location filename="../src/ui/MainWindow.cpp" line="228"/>
@@ -1494,7 +1494,7 @@ Target path:
     </message>
     <message>
         <location filename="../src/ui/MainWindowFileIO.cpp" line="62"/>
-        <source>%1%2 — Collaborative Layout Designer</source>
+        <source>%1%2 — Brick Layout Designer</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -1625,12 +1625,12 @@ Target path:
     </message>
     <message>
         <location filename="../src/ui/MainWindowFileIO.cpp" line="278"/>
-        <source>About Collaborative Layout Designer</source>
+        <source>About Brick Layout Designer</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowFileIO.cpp" line="279"/>
-        <source>&lt;h3&gt;Collaborative Layout Designer&lt;/h3&gt;&lt;p&gt;Cross-platform C++/Qt 6 fork of &lt;b&gt;BlueBrick&lt;/b&gt; by Alban Nanty and contributors.&lt;/p&gt;&lt;p&gt;Adds cross-layer modules, anchored text labels, and event venues on top of the vanilla &lt;i&gt;.bbm&lt;/i&gt; format (extra metadata stored in a sidecar &lt;i&gt;.bbm.cld&lt;/i&gt; so vanilla BlueBrick 1.9.2 keeps opening our files).&lt;/p&gt;&lt;p&gt;Licensed under GPL-3.0 — same as upstream BlueBrick.&lt;/p&gt;&lt;p&gt;Parts library: %1 parts indexed.&lt;/p&gt;</source>
+        <source>&lt;h3&gt;Brick Layout Designer&lt;/h3&gt;&lt;p&gt;Cross-platform C++/Qt 6 fork of &lt;b&gt;BlueBrick&lt;/b&gt; by Alban Nanty and contributors.&lt;/p&gt;&lt;p&gt;Adds cross-layer modules, anchored text labels, and event venues on top of the vanilla &lt;i&gt;.bbm&lt;/i&gt; format (extra metadata stored in a sidecar &lt;i&gt;.bbm.bld&lt;/i&gt; so vanilla BlueBrick 1.9.2 keeps opening our files).&lt;/p&gt;&lt;p&gt;Licensed under GPL-3.0 — same as upstream BlueBrick.&lt;/p&gt;&lt;p&gt;Parts library: %1 parts indexed.&lt;/p&gt;</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -1921,7 +1921,7 @@ Restore it?</source>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMapMenu.cpp" line="271"/>
-        <source>Venue (*.cld-venue);;All files (*)</source>
+        <source>Venue (*.bld-venue);;All files (*)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -2409,8 +2409,8 @@ Restore it?</source>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="488"/>
-        <source>&amp;About CLD...</source>
-        <translation>&amp;Informazioni su CLD...</translation>
+        <source>&amp;About BLD...</source>
+        <translation>&amp;Informazioni su BLD...</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="490"/>
@@ -2534,7 +2534,7 @@ Restore it?</source>
     </message>
 </context>
 <context>
-    <name>cld::ui::MapView</name>
+    <name>bld::ui::MapView</name>
     <message>
         <location filename="../src/ui/MapView.cpp" line="435"/>
         <source>Ruler length: %1 studs  (%2)</source>
@@ -2776,7 +2776,7 @@ Restore it?</source>
     </message>
 </context>
 <context>
-    <name>cld::ui::ModuleLibraryPanel</name>
+    <name>bld::ui::ModuleLibraryPanel</name>
     <message>
         <location filename="../src/ui/ModuleLibraryPanel.cpp" line="48"/>
         <source>Module Library</source>
@@ -2819,7 +2819,7 @@ Restore it?</source>
     </message>
 </context>
 <context>
-    <name>cld::ui::ModulesPanel</name>
+    <name>bld::ui::ModulesPanel</name>
     <message>
         <location filename="../src/ui/ModulesPanel.cpp" line="24"/>
         <source>Modules</source>
@@ -2942,7 +2942,7 @@ Restore it?</source>
     </message>
 </context>
 <context>
-    <name>cld::ui::PartUsagePanel</name>
+    <name>bld::ui::PartUsagePanel</name>
     <message>
         <location filename="../src/ui/PartUsagePanel.cpp" line="52"/>
         <source>Used Parts</source>
@@ -3000,7 +3000,7 @@ Restore it?</source>
     </message>
 </context>
 <context>
-    <name>cld::ui::PartsBrowser</name>
+    <name>bld::ui::PartsBrowser</name>
     <message>
         <location filename="../src/ui/PartsBrowser.cpp" line="97"/>
         <source>Parts</source>
@@ -3033,7 +3033,7 @@ Restore it?</source>
     </message>
 </context>
 <context>
-    <name>cld::ui::PreferencesDialog</name>
+    <name>bld::ui::PreferencesDialog</name>
     <message>
         <location filename="../src/ui/PreferencesDialog.cpp" line="275"/>
         <source>Preferences</source>
@@ -3061,7 +3061,7 @@ Restore it?</source>
     </message>
 </context>
 <context>
-    <name>cld::ui::VenueDialog</name>
+    <name>bld::ui::VenueDialog</name>
     <message>
         <location filename="../src/ui/VenueDialog.cpp" line="27"/>
         <source>Venue</source>
@@ -3139,7 +3139,7 @@ Restore it?</source>
     </message>
 </context>
 <context>
-    <name>cld::ui::VenueDimensionsDialog</name>
+    <name>bld::ui::VenueDimensionsDialog</name>
     <message>
         <location filename="../src/ui/VenueDimensionsDialog.cpp" line="75"/>
         <source>Draw venue outline by dimensions</source>

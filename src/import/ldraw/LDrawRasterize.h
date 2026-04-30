@@ -4,7 +4,7 @@
 
 #include <QImage>
 
-namespace cld::import {
+namespace bld::import {
 
 // Top-down rasterize every primitive (type 2 / 3 / 4) in `src` onto a
 // QImage at the supplied `pxPerStud` resolution. LDraw's Y axis is up;
@@ -29,4 +29,4 @@ QImage rasterizeTopDown(const LDrawReadResult& src,
                         double pxPerStud = 8.0,
                         int marginPx = 4);
 
-}  // namespace cld::import
+}  // namespace bld::import

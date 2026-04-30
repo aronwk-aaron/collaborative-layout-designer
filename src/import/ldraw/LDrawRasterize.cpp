@@ -11,7 +11,7 @@
 #include <cmath>
 #include <limits>
 
-namespace cld::import {
+namespace bld::import {
 
 namespace {
 
@@ -107,4 +107,4 @@ QImage rasterizeTopDown(const LDrawReadResult& src,
     return img;
 }
 
-}  // namespace cld::import
+}  // namespace bld::import

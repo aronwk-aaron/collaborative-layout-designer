@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Launch vanilla BlueBrick 1.9.2.0 under wine / Proton-GE against a .bbm
 # from this fork. Used for the forward-compat manual check — verify a
-# file written by CLD still opens cleanly in vanilla.
+# file written by BLD still opens cleanly in vanilla.
 #
 # Prereqs:
 #   - BlueBrick 1.9.2.0 installed somewhere on disk (point BLUEBRICK_EXE

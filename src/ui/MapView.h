@@ -18,11 +18,11 @@ class QGraphicsItem;
 class QGraphicsPixmapItem;
 class QUndoStack;
 
-namespace cld::core    { class Map; }
-namespace cld::parts   { class PartsLibrary; }
-namespace cld::rendering { class SceneBuilder; }
+namespace bld::core    { class Map; }
+namespace bld::parts   { class PartsLibrary; }
+namespace bld::rendering { class SceneBuilder; }
 
-namespace cld::ui {
+namespace bld::ui {
 
 class SelectionOverlay;
 

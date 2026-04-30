@@ -11,9 +11,9 @@
 
 #include <vector>
 
-namespace cld::core { class Layer; class LayerBrick; class Map; }
+namespace bld::core { class Layer; class LayerBrick; class Map; }
 
-namespace cld::edit {
+namespace bld::edit {
 
 // Identity for a brick in the edit pipeline: (layer index, brick guid).
 // Layer index + guid is stable across vector reshuffles (unlike raw pointers)

@@ -9,7 +9,7 @@
 #include <QTemporaryDir>
 #include <cstdlib>
 
-using namespace cld;
+using namespace bld;
 
 TEST(LifReader, RejectsNonLifMagic) {
     QTemporaryDir tmp;
@@ -39,12 +39,12 @@ TEST(LifReader, RejectsTruncatedHeader) {
 }
 
 // End-to-end smoke test against a real Assets.lif. Skipped unless the
-// CLD_LDD_ASSETS_LIF env var points at a valid file — the assets are
+// BLD_LDD_ASSETS_LIF env var points at a valid file — the assets are
 // proprietary and can't be checked in. To run locally:
-//   CLD_LDD_ASSETS_LIF=/path/to/Assets.lif ctest -R LifReader.RealAssetsSmoke
+//   BLD_LDD_ASSETS_LIF=/path/to/Assets.lif ctest -R LifReader.RealAssetsSmoke
 TEST(LifReader, RealAssetsSmoke) {
-    const char* env = std::getenv("CLD_LDD_ASSETS_LIF");
-    if (!env || !*env) GTEST_SKIP() << "CLD_LDD_ASSETS_LIF not set";
+    const char* env = std::getenv("BLD_LDD_ASSETS_LIF");
+    if (!env || !*env) GTEST_SKIP() << "BLD_LDD_ASSETS_LIF not set";
     const QString path = QString::fromLocal8Bit(env);
     if (!QFileInfo::exists(path)) GTEST_SKIP() << "no file at " << env;
 

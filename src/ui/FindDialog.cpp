@@ -22,7 +22,7 @@
 #include <QUndoStack>
 #include <QVBoxLayout>
 
-namespace cld::ui {
+namespace bld::ui {
 
 FindDialog::FindDialog(MapView& view, QWidget* parent)
     : QDialog(parent), view_(view) {

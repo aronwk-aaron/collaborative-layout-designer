@@ -10,7 +10,7 @@
 #include <cmath>
 #include <limits>
 
-namespace cld::ui {
+namespace bld::ui {
 
 namespace {
 
@@ -155,4 +155,4 @@ ConnectionSnapResult newPartPlacementSnap(
     return best;
 }
 
-}  // namespace cld::ui
+}  // namespace bld::ui

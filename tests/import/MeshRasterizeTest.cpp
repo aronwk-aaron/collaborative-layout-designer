@@ -6,7 +6,7 @@
 #include <QColor>
 #include <QImage>
 
-using namespace cld;
+using namespace bld;
 
 TEST(MeshRasterize, EmptyMeshReturnsNullImage) {
     geom::Mesh m;

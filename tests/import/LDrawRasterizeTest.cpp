@@ -14,7 +14,7 @@
 #include <QTemporaryDir>
 #include <QTextStream>
 
-using namespace cld;
+using namespace bld;
 
 namespace {
 
@@ -26,7 +26,7 @@ public:
     void SetUp() override {
         if (!app_) {
             static int argc = 1;
-            static char name[] = "cld_import_tests";
+            static char name[] = "bld_import_tests";
             static char* argv[] = { name, nullptr };
             qputenv("QT_QPA_PLATFORM", "offscreen");
             app_ = new QGuiApplication(argc, argv);

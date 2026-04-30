@@ -1,4 +1,4 @@
-# Translating Collaborative Layout Designer
+# Translating Brick Layout Designer
 
 ## Languages we ship
 
@@ -25,10 +25,10 @@ for the translation dictionary — edit that file and rerun the script
 to extend coverage; the seeded strings are a starting point, not a
 finished product.
 
-Each language has a `translations/cld_<code>.ts` file checked in.
+Each language has a `translations/bld_<code>.ts` file checked in.
 Running `lupdate` populates the file with every `tr()` call from the
 source; translators fill in the `<translation>` bodies; CMake runs
-`lrelease` at build time to produce `cld_<code>.qm` bundled next to the
+`lrelease` at build time to produce `bld_<code>.qm` bundled next to the
 binary.
 
 ## Workflow — running `lupdate`
@@ -38,7 +38,7 @@ From the repo root:
 ```sh
 # Populate / refresh every language's .ts file from source
 for lang in fr de es it nl pt zh ja; do
-    lupdate -recursive src -ts translations/cld_${lang}.ts
+    lupdate -recursive src -ts translations/bld_${lang}.ts
 done
 ```
 
@@ -62,7 +62,7 @@ Qt writes it — `&amp;File` etc) to the target translation. Running:
 python3 scripts/apply-translations.py
 ```
 
-walks every `translations/cld_<lang>.ts`, substitutes the
+walks every `translations/bld_<lang>.ts`, substitutes the
 `<translation>` body for any source appearing in `TRANS[<lang>]`, and
 strips `type="unfinished"`. Missing sources stay unfinished so Qt
 falls back to English at runtime.
@@ -75,7 +75,7 @@ relevant language block inside `TRANS` in that script and rerun it.
 Option A — **Qt Linguist (GUI):**
 
 ```sh
-linguist translations/cld_fr.ts
+linguist translations/bld_fr.ts
 ```
 
 Opens a three-pane editor: source string → translation → context.
@@ -128,9 +128,9 @@ finds them at runtime.
 
 ## Adding a new language
 
-1. Add the ISO 639-1 code to `CLD_LANGUAGES` in the root
+1. Add the ISO 639-1 code to `BLD_LANGUAGES` in the root
    `CMakeLists.txt`.
-2. Create `translations/cld_<code>.ts` as an empty TS (copy an
+2. Create `translations/bld_<code>.ts` as an empty TS (copy an
    existing stub, change the `language="..."` attribute).
 3. Run `lupdate` to populate it (see above).
 4. Add the language option to `PreferencesDialog`'s language combo.
@@ -145,8 +145,8 @@ and start over:
 ```sh
 # Clear one
 echo '<?xml version="1.0" encoding="utf-8"?><!DOCTYPE TS>
-<TS version="2.1" language="fr"><context><name>CollaborativeLayoutDesigner</name></context></TS>' > translations/cld_fr.ts
+<TS version="2.1" language="fr"><context><name>BrickLayoutDesigner</name></context></TS>' > translations/bld_fr.ts
 
 # Repopulate
-lupdate -recursive src -ts translations/cld_fr.ts
+lupdate -recursive src -ts translations/bld_fr.ts
 ```

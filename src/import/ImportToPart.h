@@ -4,9 +4,9 @@
 #include <QString>
 #include <QVector>
 
-namespace cld::parts { class PartsLibrary; }
+namespace bld::parts { class PartsLibrary; }
 
-namespace cld::import {
+namespace bld::import {
 
 // Write a single BlueBrick part (GIF + XML pair) that represents an
 // imported LDraw / Studio / LDD model as a flat top-down sprite.
@@ -51,4 +51,4 @@ QString writeImportedModelAsLibraryPart(
     const QVector<ImportedConnection>& connections,
     QString*       error = nullptr);
 
-}  // namespace cld::import
+}  // namespace bld::import

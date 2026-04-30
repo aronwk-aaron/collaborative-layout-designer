@@ -11,7 +11,7 @@
 
   The .bbm file is the byte-faithful vanilla format. Fork-only
   metadata (AnchoredLabel / Module / Venue) lives in the sibling
-  `.bbm.cld` sidecar and is NOT part of this schema.
+  `.bbm.bld` sidecar and is NOT part of this schema.
 -->
 <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
            elementFormDefault="unqualified">
@@ -332,7 +332,7 @@
   </xs:complexType>
 
   <!-- Groups: per-layer same-layer grouping (separate from cross-layer
-       Modules which live in the .bbm.cld sidecar). -->
+       Modules which live in the .bbm.bld sidecar). -->
   <xs:complexType name="GroupsContainer">
     <xs:sequence>
       <xs:element name="Group" minOccurs="0" maxOccurs="unbounded">

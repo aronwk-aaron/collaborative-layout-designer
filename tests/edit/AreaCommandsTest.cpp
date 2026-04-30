@@ -6,7 +6,7 @@
 
 #include <QUndoStack>
 
-using namespace cld;
+using namespace bld;
 
 namespace {
 

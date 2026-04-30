@@ -1,11 +1,11 @@
-# `.bbm.cld` sidecar — fork-only metadata
+# `.bbm.bld` sidecar — fork-only metadata
 
 Companion doc to [bbm-schema.md](bbm-schema.md) (the vanilla `.bbm` format).
-This file documents the **`.bbm.cld` sidecar**: where fork-only constructs
+This file documents the **`.bbm.bld` sidecar**: where fork-only constructs
 (cross-layer modules, anchored text labels, event venues) live so that
 vanilla BlueBrick 1.9.2 can still open the `.bbm` cleanly.
 
-The formal schema is in [bbm-cld-schema.json](bbm-cld-schema.json) (JSON
+The formal schema is in [bbm-bld-schema.json](bbm-bld-schema.json) (JSON
 Schema draft-07). This document is the prose reference.
 
 ## Why a sidecar
@@ -15,7 +15,7 @@ BlueBrick's XML deserializer. So we split the save:
 
 - `foo.bbm` — pure vanilla XML. Byte-faithful with upstream 1.9.2
   (data version 9). See [bbm-schema.md](bbm-schema.md).
-- `foo.bbm.cld` — JSON, ignored by vanilla. Holds everything vanilla
+- `foo.bbm.bld` — JSON, ignored by vanilla. Holds everything vanilla
   doesn't know about.
 
 On save, we *also* forward-project the fork-only metadata into the
@@ -102,7 +102,7 @@ On load we recompute the current `.bbm` hash and compare:
 On `.bbm` save, every `AnchoredLabel` with `kind != World` gets flattened
 to a `<TextCell>` at its CURRENT resolved world position (target position
 + rotated offset). Vanilla reads that text cell and renders it where we
-last saw it. When *this* fork re-loads the `.bbm.cld`, we throw away
+last saw it. When *this* fork re-loads the `.bbm.bld`, we throw away
 the flattened world position and use the sidecar target+offset to
 recompute the live position — so the label tracks its anchor as the
 anchor moves.
@@ -205,15 +205,15 @@ None. Vanilla has no venue concept, so the venue lives in the sidecar
 exclusively. A `.bbm` from a project with a venue, opened in vanilla,
 shows the bricks and a blank background where the venue would be.
 
-## Standalone `.cld-venue`
+## Standalone `.bld-venue`
 
-Venues can be exported / imported as standalone `.cld-venue` files so
+Venues can be exported / imported as standalone `.bld-venue` files so
 users can share templates across projects. Format:
 
 ```json
 {
   "schemaVersion": 1,
-  "venue": { ... same shape as the .bbm.cld venue ... }
+  "venue": { ... same shape as the .bbm.bld venue ... }
 }
 ```
 
@@ -232,10 +232,10 @@ files.
 - **`.bbm` byte-faithful** — vanilla BlueBrick opens any `.bbm` this
   fork writes, identically to what vanilla itself would write for the
   same data. Enforced by the round-trip test suite against a corpus.
-- **`.bbm.cld` not byte-stable** — JSON key order, whitespace, and
+- **`.bbm.bld` not byte-stable** — JSON key order, whitespace, and
   number-format details are not guaranteed stable across writes. The
   *content* round-trips losslessly; the bytes do not. Sidecar hashing
-  is done against the `.bbm`, not the `.bbm.cld` itself.
+  is done against the `.bbm`, not the `.bbm.bld` itself.
 
 ## Open questions / future work
 

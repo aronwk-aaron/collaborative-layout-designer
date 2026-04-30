@@ -6,7 +6,7 @@
 
 #include <optional>
 
-namespace cld::ui {
+namespace bld::ui {
 
 // Properties editor for the project's single venue. Name, walkway width,
 // enabled toggle, per-edge kind (wall/door/open) + label, obstacle list.

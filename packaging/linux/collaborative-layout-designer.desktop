@@ -1,12 +1,12 @@
 [Desktop Entry]
 Type=Application
-Name=Collaborative Layout Designer
+Name=Brick Layout Designer
 GenericName=LEGO Layout Designer
-Comment=Cross-platform maintainer fork of BlueBrick — design collaborative LEGO train layouts
-Exec=collaborative-layout-designer %f
-Icon=collaborative-layout-designer
+Comment=Cross-platform maintainer fork of BlueBrick — design LEGO train layouts
+Exec=brick-layout-designer %f
+Icon=brick-layout-designer
 Categories=Graphics;Engineering;
 Terminal=false
-MimeType=application/x-bluebrick-map;application/x-bluebrick-cld-venue;
-StartupWMClass=collaborative-layout-designer
+MimeType=application/x-bluebrick-map;application/x-bluebrick-bld-venue;
+StartupWMClass=brick-layout-designer
 Keywords=lego;bluebrick;train;track;layout;

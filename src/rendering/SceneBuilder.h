@@ -8,10 +8,10 @@
 class QGraphicsItem;
 class QGraphicsScene;
 
-namespace cld::core { class Layer; class Map; }
-namespace cld::parts { class PartsLibrary; }
+namespace bld::core { class Layer; class Map; }
+namespace bld::parts { class PartsLibrary; }
 
-namespace cld::rendering {
+namespace bld::rendering {
 
 // Populates a QGraphicsScene with items for each layer of a core::Map.
 // Scene units: 1 stud = 8 pixels (matches BlueBrickParts GIF sampling).

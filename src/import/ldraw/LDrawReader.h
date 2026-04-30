@@ -5,9 +5,9 @@
 #include <memory>
 #include <vector>
 
-namespace cld::core { class Map; }
+namespace bld::core { class Map; }
 
-namespace cld::import {
+namespace bld::import {
 
 // One type-1 LDraw subfile reference parsed out of a .ldr / .dat / .mpd file.
 // LDraw axes: Y is up, Z is the "forward" axis. We store the raw fields as

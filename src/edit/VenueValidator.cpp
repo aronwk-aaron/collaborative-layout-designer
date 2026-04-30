@@ -9,7 +9,7 @@
 
 #include <cmath>
 
-namespace cld::edit {
+namespace bld::edit {
 
 namespace {
 
@@ -167,4 +167,4 @@ QVector<VenueViolation> validateVenue(const core::Map& map) {
     return out;
 }
 
-}  // namespace cld::edit
+}  // namespace bld::edit

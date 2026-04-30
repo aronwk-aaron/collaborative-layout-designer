@@ -10,7 +10,7 @@
 #include <cstdlib>
 #include <cstring>
 
-using namespace cld;
+using namespace bld;
 
 namespace {
 
@@ -85,10 +85,10 @@ TEST(LDDGeomReader, RejectsIndexOutOfRange) {
 
 // Smoke test against a real .g shipped with LU or LDD. Gated by env
 // var so CI without those installs skips. Run locally via:
-//   CLD_LDD_GEOM_FILE=/path/to/3001.g ctest -R LDDGeomReader.RealFile
+//   BLD_LDD_GEOM_FILE=/path/to/3001.g ctest -R LDDGeomReader.RealFile
 TEST(LDDGeomReader, RealFile) {
-    const char* env = std::getenv("CLD_LDD_GEOM_FILE");
-    if (!env || !*env) GTEST_SKIP() << "CLD_LDD_GEOM_FILE not set";
+    const char* env = std::getenv("BLD_LDD_GEOM_FILE");
+    if (!env || !*env) GTEST_SKIP() << "BLD_LDD_GEOM_FILE not set";
     if (!QFileInfo::exists(QString::fromLocal8Bit(env)))
         GTEST_SKIP() << "no file at " << env;
 

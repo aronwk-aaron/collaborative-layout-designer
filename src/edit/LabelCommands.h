@@ -5,9 +5,9 @@
 #include <QUndoCommand>
 #include <QString>
 
-namespace cld::core { class Map; }
+namespace bld::core { class Map; }
 
-namespace cld::edit {
+namespace bld::edit {
 
 // Append an AnchoredLabel to sidecar.anchoredLabels. Redo pushes; undo removes
 // by matching id. Label's id is expected to be unique within the sidecar.

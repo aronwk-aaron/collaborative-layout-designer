@@ -6,11 +6,11 @@
 #include <QTextStream>
 #include <QXmlStreamReader>
 
-#ifndef CLD_NO_QZIPREADER
+#ifndef BLD_NO_QZIPREADER
 #  include <private/qzipreader_p.h>
 #endif
 
-namespace cld::import {
+namespace bld::import {
 
 namespace {
 
@@ -18,7 +18,7 @@ namespace {
 // archive root with the filename `LXFML` (no extension). Falls back to
 // any `.lxfml` file on mismatch.
 QByteArray extractLxfmlFromLxf(const QString& path, QString* err) {
-#ifdef CLD_NO_QZIPREADER
+#ifdef BLD_NO_QZIPREADER
     if (err) *err = QStringLiteral(
         "This build was compiled without QZipReader; LDD .lxf import is "
         "unavailable. Rebuild against a Qt install with private headers.");
@@ -166,4 +166,4 @@ LDrawReadResult readLDD(const QString& path) {
     return out;
 }
 
-}  // namespace cld::import
+}  // namespace bld::import

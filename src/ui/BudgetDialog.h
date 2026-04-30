@@ -7,9 +7,9 @@
 class QLabel;
 class QTableWidget;
 
-namespace cld::core { class Map; }
+namespace bld::core { class Map; }
 
-namespace cld::ui {
+namespace bld::ui {
 
 // Minimal Budget MVP parity with upstream BudgetDialog: loads/saves a .bbb
 // XML file (PartNumber -> limit), counts actual usage from the current map,

@@ -8,9 +8,9 @@
 class QAction;
 class QComboBox;
 
-namespace cld::parts { class PartsLibrary; }
+namespace bld::parts { class PartsLibrary; }
 
-namespace cld::ui {
+namespace bld::ui {
 
 class MapView;
 class LayerPanel;

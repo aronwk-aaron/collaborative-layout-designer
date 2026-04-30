@@ -15,7 +15,7 @@
 #include <QPointF>
 #include <QString>
 
-namespace cld::saveload {
+namespace bld::saveload {
 
 struct SetSubpart {
     QString partKey;       // e.g. "TB R104.8"
@@ -38,4 +38,4 @@ bool writeSetXml(const QString& filePath,
                  const SetManifest& manifest,
                  QString* error = nullptr);
 
-}  // namespace cld::saveload
+}  // namespace bld::saveload

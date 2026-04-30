@@ -9,7 +9,7 @@
 #include <limits>
 #include <vector>
 
-namespace cld::import {
+namespace bld::import {
 
 namespace {
 
@@ -269,4 +269,4 @@ RasterizeResult rasterizeMeshTopDown(const geom::Mesh& mesh,
     return out;
 }
 
-}  // namespace cld::import
+}  // namespace bld::import

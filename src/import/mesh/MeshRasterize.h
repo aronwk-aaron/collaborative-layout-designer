@@ -6,7 +6,7 @@
 #include <QPointF>
 #include <QRectF>
 
-namespace cld::import {
+namespace bld::import {
 
 // Rasterize a geom::Mesh into a top-down (drop-Y) sprite suitable for
 // emitting as a BlueBrick part image.
@@ -60,4 +60,4 @@ struct RasterizeResult {
 RasterizeResult rasterizeMeshTopDown(const geom::Mesh& mesh,
                                       const RasterizeOptions& opt = {});
 
-}  // namespace cld::import
+}  // namespace bld::import

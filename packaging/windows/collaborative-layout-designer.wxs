@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  WiX v4 manifest for the Collaborative Layout Designer MSI.
+  WiX v4 manifest for the Brick Layout Designer MSI.
 
   Minimal proper-installer shape:
-   - Installs everything under  %ProgramFiles%\Collaborative Layout Designer\
+   - Installs everything under  %ProgramFiles%\Brick Layout Designer\
    - Creates a Start menu shortcut
-   - Registers a shared "App Paths" entry so `collaborative-layout-designer`
+   - Registers a shared "App Paths" entry so `brick-layout-designer`
      on cmd.exe finds the binary without full-path PATH surgery
    - No per-user state, no persistent file associations (the .bbm MIME
      lives in the .desktop file on Linux; Windows users double-click
@@ -22,8 +22,8 @@
   anyway" proceeds normally. Same tradeoff as the macOS DMG.
 -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
-  <Package Name="Collaborative Layout Designer"
-           Manufacturer="Collaborative Layout Designer contributors"
+  <Package Name="Brick Layout Designer"
+           Manufacturer="Brick Layout Designer contributors"
            Version="0.4.1.0"
            UpgradeCode="7d5c9ad0-1b8a-4c2f-8b1f-7e6c1a3b5f4d"
            Scope="perMachine"
@@ -38,11 +38,11 @@
 
     <!-- Standard "Application" shortcut in the Start menu. -->
     <StandardDirectory Id="ProgramMenuFolder">
-      <Directory Id="ApplicationProgramsFolder" Name="Collaborative Layout Designer" />
+      <Directory Id="ApplicationProgramsFolder" Name="Brick Layout Designer" />
     </StandardDirectory>
 
     <StandardDirectory Id="ProgramFiles64Folder">
-      <Directory Id="INSTALLFOLDER" Name="Collaborative Layout Designer" />
+      <Directory Id="INSTALLFOLDER" Name="Brick Layout Designer" />
     </StandardDirectory>
 
     <!-- Main app component: the exe + a Start menu shortcut.
@@ -50,18 +50,18 @@
          in by the HEAT-generated Harvested.wxs component group. -->
     <ComponentGroup Id="MainAppComponents" Directory="INSTALLFOLDER">
       <Component Id="MainExe" Guid="*">
-        <File Id="CollaborativeLayoutDesignerExe"
-              Source="staging\collaborative-layout-designer.exe"
+        <File Id="BrickLayoutDesignerExe"
+              Source="staging\brick-layout-designer.exe"
               KeyPath="yes">
           <Shortcut Id="AppShortcut"
                     Directory="ApplicationProgramsFolder"
-                    Name="Collaborative Layout Designer"
+                    Name="Brick Layout Designer"
                     WorkingDirectory="INSTALLFOLDER"
                     Advertise="yes" />
         </File>
         <RegistryValue Root="HKLM"
-                       Key="SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\collaborative-layout-designer.exe"
-                       Value="[INSTALLFOLDER]collaborative-layout-designer.exe"
+                       Key="SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\brick-layout-designer.exe"
+                       Value="[INSTALLFOLDER]brick-layout-designer.exe"
                        Type="string" />
       </Component>
       <Component Id="StartMenuDirComponent"
@@ -69,7 +69,7 @@
                  Guid="b3d2e4f1-5a6c-4a8e-91f1-c0a7d4e8b2a3">
         <RemoveFolder Id="CleanupStartMenuFolder" On="uninstall" />
         <RegistryValue Root="HKCU"
-                       Key="SOFTWARE\CollaborativeLayoutDesigner"
+                       Key="SOFTWARE\BrickLayoutDesigner"
                        Name="installed"
                        Type="integer"
                        Value="1"
@@ -77,7 +77,7 @@
       </Component>
     </ComponentGroup>
 
-    <Feature Id="MainFeature" Title="Collaborative Layout Designer" Level="1">
+    <Feature Id="MainFeature" Title="Brick Layout Designer" Level="1">
       <ComponentGroupRef Id="MainAppComponents" />
       <!-- `HarvestedComponents` is the name heat.exe emits for the staged
            support files (Qt runtime, parts library, translations). -->

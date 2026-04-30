@@ -16,7 +16,7 @@
 // Culture-invariant primitive formatters and XML readers matching BlueBrick's
 // System.Xml.Serialization.XmlSerializer + BlueBrick.MapData.XmlReadWrite behavior.
 // See docs/bbm-schema.md for wire-level invariants.
-namespace cld::saveload::xml {
+namespace bld::saveload::xml {
 
 // ---------- formatting (C# InvariantCulture ToString equivalents) ----------
 

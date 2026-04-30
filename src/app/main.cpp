@@ -10,14 +10,14 @@
 #include <QTranslator>
 
 int main(int argc, char** argv) {
-    QApplication::setOrganizationName(QStringLiteral("CollaborativeLayoutDesigner"));
-    QApplication::setApplicationName(QStringLiteral("Collaborative Layout Designer"));
+    QApplication::setOrganizationName(QStringLiteral("BrickLayoutDesigner"));
+    QApplication::setApplicationName(QStringLiteral("Brick Layout Designer"));
     QApplication::setApplicationVersion(QStringLiteral("0.0.1"));
 
     QApplication app(argc, argv);
 
     // Localization scaffolding: load the user-selected UI language's .qm file
-    // from <appDir>/translations/cld_<code>.qm if it exists, and the matching
+    // from <appDir>/translations/bld_<code>.qm if it exists, and the matching
     // Qt-provided generic translations (qtbase_<code>.qm). No-op until we
     // actually ship compiled .qm files, but the wiring is in place.
     static QTranslator appTranslator;
@@ -26,7 +26,7 @@ int main(int argc, char** argv) {
     if (langCode.isEmpty()) langCode = QLocale::system().name().split('_').value(0);
     if (!langCode.isEmpty() && langCode != QStringLiteral("en")) {
         const QString dir = QCoreApplication::applicationDirPath() + QStringLiteral("/translations");
-        if (appTranslator.load(QStringLiteral("cld_") + langCode, dir)) {
+        if (appTranslator.load(QStringLiteral("bld_") + langCode, dir)) {
             QCoreApplication::installTranslator(&appTranslator);
         }
         if (qtTranslator.load(QStringLiteral("qtbase_") + langCode,
@@ -35,8 +35,8 @@ int main(int argc, char** argv) {
         }
     }
 
-    cld::parts::PartsLibrary lib;
-    cld::ui::MainWindow window(lib);
+    bld::parts::PartsLibrary lib;
+    bld::ui::MainWindow window(lib);
     window.show();
 
     if (argc > 1) {

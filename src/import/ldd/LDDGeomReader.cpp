@@ -8,7 +8,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace cld::import {
+namespace bld::import {
 
 namespace {
 
@@ -236,4 +236,4 @@ LDDGeomReadResult readLDDGeom(const QByteArray& bytes) {
     return r;
 }
 
-}  // namespace cld::import
+}  // namespace bld::import

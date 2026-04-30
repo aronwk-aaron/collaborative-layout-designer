@@ -26,7 +26,7 @@ from pathlib import Path
 # as "unfinished" so Qt falls back to English at runtime.
 # ---------------------------------------------------------------------------
 
-# Each language is keyed by its ISO 639-1 code matching translations/cld_<code>.ts.
+# Each language is keyed by its ISO 639-1 code matching translations/bld_<code>.ts.
 TRANS: dict[str, dict[str, str]] = {
     # ---------- Menu titles ----------
     'de': {
@@ -77,7 +77,7 @@ TRANS: dict[str, dict[str, str]] = {
         'Save Selection as &amp;Set...': 'Auswahl als &Set speichern...',
         '&amp;Import .bbm as Module...': '.bbm als Modul importieren...',
         'Create from &amp;Selection...': 'Aus &Auswahl erstellen...',
-        '&amp;About CLD...': '&Über CLD...',
+        '&amp;About BLD...': '&Über BLD...',
         'About &amp;Qt...': 'Über &Qt...',
         'Background &amp;Colour...': '&Hintergrundfarbe...',
         'General &amp;Info...': 'Allgemeine &Informationen...',
@@ -171,7 +171,7 @@ TRANS: dict[str, dict[str, str]] = {
         'Save Selection as &amp;Set...': 'Enregistrer la sélection comme &set...',
         '&amp;Import .bbm as Module...': 'Importer un .bbm comme module...',
         'Create from &amp;Selection...': 'Créer depuis la &sélection...',
-        '&amp;About CLD...': '&À propos de CLD...',
+        '&amp;About BLD...': '&À propos de BLD...',
         'About &amp;Qt...': 'À propos de &Qt...',
         'Background &amp;Colour...': 'Couleur d\'arrière-&plan...',
         'General &amp;Info...': '&Informations générales...',
@@ -261,7 +261,7 @@ TRANS: dict[str, dict[str, str]] = {
         'Save Selection as &amp;Set...': 'Guardar selección como &set...',
         '&amp;Import .bbm as Module...': 'Importar .bbm como módulo...',
         'Create from &amp;Selection...': 'Crear desde la &selección...',
-        '&amp;About CLD...': '&Acerca de CLD...',
+        '&amp;About BLD...': '&Acerca de BLD...',
         'About &amp;Qt...': 'Acerca de &Qt...',
         'Background &amp;Colour...': 'Color de &fondo...',
         'General &amp;Info...': '&Información general...',
@@ -351,7 +351,7 @@ TRANS: dict[str, dict[str, str]] = {
         'Save Selection as &amp;Set...': 'Salva selezione come &set...',
         '&amp;Import .bbm as Module...': 'Importa .bbm come modulo...',
         'Create from &amp;Selection...': 'Crea dalla &selezione...',
-        '&amp;About CLD...': '&Informazioni su CLD...',
+        '&amp;About BLD...': '&Informazioni su BLD...',
         'About &amp;Qt...': 'Informazioni su &Qt...',
         'Background &amp;Colour...': 'Colore di &sfondo...',
         'General &amp;Info...': '&Informazioni generali...',
@@ -441,7 +441,7 @@ TRANS: dict[str, dict[str, str]] = {
         'Save Selection as &amp;Set...': 'Selectie opslaan als &set...',
         '&amp;Import .bbm as Module...': '.bbm als module importeren...',
         'Create from &amp;Selection...': 'Aanmaken uit &selectie...',
-        '&amp;About CLD...': '&Over CLD...',
+        '&amp;About BLD...': '&Over BLD...',
         'About &amp;Qt...': 'Over &Qt...',
         'Background &amp;Colour...': 'Achtergrond&kleur...',
         'General &amp;Info...': 'Algemene &informatie...',
@@ -531,7 +531,7 @@ TRANS: dict[str, dict[str, str]] = {
         'Save Selection as &amp;Set...': 'Salvar seleção como &conjunto...',
         '&amp;Import .bbm as Module...': 'Importar .bbm como módulo...',
         'Create from &amp;Selection...': 'Criar a partir da &seleção...',
-        '&amp;About CLD...': '&Sobre o CLD...',
+        '&amp;About BLD...': '&Sobre o BLD...',
         'About &amp;Qt...': 'Sobre o &Qt...',
         'Background &amp;Colour...': 'Cor de &fundo...',
         'General &amp;Info...': '&Informações gerais...',
@@ -621,7 +621,7 @@ TRANS: dict[str, dict[str, str]] = {
         'Save Selection as &amp;Set...': '選択範囲をセットとして保存(&S)...',
         '&amp;Import .bbm as Module...': '.bbm をモジュールとしてインポート...',
         'Create from &amp;Selection...': '選択範囲から作成(&S)...',
-        '&amp;About CLD...': 'CLD について(&A)...',
+        '&amp;About BLD...': 'BLD について(&A)...',
         'About &amp;Qt...': 'Qt について(&Q)...',
         'Background &amp;Colour...': '背景色(&C)...',
         'General &amp;Info...': '全般情報(&I)...',
@@ -711,7 +711,7 @@ TRANS: dict[str, dict[str, str]] = {
         'Save Selection as &amp;Set...': '将选区保存为套件(&S)...',
         '&amp;Import .bbm as Module...': '将 .bbm 作为模块导入...',
         'Create from &amp;Selection...': '从选区创建(&S)...',
-        '&amp;About CLD...': '关于 CLD(&A)...',
+        '&amp;About BLD...': '关于 BLD(&A)...',
         'About &amp;Qt...': '关于 &Qt...',
         'Background &amp;Colour...': '背景颜色(&C)...',
         'General &amp;Info...': '常规信息(&I)...',
@@ -806,11 +806,11 @@ def main() -> int:
     repo = Path(__file__).resolve().parent.parent
     translations = repo / 'translations'
     langs = ['de', 'es', 'fr', 'it', 'ja', 'nl', 'pt', 'zh']
-    print(f'Applying translations from {translations}/cld_<lang>.ts')
+    print(f'Applying translations from {translations}/bld_<lang>.ts')
     grand_total_done = 0
     grand_total = 0
     for lang in langs:
-        ts = translations / f'cld_{lang}.ts'
+        ts = translations / f'bld_{lang}.ts'
         if not ts.exists():
             print(f'  {lang}: {ts} missing — skipping')
             continue

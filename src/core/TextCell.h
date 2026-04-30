@@ -6,7 +6,7 @@
 
 #include <QString>
 
-namespace cld::core {
+namespace bld::core {
 
 enum class TextAlignment {
     Near,

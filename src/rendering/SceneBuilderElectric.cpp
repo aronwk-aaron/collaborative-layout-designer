@@ -31,7 +31,7 @@
 #include <cmath>
 #include <unordered_map>
 
-namespace cld::rendering {
+namespace bld::rendering {
 
 using detail::LayerSink;
 
@@ -284,4 +284,4 @@ void SceneBuilder::addElectricCircuits(const core::Map& map) {
     for (auto& e : entries) delete e.meta;
 }
 
-}  // namespace cld::rendering
+}  // namespace bld::rendering

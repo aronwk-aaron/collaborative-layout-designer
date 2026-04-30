@@ -26,7 +26,7 @@
 #include <QUndoStack>
 #include <QVBoxLayout>
 
-namespace cld::ui {
+namespace bld::ui {
 
 namespace {
 

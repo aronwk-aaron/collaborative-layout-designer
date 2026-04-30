@@ -9,7 +9,7 @@
 
 #include <QUndoStack>
 
-using namespace cld;
+using namespace bld;
 
 TEST(LayerCommands, AddAndUndo) {
     core::Map m;

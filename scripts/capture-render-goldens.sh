@@ -20,9 +20,9 @@ CORPUS="${REPO_ROOT}/fixtures/bbm-corpus"
 GOLDENS="${REPO_ROOT}/fixtures/render-goldens"
 PARTS="${REPO_ROOT}/parts/BlueBrickParts/parts"
 
-RENDER_BIN="${BUILD_DIR}/src/app/cld_render"
+RENDER_BIN="${BUILD_DIR}/src/app/bld_render"
 if [[ ! -x "${RENDER_BIN}" ]]; then
-    echo "cld_render not built at ${RENDER_BIN}. Run: cmake --build ${BUILD_DIR}" >&2
+    echo "bld_render not built at ${RENDER_BIN}. Run: cmake --build ${BUILD_DIR}" >&2
     exit 1
 fi
 
@@ -36,7 +36,7 @@ for bbm in "${CORPUS}"/*.bbm; do
     out="${GOLDENS}/${stem}.png"
     echo "=> ${stem}"
     # The test harness renders at 1600x1200 with the parts library
-    # and the map's own background colour. cld_render mirrors that
+    # and the map's own background colour. bld_render mirrors that
     # exact pipeline (width argument matches; parts dir is searched
     # at the submodule path by default).
     "${RENDER_BIN}" "${bbm}" "${out}" 1600 "${PARTS}"

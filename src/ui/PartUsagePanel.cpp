@@ -26,7 +26,7 @@
 #include <QVBoxLayout>
 #include <QWidget>
 
-namespace cld::ui {
+namespace bld::ui {
 
 namespace {
 
@@ -276,4 +276,4 @@ void PartUsagePanel::selectAllBricksOfCurrentRow() {
     }
 }
 
-}  // namespace cld::ui
+}  // namespace bld::ui

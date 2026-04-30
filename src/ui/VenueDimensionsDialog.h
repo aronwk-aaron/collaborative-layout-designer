@@ -7,7 +7,7 @@
 #include <QString>
 #include <QVector>
 
-namespace cld::ui {
+namespace bld::ui {
 
 // Build a venue outline by entering dimensions instead of clicking on
 // the map. Each segment row carries length (ft), angle (absolute

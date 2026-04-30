@@ -4,7 +4,7 @@
 #include <QString>
 #include <QXmlStreamWriter>
 
-namespace cld::saveload {
+namespace bld::saveload {
 
 // Phase 1: implement canonicalizer matching C# XmlSerializer output byte-for-byte.
 // For now, declare the interface so downstream code can target it.

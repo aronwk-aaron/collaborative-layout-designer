@@ -9,7 +9,7 @@
 
 #include <optional>
 
-namespace cld::parts {
+namespace bld::parts {
 
 // Connection types are STRING ids in BlueBrick's part XMLs — e.g.
 // "rail", "road", "coaster", "monorail", plus a growing long tail of

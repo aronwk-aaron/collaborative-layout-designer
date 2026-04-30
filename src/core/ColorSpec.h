@@ -3,7 +3,7 @@
 #include <QColor>
 #include <QString>
 
-namespace cld::core {
+namespace bld::core {
 
 // Vanilla BlueBrick's <Color><IsKnownColor>bool</IsKnownColor><Name/></Color>
 // can carry either a named System.Drawing.KnownColor (e.g. "CornflowerBlue",

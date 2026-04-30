@@ -8,7 +8,7 @@
 #include <array>
 #include <vector>
 
-namespace cld::geom {
+namespace bld::geom {
 
 // Minimal CPU-side 3D types so all importers (LDraw, Studio, LDD) feed
 // into one common pipeline before rasterization. Right-handed, Y-up
@@ -123,4 +123,4 @@ struct Mesh {
     bool empty() const { return tris.empty(); }
 };
 
-}  // namespace cld::geom
+}  // namespace bld::geom

@@ -2,7 +2,7 @@
 
 #include <QLocale>
 
-namespace cld::saveload::xml {
+namespace bld::saveload::xml {
 
 namespace {
 

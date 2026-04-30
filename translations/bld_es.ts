@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!DOCTYPE TS>
-<TS version="2.1" language="ja">
+<TS version="2.1" language="es">
 <context>
     <name>QObject</name>
     <message>
@@ -649,7 +649,7 @@
     <message>
         <location filename="../src/ui/PreferencesDialog.cpp" line="248"/>
         <source>Remove</source>
-        <translation>削除</translation>
+        <translation>Quitar</translation>
     </message>
     <message>
         <location filename="../src/ui/PreferencesDialog.cpp" line="252"/>
@@ -689,11 +689,11 @@
     <message>
         <location filename="../src/ui/VenueDimensionsDialog.cpp" line="137"/>
         <source>Open</source>
-        <translation>開く</translation>
+        <translation>Abrir</translation>
     </message>
 </context>
 <context>
-    <name>cld::ui::BudgetDialog</name>
+    <name>bld::ui::BudgetDialog</name>
     <message>
         <location filename="../src/ui/BudgetDialog.cpp" line="35"/>
         <source>Budget</source>
@@ -784,7 +784,7 @@
     </message>
 </context>
 <context>
-    <name>cld::ui::FindDialog</name>
+    <name>bld::ui::FindDialog</name>
     <message>
         <location filename="../src/ui/FindDialog.cpp" line="29"/>
         <source>Find &amp;&amp; Replace</source>
@@ -838,15 +838,15 @@
     <message>
         <location filename="../src/ui/FindDialog.cpp" line="55"/>
         <source>Close</source>
-        <translation>閉じる</translation>
+        <translation>Cerrar</translation>
     </message>
 </context>
 <context>
-    <name>cld::ui::LayerPanel</name>
+    <name>bld::ui::LayerPanel</name>
     <message>
         <location filename="../src/ui/LayerPanel.cpp" line="51"/>
         <source>Layers</source>
-        <translation>レイヤー</translation>
+        <translation>Capas</translation>
     </message>
     <message>
         <location filename="../src/ui/LayerPanel.cpp" line="59"/>
@@ -1005,7 +1005,7 @@
     </message>
 </context>
 <context>
-    <name>cld::ui::LibraryPathsDialog</name>
+    <name>bld::ui::LibraryPathsDialog</name>
     <message>
         <location filename="../src/ui/LibraryPathsDialog.cpp" line="16"/>
         <source>Parts Library Paths</source>
@@ -1024,7 +1024,7 @@
     <message>
         <location filename="../src/ui/LibraryPathsDialog.cpp" line="34"/>
         <source>Remove</source>
-        <translation>削除</translation>
+        <translation>Quitar</translation>
     </message>
     <message>
         <location filename="../src/ui/LibraryPathsDialog.cpp" line="35"/>
@@ -1043,7 +1043,7 @@
     </message>
 </context>
 <context>
-    <name>cld::ui::MainWindow</name>
+    <name>bld::ui::MainWindow</name>
     <message>
         <location filename="../src/ui/MainWindow.cpp" line="142"/>
         <location filename="../src/ui/MainWindow.cpp" line="228"/>
@@ -1152,7 +1152,7 @@ existing cells at their old indexing — paint over to clean up.</source>
         <location filename="../src/ui/MainWindow.cpp" line="871"/>
         <location filename="../src/ui/MainWindow.cpp" line="935"/>
         <source>Module name:</source>
-        <translation>モジュール名:</translation>
+        <translation>Nombre del módulo:</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindow.cpp" line="379"/>
@@ -1379,13 +1379,13 @@ Target path:
         <location filename="../src/ui/MainWindow.cpp" line="901"/>
         <location filename="../src/ui/MainWindow.cpp" line="994"/>
         <source>Select one or more bricks first.</source>
-        <translation>最初にパーツを選択してください。</translation>
+        <translation>Seleccione primero una o más piezas.</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindow.cpp" line="872"/>
         <location filename="../src/ui/MainWindow.cpp" line="936"/>
         <source>New Module</source>
-        <translation>新しいモジュール</translation>
+        <translation>Nuevo módulo</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindow.cpp" line="876"/>
@@ -1396,12 +1396,12 @@ Target path:
         <location filename="../src/ui/MainWindow.cpp" line="900"/>
         <location filename="../src/ui/MainWindow.cpp" line="935"/>
         <source>Save module</source>
-        <translation>モジュールを保存</translation>
+        <translation>Guardar módulo</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindow.cpp" line="949"/>
         <source>Save selection as module</source>
-        <translation>選択範囲をモジュールとして保存</translation>
+        <translation>Guardar selección como módulo</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindow.cpp" line="951"/>
@@ -1413,7 +1413,7 @@ Target path:
     <message>
         <location filename="../src/ui/MainWindow.cpp" line="957"/>
         <source>Save module failed</source>
-        <translation>モジュールの保存に失敗しました</translation>
+        <translation>No se pudo guardar el módulo</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindow.cpp" line="960"/>
@@ -1424,22 +1424,22 @@ Target path:
         <location filename="../src/ui/MainWindow.cpp" line="993"/>
         <location filename="../src/ui/MainWindow.cpp" line="1031"/>
         <source>Save set</source>
-        <translation>セットを保存</translation>
+        <translation>Guardar set</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindow.cpp" line="1031"/>
         <source>Set name:</source>
-        <translation>セット名:</translation>
+        <translation>Nombre del set:</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindow.cpp" line="1032"/>
         <source>New Set</source>
-        <translation>新しいセット</translation>
+        <translation>Nuevo set</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindow.cpp" line="1057"/>
         <source>Save selection as set</source>
-        <translation>選択範囲をセットとして保存</translation>
+        <translation>Guardar selección como set</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindow.cpp" line="1059"/>
@@ -1449,7 +1449,7 @@ Target path:
     <message>
         <location filename="../src/ui/MainWindow.cpp" line="1070"/>
         <source>Save set failed</source>
-        <translation>セットの保存に失敗しました</translation>
+        <translation>No se pudo guardar el set</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindow.cpp" line="1074"/>
@@ -1494,7 +1494,7 @@ Target path:
     </message>
     <message>
         <location filename="../src/ui/MainWindowFileIO.cpp" line="62"/>
-        <source>%1%2 — Collaborative Layout Designer</source>
+        <source>%1%2 — Brick Layout Designer</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -1625,12 +1625,12 @@ Target path:
     </message>
     <message>
         <location filename="../src/ui/MainWindowFileIO.cpp" line="278"/>
-        <source>About Collaborative Layout Designer</source>
+        <source>About Brick Layout Designer</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowFileIO.cpp" line="279"/>
-        <source>&lt;h3&gt;Collaborative Layout Designer&lt;/h3&gt;&lt;p&gt;Cross-platform C++/Qt 6 fork of &lt;b&gt;BlueBrick&lt;/b&gt; by Alban Nanty and contributors.&lt;/p&gt;&lt;p&gt;Adds cross-layer modules, anchored text labels, and event venues on top of the vanilla &lt;i&gt;.bbm&lt;/i&gt; format (extra metadata stored in a sidecar &lt;i&gt;.bbm.cld&lt;/i&gt; so vanilla BlueBrick 1.9.2 keeps opening our files).&lt;/p&gt;&lt;p&gt;Licensed under GPL-3.0 — same as upstream BlueBrick.&lt;/p&gt;&lt;p&gt;Parts library: %1 parts indexed.&lt;/p&gt;</source>
+        <source>&lt;h3&gt;Brick Layout Designer&lt;/h3&gt;&lt;p&gt;Cross-platform C++/Qt 6 fork of &lt;b&gt;BlueBrick&lt;/b&gt; by Alban Nanty and contributors.&lt;/p&gt;&lt;p&gt;Adds cross-layer modules, anchored text labels, and event venues on top of the vanilla &lt;i&gt;.bbm&lt;/i&gt; format (extra metadata stored in a sidecar &lt;i&gt;.bbm.bld&lt;/i&gt; so vanilla BlueBrick 1.9.2 keeps opening our files).&lt;/p&gt;&lt;p&gt;Licensed under GPL-3.0 — same as upstream BlueBrick.&lt;/p&gt;&lt;p&gt;Parts library: %1 parts indexed.&lt;/p&gt;</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -1696,12 +1696,12 @@ Restore it?</source>
     <message>
         <location filename="../src/ui/MainWindowMapMenu.cpp" line="47"/>
         <source>&amp;Map</source>
-        <translation>マップ(&amp;M)</translation>
+        <translation>&amp;Mapa</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMapMenu.cpp" line="48"/>
         <source>Background &amp;Colour...</source>
-        <translation>背景色(&amp;C)...</translation>
+        <translation>Color de &amp;fondo...</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMapMenu.cpp" line="53"/>
@@ -1711,7 +1711,7 @@ Restore it?</source>
     <message>
         <location filename="../src/ui/MainWindowMapMenu.cpp" line="61"/>
         <source>General &amp;Info...</source>
-        <translation>全般情報(&amp;I)...</translation>
+        <translation>&amp;Información general...</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMapMenu.cpp" line="66"/>
@@ -1746,12 +1746,12 @@ Restore it?</source>
     <message>
         <location filename="../src/ui/MainWindowMapMenu.cpp" line="92"/>
         <source>&amp;Venue</source>
-        <translation>会場(&amp;V)</translation>
+        <translation>&amp;Lugar</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMapMenu.cpp" line="93"/>
         <source>Draw &amp;Outline...</source>
-        <translation>輪郭を描く(&amp;O)...</translation>
+        <translation>Dibujar &amp;contorno...</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMapMenu.cpp" line="94"/>
@@ -1766,7 +1766,7 @@ Restore it?</source>
     <message>
         <location filename="../src/ui/MainWindowMapMenu.cpp" line="103"/>
         <source>Draw Outline by &amp;Dimensions...</source>
-        <translation>寸法から輪郭を作成(&amp;D)...</translation>
+        <translation>Dibujar por &amp;dimensiones...</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMapMenu.cpp" line="104"/>
@@ -1781,7 +1781,7 @@ Restore it?</source>
     <message>
         <location filename="../src/ui/MainWindowMapMenu.cpp" line="134"/>
         <source>Add &amp;Obstacle...</source>
-        <translation>障害物を追加(&amp;O)...</translation>
+        <translation>Añadir &amp;obstáculo...</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMapMenu.cpp" line="135"/>
@@ -1806,12 +1806,12 @@ Restore it?</source>
     <message>
         <location filename="../src/ui/MainWindowMapMenu.cpp" line="148"/>
         <source>&amp;Edit Venue Properties...</source>
-        <translation>会場プロパティを編集(&amp;E)...</translation>
+        <translation>&amp;Editar propiedades del lugar...</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMapMenu.cpp" line="161"/>
         <source>&amp;Clear Venue</source>
-        <translation>会場をクリア(&amp;C)</translation>
+        <translation>&amp;Borrar lugar</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMapMenu.cpp" line="165"/>
@@ -1921,38 +1921,38 @@ Restore it?</source>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMapMenu.cpp" line="271"/>
-        <source>Venue (*.cld-venue);;All files (*)</source>
+        <source>Venue (*.bld-venue);;All files (*)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="74"/>
         <source>&amp;File</source>
-        <translation>ファイル(&amp;F)</translation>
+        <translation>&amp;Archivo</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="75"/>
         <source>&amp;New</source>
-        <translation>新規(&amp;N)</translation>
+        <translation>&amp;Nuevo</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="79"/>
         <source>&amp;Open...</source>
-        <translation>開く(&amp;O)...</translation>
+        <translation>&amp;Abrir...</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="83"/>
         <source>Open &amp;Recent</source>
-        <translation>最近使用(&amp;R)</translation>
+        <translation>&amp;Recientes</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="86"/>
         <source>&amp;Save</source>
-        <translation>保存(&amp;S)</translation>
+        <translation>&amp;Guardar</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="90"/>
         <source>Save &amp;As...</source>
-        <translation>名前を付けて保存(&amp;A)...</translation>
+        <translation>Guardar &amp;como...</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="95"/>
@@ -2074,22 +2074,22 @@ Restore it?</source>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="253"/>
         <source>&amp;Edit</source>
-        <translation>編集(&amp;E)</translation>
+        <translation>&amp;Edición</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="254"/>
         <source>&amp;Undo</source>
-        <translation>元に戻す(&amp;U)</translation>
+        <translation>&amp;Deshacer</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="257"/>
         <source>&amp;Redo</source>
-        <translation>やり直し(&amp;R)</translation>
+        <translation>&amp;Rehacer</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="261"/>
         <source>&amp;Delete</source>
-        <translation>削除(&amp;D)</translation>
+        <translation>&amp;Eliminar</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="264"/>
@@ -2109,22 +2109,22 @@ Restore it?</source>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="276"/>
         <source>Cu&amp;t</source>
-        <translation>切り取り(&amp;T)</translation>
+        <translation>Cor&amp;tar</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="280"/>
         <source>&amp;Copy</source>
-        <translation>コピー(&amp;C)</translation>
+        <translation>&amp;Copiar</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="284"/>
         <source>&amp;Paste</source>
-        <translation>貼り付け(&amp;P)</translation>
+        <translation>&amp;Pegar</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="288"/>
         <source>&amp;Duplicate</source>
-        <translation>複製(&amp;D)</translation>
+        <translation>&amp;Duplicar</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="289"/>
@@ -2134,7 +2134,7 @@ Restore it?</source>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="293"/>
         <source>Select &amp;All</source>
-        <translation>すべて選択(&amp;A)</translation>
+        <translation>Seleccionar &amp;todo</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="297"/>
@@ -2149,7 +2149,7 @@ Restore it?</source>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="301"/>
         <source>&amp;Find &amp;&amp; Replace...</source>
-        <translation>検索と置換(&amp;F)...</translation>
+        <translation>&amp;Buscar y reemplazar...</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="309"/>
@@ -2270,22 +2270,22 @@ Restore it?</source>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="392"/>
         <source>&amp;View</source>
-        <translation>表示(&amp;V)</translation>
+        <translation>&amp;Ver</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="393"/>
         <source>Zoom &amp;In</source>
-        <translation>拡大(&amp;I)</translation>
+        <translation>A&amp;cercar</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="397"/>
         <source>Zoom &amp;Out</source>
-        <translation>縮小(&amp;O)</translation>
+        <translation>&amp;Alejar</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="401"/>
         <source>&amp;Fit to View</source>
-        <translation>ビューに合わせる(&amp;F)</translation>
+        <translation>&amp;Ajustar a la vista</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="413"/>
@@ -2325,7 +2325,7 @@ Restore it?</source>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="448"/>
         <source>&amp;Electric Circuits</source>
-        <translation>電気回路(&amp;E)</translation>
+        <translation>Circuitos &amp;eléctricos</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="449"/>
@@ -2335,37 +2335,37 @@ Restore it?</source>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="450"/>
         <source>Ruler Attach P&amp;oints</source>
-        <translation>ルーラー接続点</translation>
+        <translation>Puntos de anclaje de regla</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="451"/>
         <source>&amp;Watermark</source>
-        <translation>ウォーターマーク(&amp;W)</translation>
+        <translation>Marca de &amp;agua</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="452"/>
         <source>Brick &amp;Hulls</source>
-        <translation>ブロック外形</translation>
+        <translation>Contornos de piezas</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="453"/>
         <source>Brick E&amp;levation Labels</source>
-        <translation>高さラベル</translation>
+        <translation>Etiquetas de altura</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="454"/>
         <source>&amp;Module Names</source>
-        <translation>モジュール名(&amp;M)</translation>
+        <translation>Nombres de &amp;módulos</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="464"/>
         <source>&amp;Layers</source>
-        <translation>レイヤー(&amp;L)</translation>
+        <translation>&amp;Capas</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="466"/>
         <source>&amp;Budget</source>
-        <translation>予算(&amp;B)</translation>
+        <translation>&amp;Presupuesto</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="467"/>
@@ -2375,27 +2375,27 @@ Restore it?</source>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="475"/>
         <source>&amp;Modules</source>
-        <translation>モジュール(&amp;M)</translation>
+        <translation>&amp;Módulos</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="476"/>
         <source>Create from &amp;Selection...</source>
-        <translation>選択範囲から作成(&amp;S)...</translation>
+        <translation>Crear desde la &amp;selección...</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="478"/>
         <source>&amp;Import .bbm as Module...</source>
-        <translation>.bbm をモジュールとしてインポート...</translation>
+        <translation>Importar .bbm como módulo...</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="480"/>
         <source>&amp;Save Selection as Module...</source>
-        <translation>選択範囲をモジュールとして保存(&amp;S)...</translation>
+        <translation>&amp;Guardar selección como módulo...</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="482"/>
         <source>Save Selection as &amp;Set...</source>
-        <translation>選択範囲をセットとして保存(&amp;S)...</translation>
+        <translation>Guardar selección como &amp;set...</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="483"/>
@@ -2405,37 +2405,37 @@ Restore it?</source>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="487"/>
         <source>&amp;Help</source>
-        <translation>ヘルプ(&amp;H)</translation>
+        <translation>A&amp;yuda</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="488"/>
-        <source>&amp;About CLD...</source>
-        <translation>CLD について(&amp;A)...</translation>
+        <source>&amp;About BLD...</source>
+        <translation>&amp;Acerca de BLD...</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="490"/>
         <source>About &amp;Qt...</source>
-        <translation>Qt について(&amp;Q)...</translation>
+        <translation>Acerca de &amp;Qt...</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowToolsMenu.cpp" line="51"/>
         <source>&amp;Tools</source>
-        <translation>ツール(&amp;T)</translation>
+        <translation>&amp;Herramientas</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowToolsMenu.cpp" line="52"/>
         <source>Manage Parts &amp;Libraries...</source>
-        <translation>パーツライブラリの管理(&amp;L)...</translation>
+        <translation>Administrar &amp;bibliotecas de piezas...</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowToolsMenu.cpp" line="54"/>
         <source>&amp;Reload Parts Library</source>
-        <translation>パーツライブラリを再読み込み(&amp;R)</translation>
+        <translation>&amp;Recargar biblioteca de piezas</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowToolsMenu.cpp" line="58"/>
         <source>&amp;Import</source>
-        <translation>インポート(&amp;I)</translation>
+        <translation>&amp;Importar</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowToolsMenu.cpp" line="71"/>
@@ -2525,16 +2525,16 @@ Restore it?</source>
     <message>
         <location filename="../src/ui/MainWindowToolsMenu.cpp" line="226"/>
         <source>Export &amp;Part List (CSV)...</source>
-        <translation>パーツリストを CSV でエクスポート(&amp;P)...</translation>
+        <translation>Exportar &amp;lista de piezas (CSV)...</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowToolsMenu.cpp" line="229"/>
         <source>&amp;Preferences...</source>
-        <translation>環境設定(&amp;P)...</translation>
+        <translation>&amp;Preferencias...</translation>
     </message>
 </context>
 <context>
-    <name>cld::ui::MapView</name>
+    <name>bld::ui::MapView</name>
     <message>
         <location filename="../src/ui/MapView.cpp" line="435"/>
         <source>Ruler length: %1 studs  (%2)</source>
@@ -2697,7 +2697,7 @@ Restore it?</source>
     <message>
         <location filename="../src/ui/MapViewContextMenu.cpp" line="178"/>
         <source>Delete</source>
-        <translation>削除</translation>
+        <translation>Eliminar</translation>
     </message>
     <message>
         <location filename="../src/ui/MapViewContextMenu.cpp" line="186"/>
@@ -2776,11 +2776,11 @@ Restore it?</source>
     </message>
 </context>
 <context>
-    <name>cld::ui::ModuleLibraryPanel</name>
+    <name>bld::ui::ModuleLibraryPanel</name>
     <message>
         <location filename="../src/ui/ModuleLibraryPanel.cpp" line="48"/>
         <source>Module Library</source>
-        <translation>モジュールライブラリ</translation>
+        <translation>Biblioteca de módulos</translation>
     </message>
     <message>
         <location filename="../src/ui/ModuleLibraryPanel.cpp" line="58"/>
@@ -2795,7 +2795,7 @@ Restore it?</source>
     <message>
         <location filename="../src/ui/ModuleLibraryPanel.cpp" line="60"/>
         <source>Refresh</source>
-        <translation>更新</translation>
+        <translation>Actualizar</translation>
     </message>
     <message>
         <location filename="../src/ui/ModuleLibraryPanel.cpp" line="88"/>
@@ -2819,16 +2819,16 @@ Restore it?</source>
     </message>
 </context>
 <context>
-    <name>cld::ui::ModulesPanel</name>
+    <name>bld::ui::ModulesPanel</name>
     <message>
         <location filename="../src/ui/ModulesPanel.cpp" line="24"/>
         <source>Modules</source>
-        <translation>モジュール</translation>
+        <translation>Módulos</translation>
     </message>
     <message>
         <location filename="../src/ui/ModulesPanel.cpp" line="32"/>
         <source>Create</source>
-        <translation>作成</translation>
+        <translation>Crear</translation>
     </message>
     <message>
         <location filename="../src/ui/ModulesPanel.cpp" line="33"/>
@@ -2858,7 +2858,7 @@ Restore it?</source>
     <message>
         <location filename="../src/ui/ModulesPanel.cpp" line="39"/>
         <source>Delete</source>
-        <translation>削除</translation>
+        <translation>Eliminar</translation>
     </message>
     <message>
         <location filename="../src/ui/ModulesPanel.cpp" line="40"/>
@@ -2942,11 +2942,11 @@ Restore it?</source>
     </message>
 </context>
 <context>
-    <name>cld::ui::PartUsagePanel</name>
+    <name>bld::ui::PartUsagePanel</name>
     <message>
         <location filename="../src/ui/PartUsagePanel.cpp" line="52"/>
         <source>Used Parts</source>
-        <translation>使用中のパーツ</translation>
+        <translation>Piezas utilizadas</translation>
     </message>
     <message>
         <location filename="../src/ui/PartUsagePanel.cpp" line="62"/>
@@ -3000,11 +3000,11 @@ Restore it?</source>
     </message>
 </context>
 <context>
-    <name>cld::ui::PartsBrowser</name>
+    <name>bld::ui::PartsBrowser</name>
     <message>
         <location filename="../src/ui/PartsBrowser.cpp" line="97"/>
         <source>Parts</source>
-        <translation>パーツ</translation>
+        <translation>Piezas</translation>
     </message>
     <message>
         <location filename="../src/ui/PartsBrowser.cpp" line="108"/>
@@ -3033,7 +3033,7 @@ Restore it?</source>
     </message>
 </context>
 <context>
-    <name>cld::ui::PreferencesDialog</name>
+    <name>bld::ui::PreferencesDialog</name>
     <message>
         <location filename="../src/ui/PreferencesDialog.cpp" line="275"/>
         <source>Preferences</source>
@@ -3061,7 +3061,7 @@ Restore it?</source>
     </message>
 </context>
 <context>
-    <name>cld::ui::VenueDialog</name>
+    <name>bld::ui::VenueDialog</name>
     <message>
         <location filename="../src/ui/VenueDialog.cpp" line="27"/>
         <source>Venue</source>
@@ -3139,7 +3139,7 @@ Restore it?</source>
     </message>
 </context>
 <context>
-    <name>cld::ui::VenueDimensionsDialog</name>
+    <name>bld::ui::VenueDimensionsDialog</name>
     <message>
         <location filename="../src/ui/VenueDimensionsDialog.cpp" line="75"/>
         <source>Draw venue outline by dimensions</source>

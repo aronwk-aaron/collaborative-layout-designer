@@ -14,7 +14,7 @@
 #include <functional>
 #include <memory>
 
-namespace cld::ui {
+namespace bld::ui {
 
 // Cooperative-cancel token shared between the caller's work lambda
 // and the UI thread's progress dialog. The work checks `requested()`
@@ -67,7 +67,7 @@ inline bool runBackground(QWidget* parent, const QString& busyText,
 
     // Run the work on a one-shot QThread so the UI thread stays free
     // to pump paint events. Using QThread directly (rather than
-    // QtConcurrent::run) keeps Qt6::Concurrent out of cld_ui's link
+    // QtConcurrent::run) keeps Qt6::Concurrent out of bld_ui's link
     // line for one helper.
     class WorkerThread : public QThread {
     public:
@@ -106,4 +106,4 @@ inline bool runBackground(QWidget* parent, const QString& busyText,
         [w = std::move(work)](CancelToken&){ w(); });
 }
 
-}  // namespace cld::ui
+}  // namespace bld::ui

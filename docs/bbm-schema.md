@@ -7,10 +7,10 @@ This document describes the vanilla BlueBrick `.bbm` save format as derived from
 - [`bbm-schema.xsd`](bbm-schema.xsd) — formal XSD for the `.bbm` XML
   format. Documentation, not a strict validator (see caveats in the
   XSD header). Good for diff tools and IDE autocomplete.
-- [`bbm-cld-schema.md`](bbm-cld-schema.md) — prose doc for the
-  sibling `.bbm.cld` sidecar (fork-only metadata: modules, anchored
+- [`bbm-bld-schema.md`](bbm-bld-schema.md) — prose doc for the
+  sibling `.bbm.bld` sidecar (fork-only metadata: modules, anchored
   labels, venues).
-- [`bbm-cld-schema.json`](bbm-cld-schema.json) — JSON Schema (draft-07)
+- [`bbm-bld-schema.json`](bbm-bld-schema.json) — JSON Schema (draft-07)
   for the same sidecar.
 - [`set-schema.md`](set-schema.md) — the `.set.xml` format used by
   the BrickTracks / TrixBrix contrib libraries for pre-assembled
@@ -143,4 +143,4 @@ To be filled in as we port: `LayerBrick` + `LayerBrick.Brick`, `LayerText` + `La
 
 ## Forward compatibility strategy
 
-Our fork writes `<Map>` at `Version=9` matching vanilla. Fork-only metadata (anchored text labels, cross-layer modules, event venues) is stored **outside** the `.bbm` in a sidecar `.bbm.cld` file whose format we control. This keeps the `.bbm` opening cleanly in vanilla BlueBrick 1.9.2.
+Our fork writes `<Map>` at `Version=9` matching vanilla. Fork-only metadata (anchored text labels, cross-layer modules, event venues) is stored **outside** the `.bbm` in a sidecar `.bbm.bld` file whose format we control. This keeps the `.bbm` opening cleanly in vanilla BlueBrick 1.9.2.

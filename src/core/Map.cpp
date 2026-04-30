@@ -2,7 +2,7 @@
 
 #include "Layer.h"
 
-namespace cld::core {
+namespace bld::core {
 
 Map::Map() = default;
 Map::~Map() = default;

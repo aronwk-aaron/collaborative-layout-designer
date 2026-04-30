@@ -19,7 +19,7 @@
 #include <QXmlStreamReader>
 #include <QXmlStreamWriter>
 
-namespace cld::ui {
+namespace bld::ui {
 
 namespace {
 

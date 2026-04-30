@@ -9,7 +9,7 @@
 // (MapViewDrag.cpp, MapViewClipboard.cpp). Lives in the detail namespace so
 // nothing outside the MapView implementation pulls it in.
 
-namespace cld::ui::detail {
+namespace bld::ui::detail {
 
 // Keep these in sync with SceneBuilder.cpp (anonymous namespace).
 constexpr int kBrickDataLayerIndex = 0;
@@ -34,4 +34,4 @@ inline bool isVenueItem(const QGraphicsItem* it) {
 
 inline double studToPx() { return rendering::SceneBuilder::kPixelsPerStud; }
 
-}  // namespace cld::ui::detail
+}  // namespace bld::ui::detail

@@ -9,7 +9,7 @@
 #include <QTemporaryDir>
 #include <QXmlStreamReader>
 
-using namespace cld;
+using namespace bld;
 
 namespace {
 

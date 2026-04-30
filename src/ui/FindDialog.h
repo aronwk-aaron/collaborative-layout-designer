@@ -4,8 +4,8 @@
 
 class QUndoStack;
 
-namespace cld::core { class Map; }
-namespace cld::ui {
+namespace bld::core { class Map; }
+namespace bld::ui {
 
 class MapView;
 

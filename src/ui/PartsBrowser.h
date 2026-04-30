@@ -8,9 +8,9 @@ class QLineEdit;
 class QListWidget;
 class QListWidgetItem;
 
-namespace cld::parts { class PartsLibrary; }
+namespace bld::parts { class PartsLibrary; }
 
-namespace cld::ui {
+namespace bld::ui {
 
 // Dock panel showing parts in a thumbnail grid (QListView::IconMode).
 // Top strip: category dropdown + live text filter. Double-click (or
@@ -30,7 +30,7 @@ public:
 
     // MIME type used when a thumbnail is dragged out of this panel. MapView
     // recognises the same string in its drop handler.
-    static constexpr const char* kPartMimeType = "application/x-cld-part";
+    static constexpr const char* kPartMimeType = "application/x-bld-part";
 
 signals:
     void partActivated(const QString& key);

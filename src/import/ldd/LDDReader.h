@@ -4,7 +4,7 @@
 
 #include <QString>
 
-namespace cld::import {
+namespace bld::import {
 
 // LDD (LEGO Digital Designer) reader. Consumes either:
 //   - `.lxfml` — the raw LXFML XML document.
@@ -26,4 +26,4 @@ namespace cld::import {
 // apply its existing 20-LDU-per-stud rule.
 LDrawReadResult readLDD(const QString& path);
 
-}  // namespace cld::import
+}  // namespace bld::import

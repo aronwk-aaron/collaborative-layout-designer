@@ -10,7 +10,7 @@
 #include <QGraphicsScene>
 #include <QList>
 
-namespace cld::rendering::detail {
+namespace bld::rendering::detail {
 
 constexpr int kPx = SceneBuilder::kPixelsPerStud;
 
@@ -44,4 +44,4 @@ struct LayerSink {
     }
 };
 
-}  // namespace cld::rendering::detail
+}  // namespace bld::rendering::detail

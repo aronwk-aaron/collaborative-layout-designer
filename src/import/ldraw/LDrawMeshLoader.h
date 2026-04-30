@@ -8,7 +8,7 @@
 #include <QString>
 #include <QStringList>
 
-namespace cld::import {
+namespace bld::import {
 
 // Walk a .dat file's lines and recursively bake every subfile reference
 // into a flat triangle list — the geom::Mesh the rasterizer wants.
@@ -97,4 +97,4 @@ private:
     QStringList errors_;
 };
 
-}  // namespace cld::import
+}  // namespace bld::import

@@ -21,7 +21,7 @@
 #include <QStringList>
 #include <QUndoStack>
 
-namespace cld::ui {
+namespace bld::ui {
 
 using detail::kBrickDataGuid;
 using detail::isBrickItem;
@@ -131,4 +131,4 @@ void MapView::duplicateSelection() {
     pasteClipboard();
 }
 
-}  // namespace cld::ui
+}  // namespace bld::ui

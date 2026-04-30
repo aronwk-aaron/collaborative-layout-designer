@@ -6,10 +6,10 @@
 
 class QListWidget;
 
-namespace cld::core { class Map; }
-namespace cld::rendering { class SceneBuilder; }
+namespace bld::core { class Map; }
+namespace bld::rendering { class SceneBuilder; }
 
-namespace cld::ui {
+namespace bld::ui {
 
 // Dockable panel listing the current map's layers, with a per-layer visibility
 // checkbox that forwards to the SceneBuilder. Also emits signals for layer

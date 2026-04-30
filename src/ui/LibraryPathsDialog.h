@@ -5,7 +5,7 @@
 
 class QListWidget;
 
-namespace cld::ui {
+namespace bld::ui {
 
 // Manages the list of filesystem roots scanned by PartsLibrary. Backed by
 // QSettings so choices persist across launches. User can add additional

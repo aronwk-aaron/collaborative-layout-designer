@@ -9,7 +9,7 @@
 #include <QXmlStreamReader>
 #include <QXmlStreamWriter>
 
-namespace cld::edit {
+namespace bld::edit {
 
 BudgetLimits readBudgetFile(const QString& path) {
     BudgetLimits limits;
@@ -85,4 +85,4 @@ QVector<BudgetViolation> checkBudget(const core::Map& map, const BudgetLimits& l
     return out;
 }
 
-}  // namespace cld::edit
+}  // namespace bld::edit

@@ -11,9 +11,9 @@
 #include <optional>
 #include <vector>
 
-namespace cld::core {
+namespace bld::core {
 
-// Root container for fork-only metadata, serialized to a .bbm.cld sidecar
+// Root container for fork-only metadata, serialized to a .bbm.bld sidecar
 // beside the .bbm. Vanilla BlueBrick ignores this file; our writer always
 // writes both atomically on save.
 struct Sidecar {
@@ -31,7 +31,7 @@ struct Sidecar {
     std::optional<Venue>       venue;
 
     // Optional raster background image painted underneath everything else.
-    // Path is absolute; opacity is 0..1. CLD-only feature (vanilla
+    // Path is absolute; opacity is 0..1. BLD-only feature (vanilla
     // BlueBrick has no background-image support); read/written via the
     // sidecar so we don't disturb .bbm bytes.
     QString backgroundImagePath;

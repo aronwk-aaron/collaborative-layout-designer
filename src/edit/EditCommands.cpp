@@ -9,7 +9,7 @@
 #include <QHash>
 #include <QSet>
 
-namespace cld::edit {
+namespace bld::edit {
 
 namespace {
 

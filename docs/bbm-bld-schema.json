@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://github.com/aronwk/collaborative-layout-designer/docs/bbm-cld-schema.json",
-  "title": ".bbm.cld sidecar",
+  "$id": "https://github.com/aronwk/brick-layout-designer/docs/bbm-bld-schema.json",
+  "title": ".bbm.bld sidecar",
   "description": "Fork-only metadata for a BlueBrick .bbm map: cross-layer modules, anchored text labels, and event-venue geometry. Lives next to the .bbm so vanilla BlueBrick 1.9.2 can still open the .bbm cleanly without needing any fork awareness.",
   "type": "object",
   "required": ["schemaVersion"],
@@ -32,7 +32,7 @@
         { "$ref": "#/definitions/venue" },
         { "type": "null" }
       ],
-      "description": "Optional physical event space the layout targets: outline, edge classifications (wall / door / open), interior obstacles, walkway buffer. A project has at most one venue. Vanilla BlueBrick has no Venue concept; the .bbm.cld is the only place this lives."
+      "description": "Optional physical event space the layout targets: outline, edge classifications (wall / door / open), interior obstacles, walkway buffer. A project has at most one venue. Vanilla BlueBrick has no Venue concept; the .bbm.bld is the only place this lives."
     }
   },
 

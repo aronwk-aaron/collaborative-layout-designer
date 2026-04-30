@@ -6,7 +6,7 @@
 
 #include <vector>
 
-namespace cld::core {
+namespace bld::core {
 
 // Upstream LayerArea is a sparse 2D grid of colored cells keyed on (x, y).
 // We preserve raw wire-format entries so round-trip writes emit identical XML,

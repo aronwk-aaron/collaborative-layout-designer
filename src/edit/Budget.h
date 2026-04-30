@@ -4,9 +4,9 @@
 #include <QString>
 #include <QVector>
 
-namespace cld::core { class Map; }
+namespace bld::core { class Map; }
 
-namespace cld::edit {
+namespace bld::edit {
 
 // Key-value pair of part number → maximum allowed count. Read from a
 // `.bbb` XML file (upstream BlueBrick's budget format).
@@ -41,4 +41,4 @@ struct BudgetViolation {
 // (or the budget is empty, which is also fine).
 QVector<BudgetViolation> checkBudget(const core::Map& map, const BudgetLimits& limits);
 
-}  // namespace cld::edit
+}  // namespace bld::edit

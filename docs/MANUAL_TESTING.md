@@ -23,7 +23,7 @@ steps, and screenshots before/after if visual. Ideally add a fixture to
 
 ## 0. Smoke test (do this first)
 
-1. Launch `build/src/app/collaborative-layout-designer`.
+1. Launch `build/src/app/brick-layout-designer`.
 2. Verify the app opens without a crash, the Parts / Layers / Modules /
    Module Library docks are all visible.
 3. File → New → any template. Scene should show a blank layout with the
@@ -200,7 +200,7 @@ Set up: a ruler with both endpoints attached to bricks.
 
 ### 4.1 Save
 - [ ] File → Save on a new document prompts for a file name.
-- [ ] Saves a `.bbm` and (if sidecar content exists) a sibling `.bbm.cld`.
+- [ ] Saves a `.bbm` and (if sidecar content exists) a sibling `.bbm.bld`.
 - [ ] Reopen the file → everything appears the same.
 
 ### 4.2 Byte-exact round-trip
@@ -262,7 +262,7 @@ custom install location, or stash the BlueBrick.1.9.2 folder under
       vanilla → reopen here; offer to re-link by proximity
       (acknowledge the prompt).
 - [ ] Venue: `.bbm` carries no venue (by design — sidecar only).
-      Vanilla should open without error; our `.bbm.cld` preserves
+      Vanilla should open without error; our `.bbm.bld` preserves
       the venue across round-trips.
 - [ ] **Save Selection as Set**: export a mixed straight + curve +
       switch selection. Drop the `.set.xml` under
@@ -666,14 +666,14 @@ reference PNG for every `.bbm` in the corpus. The automated test
 `RenderGoldens.*` renders each fixture at 1600 × 1200 via the
 offscreen Qt platform and pixel-diffs vs the reference.
 
-**Opt-in**: the harness skips unless `CLD_ENABLE_RENDER_GOLDENS=1`
+**Opt-in**: the harness skips unless `BLD_ENABLE_RENDER_GOLDENS=1`
 is set when you run `ctest`. Cross-environment pixel parity isn't
 achievable (Qt version + font hinting + Mesa differences), so CI
 doesn't gate on these. Treat them as a local regression check on
 the same box you captured from. Run with:
 
 ```sh
-CLD_ENABLE_RENDER_GOLDENS=1 ctest --test-dir build -R RenderGoldens
+BLD_ENABLE_RENDER_GOLDENS=1 ctest --test-dir build -R RenderGoldens
 ```
 
 The current references are captures of what *we* render today —

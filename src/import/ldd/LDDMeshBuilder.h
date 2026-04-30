@@ -9,7 +9,7 @@
 #include <QString>
 #include <QStringList>
 
-namespace cld::import {
+namespace bld::import {
 
 class LifReader;
 
@@ -70,4 +70,4 @@ private:
     const LDDLDrawMapping* mapping_   = nullptr;
 };
 
-}  // namespace cld::import
+}  // namespace bld::import

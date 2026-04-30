@@ -19,7 +19,7 @@
 #include "core/Map.h"
 #include "core/LayerBrick.h"
 
-using namespace cld;
+using namespace bld;
 
 namespace {
 

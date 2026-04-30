@@ -3,7 +3,7 @@
 #include <QRectF>
 #include <QString>
 
-namespace cld::core {
+namespace bld::core {
 
 // Common base for anything serialized inside a <Bricks>/<Cells>/<Areas>/<Rulers>
 // list. Upstream calls this `Layer.LayerItem`.

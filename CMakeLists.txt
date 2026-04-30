@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(CollaborativeLayoutDesigner
+project(BrickLayoutDesigner
     VERSION 0.0.1
     DESCRIPTION "Cross-platform maintainer fork of BlueBrick"
     LANGUAGES CXX)
@@ -42,24 +42,24 @@ endif()
 # few we want to cover going forward. Translators populate the .ts files via
 # `lupdate`; `lrelease` compiles them to .qm which the build installs next to
 # the binary. See docs/TRANSLATING.md.
-set(CLD_LANGUAGES fr de es it nl pt zh ja)
+set(BLD_LANGUAGES fr de es it nl pt zh ja)
 
-set(CLD_TS_FILES "")
-foreach(_lang IN LISTS CLD_LANGUAGES)
-    list(APPEND CLD_TS_FILES "${CMAKE_SOURCE_DIR}/translations/cld_${_lang}.ts")
+set(BLD_TS_FILES "")
+foreach(_lang IN LISTS BLD_LANGUAGES)
+    list(APPEND BLD_TS_FILES "${CMAKE_SOURCE_DIR}/translations/bld_${_lang}.ts")
 endforeach()
 
 # Only wire the binaries when every .ts file exists so a fresh clone before
 # any translations are stubbed out still builds.
-set(CLD_HAVE_TS TRUE)
-foreach(_ts IN LISTS CLD_TS_FILES)
+set(BLD_HAVE_TS TRUE)
+foreach(_ts IN LISTS BLD_TS_FILES)
     if(NOT EXISTS "${_ts}")
-        set(CLD_HAVE_TS FALSE)
+        set(BLD_HAVE_TS FALSE)
     endif()
 endforeach()
-if(CLD_HAVE_TS AND TARGET cld_app AND Qt6LinguistTools_FOUND)
-    qt_add_translations(cld_app
-        TS_FILES ${CLD_TS_FILES}
-        QM_FILES_OUTPUT_VARIABLE CLD_QM_FILES)
-    install(FILES ${CLD_QM_FILES} DESTINATION translations OPTIONAL)
+if(BLD_HAVE_TS AND TARGET bld_app AND Qt6LinguistTools_FOUND)
+    qt_add_translations(bld_app
+        TS_FILES ${BLD_TS_FILES}
+        QM_FILES_OUTPUT_VARIABLE BLD_QM_FILES)
+    install(FILES ${BLD_QM_FILES} DESTINATION translations OPTIONAL)
 endif()

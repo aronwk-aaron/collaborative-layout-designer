@@ -5,9 +5,9 @@
 #include <QString>
 #include <QVector>
 
-namespace cld::core { class Map; }
+namespace bld::core { class Map; }
 
-namespace cld::edit {
+namespace bld::edit {
 
 enum class VenueViolationKind {
     OutsideVenue,          // brick's footprint extends past the venue outline
@@ -29,4 +29,4 @@ struct VenueViolation {
 // no enabled venue, returns an empty list.
 QVector<VenueViolation> validateVenue(const core::Map& map);
 
-}  // namespace cld::edit
+}  // namespace bld::edit

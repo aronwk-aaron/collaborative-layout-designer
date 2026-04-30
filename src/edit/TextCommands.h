@@ -7,9 +7,9 @@
 
 #include <optional>
 
-namespace cld::core { class Map; }
+namespace bld::core { class Map; }
 
-namespace cld::edit {
+namespace bld::edit {
 
 // Append a text cell to a text layer. Redo pushes it; undo removes by guid.
 class AddTextCellCommand : public QUndoCommand {

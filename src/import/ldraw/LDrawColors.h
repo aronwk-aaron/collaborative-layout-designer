@@ -15,7 +15,7 @@
 
 #include <QColor>
 
-namespace cld::import {
+namespace bld::import {
 
 // Look up a standard LDraw colour. Returns the "main" diffuse RGB.
 // Unknown codes fall back to code 16 (main-colour slot) — vanilla
@@ -29,4 +29,4 @@ QColor ldrawColor(int code);
 // blend correctly when composited.
 bool   ldrawColorIsTransparent(int code);
 
-}  // namespace cld::import
+}  // namespace bld::import

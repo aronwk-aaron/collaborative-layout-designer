@@ -24,7 +24,7 @@
 #include <QVBoxLayout>
 #include <QWidget>
 
-namespace cld::ui {
+namespace bld::ui {
 
 namespace {
 

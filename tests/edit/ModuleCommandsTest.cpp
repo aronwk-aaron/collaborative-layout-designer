@@ -9,7 +9,7 @@
 #include <QUndoStack>
 #include <QUuid>
 
-using namespace cld;
+using namespace bld;
 
 namespace {
 

@@ -8,7 +8,7 @@
 #include <QSaveFile>
 #include <QXmlStreamWriter>
 
-namespace cld::import {
+namespace bld::import {
 
 namespace {
 
@@ -103,7 +103,7 @@ QString writeImportedModelAsLibraryPart(
     w.writeStartDocument(QStringLiteral("1.0"));
     w.writeStartElement(QStringLiteral("part"));
     w.writeTextElement(QStringLiteral("Author"),
-        authorName.isEmpty() ? QStringLiteral("Collaborative Layout Designer import")
+        authorName.isEmpty() ? QStringLiteral("Brick Layout Designer import")
                               : authorName);
     w.writeStartElement(QStringLiteral("Description"));
     w.writeTextElement(QStringLiteral("en"),
@@ -155,4 +155,4 @@ QString writeImportedModelAsLibraryPart(
     return key;
 }
 
-}  // namespace cld::import
+}  // namespace bld::import

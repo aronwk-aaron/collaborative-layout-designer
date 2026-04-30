@@ -86,7 +86,7 @@
 #include <QUndoStack>
 #include <QUuid>
 
-namespace cld::ui {
+namespace bld::ui {
 
 namespace {
 constexpr const char* kLastFileKey = "recent/lastFile";
@@ -1215,7 +1215,7 @@ void MainWindow::onSaveSelectionAsSet() {
 
     saveload::SetManifest manifest;
     manifest.author = map->author.isEmpty()
-        ? QStringLiteral("Collaborative Layout Designer")
+        ? QStringLiteral("Brick Layout Designer")
         : map->author;
     manifest.canUngroup = true;
     manifest.subparts.reserve(picks.size());

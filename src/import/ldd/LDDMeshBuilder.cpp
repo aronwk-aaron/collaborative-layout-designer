@@ -7,7 +7,7 @@
 #include <QFile>
 #include <QFileInfo>
 
-namespace cld::import {
+namespace bld::import {
 
 namespace {
 
@@ -128,4 +128,4 @@ LDDLDrawBakedModel LDDMeshBuilder::bake(const LDrawReadResult& read) {
     return out;
 }
 
-}  // namespace cld::import
+}  // namespace bld::import

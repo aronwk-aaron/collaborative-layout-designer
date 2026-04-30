@@ -7,11 +7,11 @@ class QLabel;
 class QListWidget;
 class QListWidgetItem;
 
-namespace cld::ui {
+namespace bld::ui {
 
 // MIME type used when dragging a module from the library panel onto the map.
 // The payload is the module .bbm's absolute path (UTF-8).
-inline constexpr const char* kModuleDragMimeType = "application/x-cld-module-path";
+inline constexpr const char* kModuleDragMimeType = "application/x-bld-module-path";
 
 // A simple library of module .bbm files on disk. Backed by a QSettings folder
 // path ("modules/libraryPath"). Lists every .bbm in that folder; double-click

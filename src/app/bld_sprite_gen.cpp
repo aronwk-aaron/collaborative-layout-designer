@@ -46,7 +46,7 @@ namespace {
 
 void usage() {
     std::fprintf(stderr,
-        "Usage: cld-sprite-gen <input> <output> [--parts <dir>] [--size <max-px>]\n"
+        "Usage: bld-sprite-gen <input> <output> [--parts <dir>] [--size <max-px>]\n"
         "\n"
         "  input    .ldr / .dat / .mpd / .io / .lxf / .lxfml\n"
         "  output   .png or .gif (extension selects the encoder)\n"
@@ -69,7 +69,7 @@ Kind kindFromExt(const QString& path) {
 
 QString defaultPartsDir(const QString& argv0) {
     // Prefer the repo-layout sibling when run from inside a dev tree:
-    //   build/src/app/cld_sprite_gen  →  ../../parts/BlueBrickParts/parts
+    //   build/src/app/bld_sprite_gen  →  ../../parts/BlueBrickParts/parts
     const QFileInfo argvInfo(argv0);
     const QDir bin = argvInfo.absoluteDir();
     const QString candidate = bin.absoluteFilePath(
@@ -110,7 +110,7 @@ int main(int argc, char** argv) {
     // Load parts library so library-resolvable refs get composited
     // at full fidelity. Missing library is fine — we fall back to
     // primitive raster only.
-    cld::parts::PartsLibrary parts;
+    bld::parts::PartsLibrary parts;
     const QString partsDir = partsOverride.isEmpty()
         ? defaultPartsDir(QString::fromLocal8Bit(argv[0]))
         : partsOverride;
@@ -124,11 +124,11 @@ int main(int argc, char** argv) {
     }
 
     // Dispatch to the right reader.
-    cld::import::LDrawReadResult read;
+    bld::import::LDrawReadResult read;
     switch (kindFromExt(inPath)) {
-        case Kind::LDraw:  read = cld::import::readLDraw(inPath);    break;
-        case Kind::Studio: read = cld::import::readStudioIo(inPath); break;
-        case Kind::LDD:    read = cld::import::readLDD(inPath);      break;
+        case Kind::LDraw:  read = bld::import::readLDraw(inPath);    break;
+        case Kind::Studio: read = bld::import::readStudioIo(inPath); break;
+        case Kind::LDD:    read = bld::import::readLDD(inPath);      break;
     }
     if (!read.ok) {
         std::fprintf(stderr, "parse failed: %s\n",
@@ -141,14 +141,14 @@ int main(int argc, char** argv) {
 
     // Primary render path: composite via SceneBuilder if there are
     // part references and any of them resolve in the library.
-    auto modelMap = cld::import::toBlueBrickMap(read);
+    auto modelMap = bld::import::toBlueBrickMap(read);
     const bool hasRefs = modelMap && !modelMap->layers().empty();
     QImage sprite;
     if (hasRefs) {
-        cld::edit::rebuildConnectivity(*modelMap, parts);
+        bld::edit::rebuildConnectivity(*modelMap, parts);
         QGraphicsScene scene;
         scene.setBackgroundBrush(Qt::transparent);
-        cld::rendering::SceneBuilder b(scene, parts);
+        bld::rendering::SceneBuilder b(scene, parts);
         b.build(*modelMap);
         // Only composite when the scene actually got items —
         // toBlueBrickMap always produces a layer even when no refs
@@ -174,7 +174,7 @@ int main(int argc, char** argv) {
     // Fallback path: primitive raster. Also triggers when the
     // composite was empty (unknown parts with no inline primitives).
     if (sprite.isNull() && !read.primitives.empty()) {
-        sprite = cld::import::rasterizeTopDown(read);
+        sprite = bld::import::rasterizeTopDown(read);
         std::printf("composed via primitive raster (%d×%d)\n",
                     sprite.width(), sprite.height());
     } else if (!sprite.isNull()) {

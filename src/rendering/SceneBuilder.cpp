@@ -31,7 +31,7 @@
 #include <QPolygonF>
 #include <QStyleOptionGraphicsItem>
 
-namespace cld::rendering {
+namespace bld::rendering {
 
 // Pull the shared helpers (kPx, studToPx, LayerSink, kBrickData* keys)
 // from detail:: so the per-layer free helpers below read naturally.

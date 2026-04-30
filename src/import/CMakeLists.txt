@@ -1,4 +1,4 @@
-add_library(cld_import STATIC
+add_library(bld_import STATIC
     # LDraw / Studio shared pipeline (parser, library scanner, palette,
     # subfile mesh resolver, top-down rasterizer, BlueBrick-format
     # rasterizer fallback for inline primitives).
@@ -39,7 +39,7 @@ add_library(cld_import STATIC
     lif/LifReader.cpp
     lif/LifReader.h
 
-    # Format-agnostic top-down rasterizer for cld::geom::Mesh.
+    # Format-agnostic top-down rasterizer for bld::geom::Mesh.
     mesh/MeshRasterize.cpp
     mesh/MeshRasterize.h
 
@@ -50,18 +50,18 @@ add_library(cld_import STATIC
     ImportToPart.h
 )
 
-target_include_directories(cld_import PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)
+target_include_directories(bld_import PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)
 # StudioReader uses QZipReader from Qt's private Core headers. The public
 # Qt6::Core target doesn't expose the private include path, so we pull it
 # in explicitly. Using private Qt APIs is a stability tradeoff — it can
 # break across Qt minor versions, but it spares us the external QuaZip /
 # miniz dep for a tiny feature.
-target_link_libraries(cld_import PUBLIC cld_core cld_geom Qt6::Core Qt6::Gui)
+target_link_libraries(bld_import PUBLIC bld_core bld_geom Qt6::Core Qt6::Gui)
 # Qt 6 layout puts private headers under
 # <prefix>/include/QtCore/<version>/QtCore/private/. Locate the specific
 # directory that contains the header we need, then add its parent so
 # `#include <private/qzipreader_p.h>` resolves.
-find_path(CLD_QZIPREADER_INCLUDE_DIR
+find_path(BLD_QZIPREADER_INCLUDE_DIR
     NAMES private/qzipreader_p.h
     PATHS
         # Start from the public Qt Core include dir and walk into the
@@ -71,7 +71,7 @@ find_path(CLD_QZIPREADER_INCLUDE_DIR
         /usr/include/qt6/QtCore/${Qt6Core_VERSION}/QtCore
         /usr/include/qt6/QtCore
     NO_DEFAULT_PATH)
-if(NOT CLD_QZIPREADER_INCLUDE_DIR)
+if(NOT BLD_QZIPREADER_INCLUDE_DIR)
     # Generic fallback: search every versioned sub-dir under the Core
     # include path. Reasonable on macOS / Windows Qt installer layouts.
     get_target_property(_qt_core_includes Qt6::Core INTERFACE_INCLUDE_DIRECTORIES)
@@ -79,26 +79,26 @@ if(NOT CLD_QZIPREADER_INCLUDE_DIR)
         file(GLOB _candidates LIST_DIRECTORIES true "${_inc}/*/QtCore")
         foreach(_c IN LISTS _candidates)
             if(EXISTS "${_c}/private/qzipreader_p.h")
-                set(CLD_QZIPREADER_INCLUDE_DIR "${_c}" CACHE INTERNAL "")
+                set(BLD_QZIPREADER_INCLUDE_DIR "${_c}" CACHE INTERNAL "")
                 break()
             endif()
         endforeach()
-        if(CLD_QZIPREADER_INCLUDE_DIR)
+        if(BLD_QZIPREADER_INCLUDE_DIR)
             break()
         endif()
     endforeach()
 endif()
-if(CLD_QZIPREADER_INCLUDE_DIR)
-    target_include_directories(cld_import PRIVATE "${CLD_QZIPREADER_INCLUDE_DIR}")
+if(BLD_QZIPREADER_INCLUDE_DIR)
+    target_include_directories(bld_import PRIVATE "${BLD_QZIPREADER_INCLUDE_DIR}")
     # The private headers also reference <QtCore/private/qglobal_p.h>
     # etc., which resolves via the version-parent (one directory up).
     get_filename_component(_qtcore_version_parent
-        "${CLD_QZIPREADER_INCLUDE_DIR}" DIRECTORY)
-    target_include_directories(cld_import PRIVATE "${_qtcore_version_parent}")
-    message(STATUS "cld_import: QZipReader private headers at ${CLD_QZIPREADER_INCLUDE_DIR}")
+        "${BLD_QZIPREADER_INCLUDE_DIR}" DIRECTORY)
+    target_include_directories(bld_import PRIVATE "${_qtcore_version_parent}")
+    message(STATUS "bld_import: QZipReader private headers at ${BLD_QZIPREADER_INCLUDE_DIR}")
 else()
     message(WARNING
-        "cld_import: qzipreader_p.h not found — Studio .io import will be stubbed. "
+        "bld_import: qzipreader_p.h not found — Studio .io import will be stubbed. "
         "Install the Qt private headers package if you want this feature.")
-    target_compile_definitions(cld_import PRIVATE CLD_NO_QZIPREADER=1)
+    target_compile_definitions(bld_import PRIVATE BLD_NO_QZIPREADER=1)
 endif()

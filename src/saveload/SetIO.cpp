@@ -4,7 +4,7 @@
 #include <QSaveFile>
 #include <QXmlStreamWriter>
 
-namespace cld::saveload {
+namespace bld::saveload {
 
 bool writeSetXml(const QString& filePath,
                  const SetManifest& manifest,
@@ -65,4 +65,4 @@ bool writeSetXml(const QString& filePath,
     return true;
 }
 
-}  // namespace cld::saveload
+}  // namespace bld::saveload

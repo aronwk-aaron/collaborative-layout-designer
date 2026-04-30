@@ -42,7 +42,7 @@
 #include <QStatusBar>
 #include <QUndoStack>
 
-namespace cld::ui {
+namespace bld::ui {
 
 void MainWindow::setupMapMenu() {
     auto* mapMenu = menuBar()->addMenu(tr("&Map"));
@@ -60,7 +60,7 @@ void MainWindow::setupMapMenu() {
         mapView_->scene()->setBackgroundBrush(c);
     });
     auto* bgImgAct = mapMenu->addAction(tr("Background &Image..."));
-    bgImgAct->setToolTip(tr("Optional raster image painted under the layout (CLD-only, stored in .bbm.cld sidecar)"));
+    bgImgAct->setToolTip(tr("Optional raster image painted under the layout (BLD-only, stored in .bbm.bld sidecar)"));
     connect(bgImgAct, &QAction::triggered, this, [this]{
         auto* m = mapView_->currentMap();
         if (!m) return;
@@ -250,7 +250,7 @@ void MainWindow::setupMapMenu() {
         auto* m = mapView_->currentMap();
         if (!m) return;
         const QString path = QFileDialog::getOpenFileName(this, tr("Load venue file"), {},
-            tr("Venue (*.cld-venue);;All files (*)"));
+            tr("Venue (*.bld-venue);;All files (*)"));
         if (path.isEmpty()) return;
         QString err;
         auto venue = saveload::readVenueFile(path, &err);
@@ -269,4 +269,4 @@ void MainWindow::setupMapMenu() {
     });
 }
 
-}  // namespace cld::ui
+}  // namespace bld::ui

@@ -14,7 +14,7 @@
 #include <QVBoxLayout>
 #include <QWidget>
 
-namespace cld::ui {
+namespace bld::ui {
 
 namespace {
 constexpr const char* kSettingsKey = "modules/libraryPath";

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!DOCTYPE TS>
-<TS version="2.1" language="de">
+<TS version="2.1" language="nl">
 <context>
     <name>QObject</name>
     <message>
@@ -649,7 +649,7 @@
     <message>
         <location filename="../src/ui/PreferencesDialog.cpp" line="248"/>
         <source>Remove</source>
-        <translation>Entfernen</translation>
+        <translation>Verwijderen</translation>
     </message>
     <message>
         <location filename="../src/ui/PreferencesDialog.cpp" line="252"/>
@@ -689,11 +689,11 @@
     <message>
         <location filename="../src/ui/VenueDimensionsDialog.cpp" line="137"/>
         <source>Open</source>
-        <translation>Öffnen</translation>
+        <translation>Openen</translation>
     </message>
 </context>
 <context>
-    <name>cld::ui::BudgetDialog</name>
+    <name>bld::ui::BudgetDialog</name>
     <message>
         <location filename="../src/ui/BudgetDialog.cpp" line="35"/>
         <source>Budget</source>
@@ -784,7 +784,7 @@
     </message>
 </context>
 <context>
-    <name>cld::ui::FindDialog</name>
+    <name>bld::ui::FindDialog</name>
     <message>
         <location filename="../src/ui/FindDialog.cpp" line="29"/>
         <source>Find &amp;&amp; Replace</source>
@@ -838,15 +838,15 @@
     <message>
         <location filename="../src/ui/FindDialog.cpp" line="55"/>
         <source>Close</source>
-        <translation>Schließen</translation>
+        <translation>Sluiten</translation>
     </message>
 </context>
 <context>
-    <name>cld::ui::LayerPanel</name>
+    <name>bld::ui::LayerPanel</name>
     <message>
         <location filename="../src/ui/LayerPanel.cpp" line="51"/>
         <source>Layers</source>
-        <translation>Ebenen</translation>
+        <translation>Lagen</translation>
     </message>
     <message>
         <location filename="../src/ui/LayerPanel.cpp" line="59"/>
@@ -1005,7 +1005,7 @@
     </message>
 </context>
 <context>
-    <name>cld::ui::LibraryPathsDialog</name>
+    <name>bld::ui::LibraryPathsDialog</name>
     <message>
         <location filename="../src/ui/LibraryPathsDialog.cpp" line="16"/>
         <source>Parts Library Paths</source>
@@ -1024,7 +1024,7 @@
     <message>
         <location filename="../src/ui/LibraryPathsDialog.cpp" line="34"/>
         <source>Remove</source>
-        <translation>Entfernen</translation>
+        <translation>Verwijderen</translation>
     </message>
     <message>
         <location filename="../src/ui/LibraryPathsDialog.cpp" line="35"/>
@@ -1043,7 +1043,7 @@
     </message>
 </context>
 <context>
-    <name>cld::ui::MainWindow</name>
+    <name>bld::ui::MainWindow</name>
     <message>
         <location filename="../src/ui/MainWindow.cpp" line="142"/>
         <location filename="../src/ui/MainWindow.cpp" line="228"/>
@@ -1152,7 +1152,7 @@ existing cells at their old indexing — paint over to clean up.</source>
         <location filename="../src/ui/MainWindow.cpp" line="871"/>
         <location filename="../src/ui/MainWindow.cpp" line="935"/>
         <source>Module name:</source>
-        <translation>Modul-Name:</translation>
+        <translation>Modulenaam:</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindow.cpp" line="379"/>
@@ -1379,13 +1379,13 @@ Target path:
         <location filename="../src/ui/MainWindow.cpp" line="901"/>
         <location filename="../src/ui/MainWindow.cpp" line="994"/>
         <source>Select one or more bricks first.</source>
-        <translation>Bitte zuerst einen oder mehrere Bausteine auswählen.</translation>
+        <translation>Selecteer eerst een of meer onderdelen.</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindow.cpp" line="872"/>
         <location filename="../src/ui/MainWindow.cpp" line="936"/>
         <source>New Module</source>
-        <translation>Neues Modul</translation>
+        <translation>Nieuwe module</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindow.cpp" line="876"/>
@@ -1396,12 +1396,12 @@ Target path:
         <location filename="../src/ui/MainWindow.cpp" line="900"/>
         <location filename="../src/ui/MainWindow.cpp" line="935"/>
         <source>Save module</source>
-        <translation>Modul speichern</translation>
+        <translation>Module opslaan</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindow.cpp" line="949"/>
         <source>Save selection as module</source>
-        <translation>Auswahl als Modul speichern</translation>
+        <translation>Selectie opslaan als module</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindow.cpp" line="951"/>
@@ -1413,7 +1413,7 @@ Target path:
     <message>
         <location filename="../src/ui/MainWindow.cpp" line="957"/>
         <source>Save module failed</source>
-        <translation>Speichern des Moduls fehlgeschlagen</translation>
+        <translation>Opslaan van module mislukt</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindow.cpp" line="960"/>
@@ -1424,22 +1424,22 @@ Target path:
         <location filename="../src/ui/MainWindow.cpp" line="993"/>
         <location filename="../src/ui/MainWindow.cpp" line="1031"/>
         <source>Save set</source>
-        <translation>Set speichern</translation>
+        <translation>Set opslaan</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindow.cpp" line="1031"/>
         <source>Set name:</source>
-        <translation>Set-Name:</translation>
+        <translation>Setnaam:</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindow.cpp" line="1032"/>
         <source>New Set</source>
-        <translation>Neues Set</translation>
+        <translation>Nieuwe set</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindow.cpp" line="1057"/>
         <source>Save selection as set</source>
-        <translation>Auswahl als Set speichern</translation>
+        <translation>Selectie opslaan als set</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindow.cpp" line="1059"/>
@@ -1449,7 +1449,7 @@ Target path:
     <message>
         <location filename="../src/ui/MainWindow.cpp" line="1070"/>
         <source>Save set failed</source>
-        <translation>Speichern des Sets fehlgeschlagen</translation>
+        <translation>Opslaan van set mislukt</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindow.cpp" line="1074"/>
@@ -1494,7 +1494,7 @@ Target path:
     </message>
     <message>
         <location filename="../src/ui/MainWindowFileIO.cpp" line="62"/>
-        <source>%1%2 — Collaborative Layout Designer</source>
+        <source>%1%2 — Brick Layout Designer</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -1625,12 +1625,12 @@ Target path:
     </message>
     <message>
         <location filename="../src/ui/MainWindowFileIO.cpp" line="278"/>
-        <source>About Collaborative Layout Designer</source>
+        <source>About Brick Layout Designer</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowFileIO.cpp" line="279"/>
-        <source>&lt;h3&gt;Collaborative Layout Designer&lt;/h3&gt;&lt;p&gt;Cross-platform C++/Qt 6 fork of &lt;b&gt;BlueBrick&lt;/b&gt; by Alban Nanty and contributors.&lt;/p&gt;&lt;p&gt;Adds cross-layer modules, anchored text labels, and event venues on top of the vanilla &lt;i&gt;.bbm&lt;/i&gt; format (extra metadata stored in a sidecar &lt;i&gt;.bbm.cld&lt;/i&gt; so vanilla BlueBrick 1.9.2 keeps opening our files).&lt;/p&gt;&lt;p&gt;Licensed under GPL-3.0 — same as upstream BlueBrick.&lt;/p&gt;&lt;p&gt;Parts library: %1 parts indexed.&lt;/p&gt;</source>
+        <source>&lt;h3&gt;Brick Layout Designer&lt;/h3&gt;&lt;p&gt;Cross-platform C++/Qt 6 fork of &lt;b&gt;BlueBrick&lt;/b&gt; by Alban Nanty and contributors.&lt;/p&gt;&lt;p&gt;Adds cross-layer modules, anchored text labels, and event venues on top of the vanilla &lt;i&gt;.bbm&lt;/i&gt; format (extra metadata stored in a sidecar &lt;i&gt;.bbm.bld&lt;/i&gt; so vanilla BlueBrick 1.9.2 keeps opening our files).&lt;/p&gt;&lt;p&gt;Licensed under GPL-3.0 — same as upstream BlueBrick.&lt;/p&gt;&lt;p&gt;Parts library: %1 parts indexed.&lt;/p&gt;</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -1696,12 +1696,12 @@ Restore it?</source>
     <message>
         <location filename="../src/ui/MainWindowMapMenu.cpp" line="47"/>
         <source>&amp;Map</source>
-        <translation>&amp;Karte</translation>
+        <translation>&amp;Kaart</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMapMenu.cpp" line="48"/>
         <source>Background &amp;Colour...</source>
-        <translation>&amp;Hintergrundfarbe...</translation>
+        <translation>Achtergrond&amp;kleur...</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMapMenu.cpp" line="53"/>
@@ -1711,7 +1711,7 @@ Restore it?</source>
     <message>
         <location filename="../src/ui/MainWindowMapMenu.cpp" line="61"/>
         <source>General &amp;Info...</source>
-        <translation>Allgemeine &amp;Informationen...</translation>
+        <translation>Algemene &amp;informatie...</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMapMenu.cpp" line="66"/>
@@ -1746,12 +1746,12 @@ Restore it?</source>
     <message>
         <location filename="../src/ui/MainWindowMapMenu.cpp" line="92"/>
         <source>&amp;Venue</source>
-        <translation>&amp;Veranstaltungsort</translation>
+        <translation>&amp;Locatie</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMapMenu.cpp" line="93"/>
         <source>Draw &amp;Outline...</source>
-        <translation>Umriss &amp;zeichnen...</translation>
+        <translation>&amp;Omtrek tekenen...</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMapMenu.cpp" line="94"/>
@@ -1766,7 +1766,7 @@ Restore it?</source>
     <message>
         <location filename="../src/ui/MainWindowMapMenu.cpp" line="103"/>
         <source>Draw Outline by &amp;Dimensions...</source>
-        <translation>Umriss nach &amp;Maßen zeichnen...</translation>
+        <translation>Omtrek via &amp;afmetingen...</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMapMenu.cpp" line="104"/>
@@ -1781,7 +1781,7 @@ Restore it?</source>
     <message>
         <location filename="../src/ui/MainWindowMapMenu.cpp" line="134"/>
         <source>Add &amp;Obstacle...</source>
-        <translation>&amp;Hindernis hinzufügen...</translation>
+        <translation>&amp;Obstakel toevoegen...</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMapMenu.cpp" line="135"/>
@@ -1806,12 +1806,12 @@ Restore it?</source>
     <message>
         <location filename="../src/ui/MainWindowMapMenu.cpp" line="148"/>
         <source>&amp;Edit Venue Properties...</source>
-        <translation>Ort&amp;seigenschaften bearbeiten...</translation>
+        <translation>&amp;Locatie-eigenschappen bewerken...</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMapMenu.cpp" line="161"/>
         <source>&amp;Clear Venue</source>
-        <translation>Ort &amp;zurücksetzen</translation>
+        <translation>Locatie &amp;wissen</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMapMenu.cpp" line="165"/>
@@ -1921,38 +1921,38 @@ Restore it?</source>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMapMenu.cpp" line="271"/>
-        <source>Venue (*.cld-venue);;All files (*)</source>
+        <source>Venue (*.bld-venue);;All files (*)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="74"/>
         <source>&amp;File</source>
-        <translation>&amp;Datei</translation>
+        <translation>&amp;Bestand</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="75"/>
         <source>&amp;New</source>
-        <translation>&amp;Neu</translation>
+        <translation>&amp;Nieuw</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="79"/>
         <source>&amp;Open...</source>
-        <translation>&amp;Öffnen...</translation>
+        <translation>&amp;Openen...</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="83"/>
         <source>Open &amp;Recent</source>
-        <translation>&amp;Zuletzt geöffnet</translation>
+        <translation>&amp;Recent geopend</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="86"/>
         <source>&amp;Save</source>
-        <translation>&amp;Speichern</translation>
+        <translation>O&amp;pslaan</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="90"/>
         <source>Save &amp;As...</source>
-        <translation>Speichern &amp;unter...</translation>
+        <translation>Opslaan &amp;als...</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="95"/>
@@ -2074,22 +2074,22 @@ Restore it?</source>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="253"/>
         <source>&amp;Edit</source>
-        <translation>&amp;Bearbeiten</translation>
+        <translation>Be&amp;werken</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="254"/>
         <source>&amp;Undo</source>
-        <translation>&amp;Rückgängig</translation>
+        <translation>&amp;Ongedaan maken</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="257"/>
         <source>&amp;Redo</source>
-        <translation>&amp;Wiederholen</translation>
+        <translation>&amp;Opnieuw</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="261"/>
         <source>&amp;Delete</source>
-        <translation>&amp;Löschen</translation>
+        <translation>&amp;Verwijderen</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="264"/>
@@ -2109,22 +2109,22 @@ Restore it?</source>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="276"/>
         <source>Cu&amp;t</source>
-        <translation>Aus&amp;schneiden</translation>
+        <translation>&amp;Knippen</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="280"/>
         <source>&amp;Copy</source>
-        <translation>&amp;Kopieren</translation>
+        <translation>&amp;Kopiëren</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="284"/>
         <source>&amp;Paste</source>
-        <translation>&amp;Einfügen</translation>
+        <translation>&amp;Plakken</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="288"/>
         <source>&amp;Duplicate</source>
-        <translation>&amp;Duplizieren</translation>
+        <translation>&amp;Dupliceren</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="289"/>
@@ -2134,7 +2134,7 @@ Restore it?</source>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="293"/>
         <source>Select &amp;All</source>
-        <translation>&amp;Alles auswählen</translation>
+        <translation>&amp;Alles selecteren</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="297"/>
@@ -2149,7 +2149,7 @@ Restore it?</source>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="301"/>
         <source>&amp;Find &amp;&amp; Replace...</source>
-        <translation>Suchen &amp;und Ersetzen...</translation>
+        <translation>&amp;Zoeken en vervangen...</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="309"/>
@@ -2270,22 +2270,22 @@ Restore it?</source>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="392"/>
         <source>&amp;View</source>
-        <translation>&amp;Ansicht</translation>
+        <translation>Beel&amp;d</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="393"/>
         <source>Zoom &amp;In</source>
-        <translation>Ver&amp;größern</translation>
+        <translation>&amp;Inzoomen</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="397"/>
         <source>Zoom &amp;Out</source>
-        <translation>Ver&amp;kleinern</translation>
+        <translation>&amp;Uitzoomen</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="401"/>
         <source>&amp;Fit to View</source>
-        <translation>An &amp;Ansicht anpassen</translation>
+        <translation>Aan &amp;venster aanpassen</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="413"/>
@@ -2325,7 +2325,7 @@ Restore it?</source>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="448"/>
         <source>&amp;Electric Circuits</source>
-        <translation>&amp;Stromkreise</translation>
+        <translation>&amp;Elektrische circuits</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="449"/>
@@ -2335,32 +2335,32 @@ Restore it?</source>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="450"/>
         <source>Ruler Attach P&amp;oints</source>
-        <translation>Lineal-Ankerpunkte</translation>
+        <translation>Liniaal-verankeringspunten</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="451"/>
         <source>&amp;Watermark</source>
-        <translation>&amp;Wasserzeichen</translation>
+        <translation>&amp;Watermerk</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="452"/>
         <source>Brick &amp;Hulls</source>
-        <translation>Bausteinhüllen</translation>
+        <translation>Steencontouren</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="453"/>
         <source>Brick E&amp;levation Labels</source>
-        <translation>Bausteinhöhen anzeigen</translation>
+        <translation>Hoogtelabels</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="454"/>
         <source>&amp;Module Names</source>
-        <translation>&amp;Modulnamen</translation>
+        <translation>&amp;Modulenamen</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="464"/>
         <source>&amp;Layers</source>
-        <translation>&amp;Ebenen</translation>
+        <translation>&amp;Lagen</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="466"/>
@@ -2375,27 +2375,27 @@ Restore it?</source>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="475"/>
         <source>&amp;Modules</source>
-        <translation>&amp;Module</translation>
+        <translation>&amp;Modules</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="476"/>
         <source>Create from &amp;Selection...</source>
-        <translation>Aus &amp;Auswahl erstellen...</translation>
+        <translation>Aanmaken uit &amp;selectie...</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="478"/>
         <source>&amp;Import .bbm as Module...</source>
-        <translation>.bbm als Modul importieren...</translation>
+        <translation>.bbm als module importeren...</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="480"/>
         <source>&amp;Save Selection as Module...</source>
-        <translation>Auswahl als Modul &amp;speichern...</translation>
+        <translation>Selectie opslaan als &amp;module...</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="482"/>
         <source>Save Selection as &amp;Set...</source>
-        <translation>Auswahl als &amp;Set speichern...</translation>
+        <translation>Selectie opslaan als &amp;set...</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="483"/>
@@ -2405,37 +2405,37 @@ Restore it?</source>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="487"/>
         <source>&amp;Help</source>
-        <translation>&amp;Hilfe</translation>
+        <translation>&amp;Help</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="488"/>
-        <source>&amp;About CLD...</source>
-        <translation>&amp;Über CLD...</translation>
+        <source>&amp;About BLD...</source>
+        <translation>&amp;Over BLD...</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowMenus.cpp" line="490"/>
         <source>About &amp;Qt...</source>
-        <translation>Über &amp;Qt...</translation>
+        <translation>Over &amp;Qt...</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowToolsMenu.cpp" line="51"/>
         <source>&amp;Tools</source>
-        <translation>&amp;Werkzeuge</translation>
+        <translation>E&amp;xtra</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowToolsMenu.cpp" line="52"/>
         <source>Manage Parts &amp;Libraries...</source>
-        <translation>Teilebibliotheken &amp;verwalten...</translation>
+        <translation>&amp;Onderdelenbibliotheken beheren...</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowToolsMenu.cpp" line="54"/>
         <source>&amp;Reload Parts Library</source>
-        <translation>Teilebibliothek neu laden</translation>
+        <translation>&amp;Onderdelenbibliotheek opnieuw laden</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowToolsMenu.cpp" line="58"/>
         <source>&amp;Import</source>
-        <translation>&amp;Importieren</translation>
+        <translation>&amp;Importeren</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowToolsMenu.cpp" line="71"/>
@@ -2525,16 +2525,16 @@ Restore it?</source>
     <message>
         <location filename="../src/ui/MainWindowToolsMenu.cpp" line="226"/>
         <source>Export &amp;Part List (CSV)...</source>
-        <translation>Teileliste exportieren (CSV)...</translation>
+        <translation>&amp;Onderdelenlijst exporteren (CSV)...</translation>
     </message>
     <message>
         <location filename="../src/ui/MainWindowToolsMenu.cpp" line="229"/>
         <source>&amp;Preferences...</source>
-        <translation>&amp;Einstellungen...</translation>
+        <translation>&amp;Voorkeuren...</translation>
     </message>
 </context>
 <context>
-    <name>cld::ui::MapView</name>
+    <name>bld::ui::MapView</name>
     <message>
         <location filename="../src/ui/MapView.cpp" line="435"/>
         <source>Ruler length: %1 studs  (%2)</source>
@@ -2697,7 +2697,7 @@ Restore it?</source>
     <message>
         <location filename="../src/ui/MapViewContextMenu.cpp" line="178"/>
         <source>Delete</source>
-        <translation>Löschen</translation>
+        <translation>Verwijderen</translation>
     </message>
     <message>
         <location filename="../src/ui/MapViewContextMenu.cpp" line="186"/>
@@ -2776,11 +2776,11 @@ Restore it?</source>
     </message>
 </context>
 <context>
-    <name>cld::ui::ModuleLibraryPanel</name>
+    <name>bld::ui::ModuleLibraryPanel</name>
     <message>
         <location filename="../src/ui/ModuleLibraryPanel.cpp" line="48"/>
         <source>Module Library</source>
-        <translation>Modulbibliothek</translation>
+        <translation>Modulebibliotheek</translation>
     </message>
     <message>
         <location filename="../src/ui/ModuleLibraryPanel.cpp" line="58"/>
@@ -2795,7 +2795,7 @@ Restore it?</source>
     <message>
         <location filename="../src/ui/ModuleLibraryPanel.cpp" line="60"/>
         <source>Refresh</source>
-        <translation>Aktualisieren</translation>
+        <translation>Vernieuwen</translation>
     </message>
     <message>
         <location filename="../src/ui/ModuleLibraryPanel.cpp" line="88"/>
@@ -2819,16 +2819,16 @@ Restore it?</source>
     </message>
 </context>
 <context>
-    <name>cld::ui::ModulesPanel</name>
+    <name>bld::ui::ModulesPanel</name>
     <message>
         <location filename="../src/ui/ModulesPanel.cpp" line="24"/>
         <source>Modules</source>
-        <translation>Module</translation>
+        <translation>Modules</translation>
     </message>
     <message>
         <location filename="../src/ui/ModulesPanel.cpp" line="32"/>
         <source>Create</source>
-        <translation>Erstellen</translation>
+        <translation>Aanmaken</translation>
     </message>
     <message>
         <location filename="../src/ui/ModulesPanel.cpp" line="33"/>
@@ -2858,7 +2858,7 @@ Restore it?</source>
     <message>
         <location filename="../src/ui/ModulesPanel.cpp" line="39"/>
         <source>Delete</source>
-        <translation>Löschen</translation>
+        <translation>Verwijderen</translation>
     </message>
     <message>
         <location filename="../src/ui/ModulesPanel.cpp" line="40"/>
@@ -2942,11 +2942,11 @@ Restore it?</source>
     </message>
 </context>
 <context>
-    <name>cld::ui::PartUsagePanel</name>
+    <name>bld::ui::PartUsagePanel</name>
     <message>
         <location filename="../src/ui/PartUsagePanel.cpp" line="52"/>
         <source>Used Parts</source>
-        <translation>Verwendete Teile</translation>
+        <translation>Gebruikte onderdelen</translation>
     </message>
     <message>
         <location filename="../src/ui/PartUsagePanel.cpp" line="62"/>
@@ -3000,11 +3000,11 @@ Restore it?</source>
     </message>
 </context>
 <context>
-    <name>cld::ui::PartsBrowser</name>
+    <name>bld::ui::PartsBrowser</name>
     <message>
         <location filename="../src/ui/PartsBrowser.cpp" line="97"/>
         <source>Parts</source>
-        <translation>Teile</translation>
+        <translation>Onderdelen</translation>
     </message>
     <message>
         <location filename="../src/ui/PartsBrowser.cpp" line="108"/>
@@ -3033,7 +3033,7 @@ Restore it?</source>
     </message>
 </context>
 <context>
-    <name>cld::ui::PreferencesDialog</name>
+    <name>bld::ui::PreferencesDialog</name>
     <message>
         <location filename="../src/ui/PreferencesDialog.cpp" line="275"/>
         <source>Preferences</source>
@@ -3061,7 +3061,7 @@ Restore it?</source>
     </message>
 </context>
 <context>
-    <name>cld::ui::VenueDialog</name>
+    <name>bld::ui::VenueDialog</name>
     <message>
         <location filename="../src/ui/VenueDialog.cpp" line="27"/>
         <source>Venue</source>
@@ -3139,7 +3139,7 @@ Restore it?</source>
     </message>
 </context>
 <context>
-    <name>cld::ui::VenueDimensionsDialog</name>
+    <name>bld::ui::VenueDimensionsDialog</name>
     <message>
         <location filename="../src/ui/VenueDimensionsDialog.cpp" line="75"/>
         <source>Draw venue outline by dimensions</source>

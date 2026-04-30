@@ -4,7 +4,7 @@
 #include <QHash>
 #include <QString>
 
-namespace cld::import {
+namespace bld::import {
 
 // LDD's Materials.xml — every material ID a part can carry, with
 // RGB(A) values directly. Format:
@@ -46,4 +46,4 @@ private:
     QHash<int, QColor> colors_;
 };
 
-}  // namespace cld::import
+}  // namespace bld::import

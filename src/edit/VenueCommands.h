@@ -6,9 +6,9 @@
 
 #include <optional>
 
-namespace cld::core { class Map; }
+namespace bld::core { class Map; }
 
-namespace cld::edit {
+namespace bld::edit {
 
 // Replace the sidecar venue with a new value (or clear it by passing
 // nullopt). Simple whole-venue swap so every drawing / dialog / clear

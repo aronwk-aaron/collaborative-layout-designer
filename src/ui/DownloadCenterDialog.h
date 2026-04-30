@@ -13,7 +13,7 @@ class QProgressBar;
 class QPushButton;
 class QLabel;
 
-namespace cld::ui {
+namespace bld::ui {
 
 // Mirrors BlueBrick's two-step Download Center workflow:
 //   Step 1 — LibraryPackageSourceForm: user ticks one or more sources
@@ -90,4 +90,4 @@ private:
     QProgressBar* progress_   = nullptr;
 };
 
-}  // namespace cld::ui
+}  // namespace bld::ui

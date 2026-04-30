@@ -1,11 +1,11 @@
-qt_add_executable(cld_app
+qt_add_executable(bld_app
     main.cpp
 )
 
-target_link_libraries(cld_app PRIVATE cld_ui)
+target_link_libraries(bld_app PRIVATE bld_ui)
 
-set_target_properties(cld_app PROPERTIES
-    OUTPUT_NAME "collaborative-layout-designer"
+set_target_properties(bld_app PROPERTIES
+    OUTPUT_NAME "brick-layout-designer"
     WIN32_EXECUTABLE ON
     MACOSX_BUNDLE ON
 )
@@ -17,35 +17,35 @@ set_target_properties(cld_app PROPERTIES
 if(WIN32)
     find_program(WINDEPLOYQT_EXE windeployqt HINTS "${Qt6_DIR}/../../../bin")
     if(WINDEPLOYQT_EXE)
-        add_custom_command(TARGET cld_app POST_BUILD
+        add_custom_command(TARGET bld_app POST_BUILD
             COMMAND "${WINDEPLOYQT_EXE}"
                     --no-translations
                     --no-compiler-runtime
-                    "$<TARGET_FILE:cld_app>"
+                    "$<TARGET_FILE:bld_app>"
             VERBATIM)
     endif()
 endif()
 
 # Headless CLI for dumping .bbm structure without requiring a GUI.
-add_executable(cld_inspect cld_inspect.cpp)
-target_link_libraries(cld_inspect PRIVATE cld_saveload cld_core Qt6::Core)
+add_executable(bld_inspect bld_inspect.cpp)
+target_link_libraries(bld_inspect PRIVATE bld_saveload bld_core Qt6::Core)
 
 # Headless CLI that renders a .bbm to a PNG (uses QT_QPA_PLATFORM=offscreen).
-add_executable(cld_render cld_render.cpp)
-target_link_libraries(cld_render
-    PRIVATE cld_rendering cld_saveload cld_parts cld_core
+add_executable(bld_render bld_render.cpp)
+target_link_libraries(bld_render
+    PRIVATE bld_rendering bld_saveload bld_parts bld_core
             Qt6::Core Qt6::Gui Qt6::Widgets)
 
 # LDraw .ldr/.dat/.mpd -> .bbm importer.
-add_executable(cld_ldraw_import cld_ldraw_import.cpp)
-target_link_libraries(cld_ldraw_import
-    PRIVATE cld_import cld_saveload cld_core Qt6::Core)
+add_executable(bld_ldraw_import bld_ldraw_import.cpp)
+target_link_libraries(bld_ldraw_import
+    PRIVATE bld_import bld_saveload bld_core Qt6::Core)
 
 # External format (.ldr / .io / .lxf / .lxfml) -> top-down sprite PNG/GIF.
 # Wraps the same render pipeline the UI's Tools → Import uses so CI
 # pipelines and batch conversions can reach the sprite output without
 # launching the desktop app.
-add_executable(cld_sprite_gen cld_sprite_gen.cpp)
-target_link_libraries(cld_sprite_gen
-    PRIVATE cld_import cld_rendering cld_edit cld_parts cld_core
+add_executable(bld_sprite_gen bld_sprite_gen.cpp)
+target_link_libraries(bld_sprite_gen
+    PRIVATE bld_import bld_rendering bld_edit bld_parts bld_core
             Qt6::Core Qt6::Gui Qt6::Widgets)

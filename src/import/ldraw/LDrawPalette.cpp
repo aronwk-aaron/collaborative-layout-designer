@@ -6,7 +6,7 @@
 #include <QRegularExpression>
 #include <QTextStream>
 
-namespace cld::import {
+namespace bld::import {
 
 namespace {
 
@@ -102,4 +102,4 @@ bool LDrawPalette::isTransparent(int code) const {
     return ldrawColorIsTransparent(code);
 }
 
-}  // namespace cld::import
+}  // namespace bld::import

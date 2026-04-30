@@ -26,7 +26,7 @@ int main(int argc, char** argv) {
 
     if (argc < 3) {
         std::fprintf(stderr,
-            "Usage: cld-render <input.bbm> <output.png> [width] [parts-dir]\n"
+            "Usage: bld-render <input.bbm> <output.png> [width] [parts-dir]\n"
             "  width defaults to 1600 px.\n");
         return 1;
     }
@@ -44,13 +44,13 @@ int main(int argc, char** argv) {
         }
     }
 
-    cld::parts::PartsLibrary lib;
+    bld::parts::PartsLibrary lib;
     if (!partsRoot.isEmpty()) {
         lib.addSearchPath(partsRoot);
         lib.scan();
     }
 
-    auto result = cld::saveload::readBbm(inputPath);
+    auto result = bld::saveload::readBbm(inputPath);
     if (!result.ok()) {
         std::fprintf(stderr, "Load failed: %s\n", result.error.toUtf8().constData());
         return 2;
@@ -58,7 +58,7 @@ int main(int argc, char** argv) {
 
     QGraphicsScene scene;
     scene.setBackgroundBrush(result.map->backgroundColor.color);
-    cld::rendering::SceneBuilder builder(scene, lib);
+    bld::rendering::SceneBuilder builder(scene, lib);
     builder.build(*result.map);
 
     const QRectF bounds = scene.itemsBoundingRect().adjusted(-20, -20, 20, 20);

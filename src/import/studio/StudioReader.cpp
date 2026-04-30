@@ -11,12 +11,12 @@
 // internal API Qt ships everywhere we care about. The CMake for this
 // target locates the private include dir and adds it; when the
 // headers aren't available (stripped Qt install) we compile with
-// CLD_NO_QZIPREADER and emit a runtime error instead of build-breaking.
-#ifndef CLD_NO_QZIPREADER
+// BLD_NO_QZIPREADER and emit a runtime error instead of build-breaking.
+#ifndef BLD_NO_QZIPREADER
 #  include <private/qzipreader_p.h>
 #endif
 
-namespace cld::import {
+namespace bld::import {
 
 namespace {
 
@@ -48,7 +48,7 @@ QByteArray readModelLdr(QZipReader& zr) {
 
 LDrawReadResult readStudioIo(const QString& path) {
     LDrawReadResult out;
-#ifdef CLD_NO_QZIPREADER
+#ifdef BLD_NO_QZIPREADER
     out.error = QStringLiteral(
         "This build was compiled without QZipReader; Studio .io import is "
         "unavailable. Rebuild against a Qt install that includes the private "
@@ -77,7 +77,7 @@ LDrawReadResult readStudioIo(const QString& path) {
     // existing readLDraw() so we share every line-handler and title
     // extraction. The file is tiny relative to disk; the extra write
     // is cheap.
-    QString tmpPath = QDir::tempPath() + QStringLiteral("/cld-studio-extract-")
+    QString tmpPath = QDir::tempPath() + QStringLiteral("/bld-studio-extract-")
                     + fi.completeBaseName()
                     + QStringLiteral(".ldr");
     {
@@ -91,7 +91,7 @@ LDrawReadResult readStudioIo(const QString& path) {
     LDrawReadResult nested = readLDraw(tmpPath);
     QFile::remove(tmpPath);
     return nested;
-#endif  // CLD_NO_QZIPREADER
+#endif  // BLD_NO_QZIPREADER
 }
 
-}  // namespace cld::import
+}  // namespace bld::import

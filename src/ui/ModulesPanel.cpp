@@ -18,7 +18,7 @@
 #include <QVBoxLayout>
 #include <QWidget>
 
-namespace cld::ui {
+namespace bld::ui {
 
 ModulesPanel::ModulesPanel(QWidget* parent)
     : QDockWidget(tr("Modules"), parent) {

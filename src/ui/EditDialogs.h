@@ -5,12 +5,12 @@
 class QWidget;
 class QUndoStack;
 
-namespace cld::core {
+namespace bld::core {
 class Map;
 }
-namespace cld::parts { class PartsLibrary; }
+namespace bld::parts { class PartsLibrary; }
 
-namespace cld::ui {
+namespace bld::ui {
 
 // Upstream-parity property editors: open the dialog, edit in place via a
 // QUndoCommand when the user accepts, return true if anything actually

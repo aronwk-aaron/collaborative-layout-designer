@@ -2,11 +2,11 @@
 
 #include <QString>
 
-namespace cld::core { class Map; }
+namespace bld::core { class Map; }
 
 class QIODevice;
 
-namespace cld::saveload {
+namespace bld::saveload {
 
 struct WriteResult {
     bool ok = false;

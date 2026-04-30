@@ -41,7 +41,7 @@
 
 #include <atomic>
 
-namespace cld::ui {
+namespace bld::ui {
 
 namespace {
 constexpr const char* kLastFileKey   = "recent/lastFile";
@@ -61,7 +61,7 @@ void MainWindow::updateTitle() {
         ? tr("[untitled]")
         : QFileInfo(currentFilePath_).fileName();
     const bool dirty = !mapView_->undoStack()->isClean();
-    setWindowTitle(tr("%1%2 — Collaborative Layout Designer")
+    setWindowTitle(tr("%1%2 — Brick Layout Designer")
                        .arg(name, dirty ? QStringLiteral(" *") : QString()));
 }
 
@@ -293,11 +293,11 @@ void MainWindow::onExportPartList() {
 }
 
 void MainWindow::onAbout() {
-    QMessageBox::about(this, tr("About Collaborative Layout Designer"),
-        tr("<h3>Collaborative Layout Designer</h3>"
+    QMessageBox::about(this, tr("About Brick Layout Designer"),
+        tr("<h3>Brick Layout Designer</h3>"
            "<p>Cross-platform C++/Qt 6 fork of <b>BlueBrick</b> by Alban Nanty and contributors.</p>"
            "<p>Adds cross-layer modules, anchored text labels, and event venues on top of the "
-           "vanilla <i>.bbm</i> format (extra metadata stored in a sidecar <i>.bbm.cld</i> so "
+           "vanilla <i>.bbm</i> format (extra metadata stored in a sidecar <i>.bbm.bld</i> so "
            "vanilla BlueBrick 1.9.2 keeps opening our files).</p>"
            "<p>Licensed under GPL-3.0 — same as upstream BlueBrick.</p>"
            "<p>Parts library: %1 parts indexed.</p>")
@@ -428,4 +428,4 @@ bool MainWindow::restoreAutosaveIfAny(const QString& lastFile) {
     return true;
 }
 
-}  // namespace cld::ui
+}  // namespace bld::ui

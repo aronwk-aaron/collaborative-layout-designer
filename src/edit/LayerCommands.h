@@ -9,9 +9,9 @@
 
 #include <memory>
 
-namespace cld::core { class Map; struct ColorSpec; }
+namespace bld::core { class Map; struct ColorSpec; }
 
-namespace cld::edit {
+namespace bld::edit {
 
 // Insert a new layer of the given kind at the given index (-1 = append).
 // Redo creates with a fresh GUID + default name; undo removes + retains a

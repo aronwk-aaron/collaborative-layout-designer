@@ -1,5 +1,5 @@
 // Sidecar-driven render passes: venue footprint, world-anchored labels,
-// and module-frame annotations. These all live in the .bbm.cld sidecar
+// and module-frame annotations. These all live in the .bbm.bld sidecar
 // (fork-only data vanilla BlueBrick never sees) and are rendered as
 // overlays beneath / above the per-layer items.
 //
@@ -35,7 +35,7 @@
 #include <cmath>
 #include <vector>
 
-namespace cld::rendering {
+namespace bld::rendering {
 
 using detail::kPx;
 using detail::LayerSink;
@@ -465,4 +465,4 @@ void SceneBuilder::addModuleLabels(const core::Map& map) {
     }
 }
 
-}  // namespace cld::rendering
+}  // namespace bld::rendering
