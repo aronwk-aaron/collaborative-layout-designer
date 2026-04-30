@@ -1656,6 +1656,42 @@ void MapView::addTextAtScenePos(const QString& text, QPointF sceneCenterPx) {
     rebuildScene();
 }
 
+void MapView::showDropTargetHint() {
+    if (!map_) return;
+    auto* sb = window() ? window()->findChild<QStatusBar*>() : nullptr;
+    if (!sb) return;
+
+    // Mirror addPartAtScenePos: active layer if brick, else first brick layer.
+    int target = -1;
+    const auto& layers = map_->layers();
+    if (map_->selectedLayerIndex >= 0 &&
+        map_->selectedLayerIndex < static_cast<int>(layers.size()) &&
+        layers[map_->selectedLayerIndex]->kind() == core::LayerKind::Brick) {
+        target = map_->selectedLayerIndex;
+    } else {
+        for (int i = 0; i < static_cast<int>(layers.size()); ++i) {
+            if (layers[i]->kind() == core::LayerKind::Brick) { target = i; break; }
+        }
+    }
+
+    if (target < 0) {
+        sb->showMessage(tr("No brick layer — add one before dropping parts"), 0);
+        return;
+    }
+
+    const QString name = layers[target]->name;
+    const bool isActive = (target == map_->selectedLayerIndex);
+    const QString msg = isActive
+        ? tr("Drop onto: %1 (active layer)").arg(name)
+        : tr("Drop onto: %1 (active layer is not a brick layer)").arg(name);
+    sb->showMessage(msg, 0);
+}
+
+void MapView::clearDropTargetHint() {
+    if (auto* sb = window() ? window()->findChild<QStatusBar*>() : nullptr)
+        sb->clearMessage();
+}
+
 void MapView::dragEnterEvent(QDragEnterEvent* e) {
     const QString partMime   = QString::fromLatin1(PartsBrowser::kPartMimeType);
     const QString moduleMime = QString::fromLatin1(kModuleDragMimeType);
@@ -1663,12 +1699,14 @@ void MapView::dragEnterEvent(QDragEnterEvent* e) {
     if (e->mimeData()->hasFormat(partMime)) {
         const QString key = QString::fromUtf8(e->mimeData()->data(partMime));
         updateDragPreview(key, scenePos);
+        showDropTargetHint();
         e->acceptProposedAction();
         return;
     }
     if (e->mimeData()->hasFormat(moduleMime)) {
         const QString path = QString::fromUtf8(e->mimeData()->data(moduleMime));
         updateModuleDragPreview(path, scenePos);
+        showDropTargetHint();
         e->acceptProposedAction();
         return;
     }
@@ -1696,6 +1734,7 @@ void MapView::dragMoveEvent(QDragMoveEvent* e) {
 
 void MapView::dragLeaveEvent(QDragLeaveEvent* e) {
     clearDragPreview();
+    clearDropTargetHint();
     QGraphicsView::dragLeaveEvent(e);
 }
 
@@ -1867,6 +1906,7 @@ void MapView::updateModuleDragPreview(const QString& bbmPath, QPointF cursorScen
 }
 
 void MapView::dropEvent(QDropEvent* e) {
+    clearDropTargetHint();
     const QString partMime   = QString::fromLatin1(PartsBrowser::kPartMimeType);
     const QString moduleMime = QString::fromLatin1(kModuleDragMimeType);
     const QPointF scenePos = mapToScene(e->position().toPoint());

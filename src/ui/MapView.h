@@ -315,6 +315,8 @@ private:
     void clearDragPreview();
     void updateDragPreview(const QString& partKey, QPointF cursorScenePx);
     void updateModuleDragPreview(const QString& bbmPath, QPointF cursorScenePx);
+    void showDropTargetHint();
+    void clearDropTargetHint();
 };
 
 }
