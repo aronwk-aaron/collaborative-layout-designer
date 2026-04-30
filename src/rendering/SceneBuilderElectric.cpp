@@ -192,53 +192,74 @@ void SceneBuilder::addElectricCircuits(const core::Map& map) {
     }
 
     // -------------------------------------------------------------------
-    // 3. Render: one thin cosmetic line per in-part circuit rail, from
-    //    connection point to connection point. +1 rail = OrangeRed,
-    //    -1 rail = Cyan. Both semi-transparent, 1.5px cosmetic width.
-    //    Yellow dots at every electric connection point.
-    //    Shortcut diamonds on top for short-circuited connections.
+    // 3. Render: two parallel lines per in-part circuit, matching
+    //    BlueBrick's exact constants:
+    //      perpendicular offset = 2.5 * px  (ELECTRIC_WIDTH)
+    //      stroke width         = 0.5 * px  (pen width)
+    //    Both scale with zoom so they stay proportional to the track.
+    //    +1 side (norm direction) = OrangeRed; -1 side = Cyan.
+    //    Polarity from BFS; unvisited defaults to +.
+    //    Shortcut sign: perpendicular cross at the bad connection point,
+    //    width 3.0 * px, stroke 1.5 * px (SHORTCUT_PEN).
     // -------------------------------------------------------------------
     const double px = kPixelsPerStud;
 
-    static const QColor kRed      = QColor(255,  69,   0, 210); // OrangeRed, slight alpha
-    static const QColor kBlue     = QColor(  0, 255, 255, 210); // Cyan, slight alpha
-    static const QColor kShortcut = QColor(255, 165,   0);      // Orange
+    // Alpha 200 matches BlueBrick's alphaValue (it uses 200 when the layer
+    // is fully opaque and reduces it when the layer is dimmed).
+    static const QColor kRed      = QColor(255,  69,   0, 200); // OrangeRed
+    static const QColor kBlue     = QColor(  0, 255, 255, 200); // Cyan
+    static const QColor kShortcut = QColor(255, 165,   0, 200); // Orange
 
-    LayerSink sink{ scene_, electricItems_, 5e5, true };
+    // World-scaled pen widths — these change with zoom, keeping the lines
+    // proportional to the studs they represent.
+    const double strokeWidth   = 0.5 * px;
+    const double halfOffset    = 2.5 * px;   // perpendicular offset from circuit centre
+    const double shortcutWidth = 3.0 * px;   // half-width of the shortcut cross
+    const double shortcutStroke= 1.5 * px;
 
-    auto makePen = [](QColor col) {
+    auto makePen = [](QColor col, double w) {
         QPen p(col);
-        p.setWidthF(1.5);
-        p.setCosmetic(true);
+        p.setWidthF(w);
         return p;
     };
 
-    // For each in-part circuit, draw a line between the two connection
-    // points coloured by which rail (+1 = red, -1 = blue). Polarity from
-    // BFS determines which index is the + side; unvisited (0) defaults red.
+    LayerSink sink{ scene_, electricItems_, 5e5, true };
+
     for (auto it = entries.cbegin(); it != entries.cend(); ++it) {
         const BrickEntry& e = it.value();
         for (const auto& circuit : e.meta->electricCircuits) {
             const QPointF p1 = connWorldPx(*e.brick, e.meta->connections[circuit.index1], px);
             const QPointF p2 = connWorldPx(*e.brick, e.meta->connections[circuit.index2], px);
-            if (std::hypot(p2.x() - p1.x(), p2.y() - p1.y()) < 0.5) continue;
 
-            const ConnState& cs1 = e.state[circuit.index1];
-            const bool posOnIdx1 = (cs1.polarity >= 0);
+            const double len = std::hypot(p2.x() - p1.x(), p2.y() - p1.y());
+            if (len < 0.5) continue;
 
-            // line from index1 to index2 coloured by index1's rail
-            auto* lineA = new QGraphicsLineItem(QLineF(p1, p2));
-            lineA->setPen(makePen(posOnIdx1 ? kRed : kBlue));
-            lineA->setZValue(500);
-            sink.add(lineA);
+            // Unit direction along the circuit; perpendicular normal scaled
+            // to halfOffset — this is BlueBrick's `normal` vector.
+            const QPointF dir((p2.x() - p1.x()) / len, (p2.y() - p1.y()) / len);
+            const QPointF norm(-dir.y() * halfOffset, dir.x() * halfOffset);
+
+            // index1 polarity >= 0 → norm side (+normal offset) = red rail.
+            const bool posOnIdx1 = (e.state[circuit.index1].polarity >= 0);
+            const QColor col1 = posOnIdx1 ? kRed  : kBlue;
+            const QColor col2 = posOnIdx1 ? kBlue : kRed;
+
+            auto* line1 = new QGraphicsLineItem(QLineF(p1 + norm, p2 + norm));
+            line1->setPen(makePen(col1, strokeWidth));
+            line1->setZValue(500);
+            sink.add(line1);
+
+            auto* line2 = new QGraphicsLineItem(QLineF(p1 - norm, p2 - norm));
+            line2->setPen(makePen(col2, strokeWidth));
+            line2->setZValue(500);
+            sink.add(line2);
         }
     }
 
-    // Shortcut diamond — orange outline, no fill, cosmetic 2px.
-    QPen shortcutPen(kShortcut, 2.0);
-    shortcutPen.setCosmetic(true);
-    constexpr double kDW = 6.0;  // half-width in screen px
-
+    // Shortcut sign: a perpendicular line segment centred on the bad
+    // connection point, matching BlueBrick's DrawLines diamond approach
+    // but simplified to a cross tick perpendicular to the circuit.
+    // (BlueBrick draws a diamond; we keep that.)
     for (auto it = entries.cbegin(); it != entries.cend(); ++it) {
         const BrickEntry& e = it.value();
         for (const auto& circuit : e.meta->electricCircuits) {
@@ -246,14 +267,13 @@ void SceneBuilder::addElectricCircuits(const core::Map& map) {
                 if (!e.state[idx].hasShortcut) continue;
                 const QPointF c = connWorldPx(*e.brick, e.meta->connections[idx], px);
                 QPolygonF diamond;
-                diamond << QPointF(-kDW,    0) << QPointF(0, -kDW)
-                        << QPointF( kDW,    0) << QPointF(0,  kDW)
-                        << QPointF(-kDW,    0);
+                diamond << QPointF(c.x() - shortcutWidth, c.y())
+                        << QPointF(c.x(), c.y() - shortcutWidth)
+                        << QPointF(c.x(), c.y() + shortcutWidth)
+                        << QPointF(c.x() + shortcutWidth, c.y());
                 auto* poly = new QGraphicsPolygonItem(diamond);
-                poly->setPen(shortcutPen);
+                poly->setPen(makePen(kShortcut, shortcutStroke));
                 poly->setBrush(Qt::NoBrush);
-                poly->setFlag(QGraphicsItem::ItemIgnoresTransformations, true);
-                poly->setPos(c);
                 poly->setZValue(502);
                 sink.add(poly);
             }
