@@ -1,12 +1,18 @@
 // Electric-circuits render overlay. Toggled via View > Electric Circuits
-// (QSettings key "view/electricCircuits"). Computes connected components
-// over every brick connection whose parts-library metadata flags an
-// electricPlug, then draws coloured segments + node dots so the user can
-// see which rails are wired together.
+// (QSettings key "view/electricCircuits"). Matches BlueBrick's visual model:
 //
-// Split out of SceneBuilder.cpp to keep that file focused on the
-// general build() pipeline; the circuit pass is self-contained and only
-// touches SceneBuilder::electricItems_.
+//  - Each part with electricPlug pairs (+1/-1) defines one or more in-part
+//    "circuits". We draw those as two parallel lines between the pair's
+//    connection points: one OrangeRed (rail +1 side) and one Cyan (rail -1
+//    side), each offset 0.5 studs perpendicularly.
+//
+//  - Polarity is propagated across connected bricks via BFS so the red/blue
+//    assignment stays consistent across an entire wired run of track.
+//
+//  - Short circuits (same polarity appears on both ends of a circuit after BFS)
+//    are flagged with an orange diamond at the offending connection point.
+//
+//  - Line width scales with kPixelsPerStud (0.5 studs wide, same as BlueBrick).
 
 #include "SceneBuilder.h"
 #include "SceneBuilderInternal.h"
@@ -18,164 +24,257 @@
 #include <QBrush>
 #include <QGraphicsEllipseItem>
 #include <QGraphicsLineItem>
+#include <QGraphicsPolygonItem>
 #include <QGraphicsScene>
 #include <QPen>
 #include <QSettings>
 
 #include <cmath>
-#include <functional>
-#include <numeric>
+#include <unordered_map>
 
 namespace cld::rendering {
 
 using detail::LayerSink;
 
+namespace {
+
+// World-space position (pixels) of a connection point on a placed brick.
+QPointF connWorldPx(const core::Brick& b,
+                    const parts::PartConnectionPoint& c,
+                    double px) {
+    const double r = b.orientation * M_PI / 180.0;
+    const double cs = std::cos(r), sn = std::sin(r);
+    const QPointF centre = b.displayArea.center();
+    return QPointF(
+        (centre.x() + c.position.x() * cs - c.position.y() * sn) * px,
+        (centre.y() + c.position.x() * sn + c.position.y() * cs) * px);
+}
+
+// Per-connection polarity state used during BFS.
+// +timestamp = rail +1, -timestamp = rail -1, 0 = unvisited.
+struct ConnState {
+    short polarity = 0;
+    bool  hasShortcut = false;
+};
+
+}  // namespace
+
 void SceneBuilder::addElectricCircuits(const core::Map& map) {
     QSettings s;
     if (!s.value(QStringLiteral("view/electricCircuits"), false).toBool()) return;
 
-    // Collect every electric connection (brick + conn index with
-    // electricPlug != -1) and its world position in pixels. Use a
-    // guid+index string as node id so the union-find groups them.
-    struct EConn {
-        QString  brickGuid;
-        int      connIdx = -1;
-        QString  linkedToBrick;   // partner brick guid, empty if free
-        int      plug = -1;
-        QPointF  worldPx;
+    // -------------------------------------------------------------------
+    // 1. Collect every (brick, circuit) pair that has at least one
+    //    in-part circuit. Build a lookup: brickGuid -> brick pointer and
+    //    per-connection state.
+    // -------------------------------------------------------------------
+    struct BrickEntry {
+        const core::Brick*          brick   = nullptr;
+        const parts::PartMetadata*  meta    = nullptr;
+        // Polarity per connection index. Sized to meta->connections.size().
+        QVector<ConnState>          state;
     };
-    QVector<EConn> conns;
-    QHash<QString, int> nodeByGuidPlug;
+
+    QHash<QString, BrickEntry> entries;
 
     for (const auto& layerPtr : map.layers()) {
         if (!layerPtr || layerPtr->kind() != core::LayerKind::Brick) continue;
         const auto& bl = static_cast<const core::LayerBrick&>(*layerPtr);
         for (const auto& b : bl.bricks) {
+            if (b.guid.isEmpty()) continue;
             auto meta = parts_.metadata(b.partNumber);
-            if (!meta) continue;
-            const QPointF centre = b.displayArea.center();
-            const int n = meta->connections.size();
-            for (int i = 0; i < n; ++i) {
-                const auto& c = meta->connections[i];
-                if (c.electricPlug < 0) continue;
-                const double r = b.orientation * M_PI / 180.0;
-                const double cs = std::cos(r), sn = std::sin(r);
-                const QPointF wStuds(centre.x() + c.position.x() * cs - c.position.y() * sn,
-                                     centre.y() + c.position.x() * sn + c.position.y() * cs);
-                EConn ec;
-                ec.brickGuid = b.guid;
-                ec.connIdx   = i;
-                ec.plug      = c.electricPlug;
-                ec.worldPx   = QPointF(wStuds.x() * kPixelsPerStud,
-                                       wStuds.y() * kPixelsPerStud);
-                if (i < static_cast<int>(b.connections.size()))
-                    ec.linkedToBrick = b.connections[i].linkedToId;
-                nodeByGuidPlug.insert(b.guid + QLatin1Char('|') + QString::number(i),
-                                      conns.size());
-                conns.append(ec);
+            if (!meta || meta->electricCircuits.isEmpty()) continue;
+            BrickEntry e;
+            e.brick = &b;
+            e.meta  = new parts::PartMetadata(*meta);   // owned copy for BFS lifetime
+            e.state.resize(meta->connections.size());
+            entries.insert(b.guid, std::move(e));
+        }
+    }
+    if (entries.isEmpty()) return;
+
+    // -------------------------------------------------------------------
+    // 2. BFS to assign consistent polarity across connected bricks,
+    //    matching ElectricCircuitChecker.cs logic.
+    // -------------------------------------------------------------------
+    short stamp = 1;
+
+    auto propagate = [&](const QString& startGuid) {
+        BrickEntry* startEntry = entries.find(startGuid) != entries.end()
+                                 ? &entries[startGuid] : nullptr;
+        if (!startEntry) return;
+
+        ++stamp;
+        if (stamp == std::numeric_limits<short>::max()) stamp = 1;
+
+        QList<QString> toExplore;
+        toExplore.append(startGuid);
+
+        // Seed the first circuit's first connection with +stamp.
+        const int seed1 = startEntry->meta->electricCircuits[0].index1;
+        startEntry->state[seed1].polarity = stamp;
+
+        // If it's already linked to another electric brick, seed the partner.
+        if (seed1 < static_cast<int>(startEntry->brick->connections.size())) {
+            const QString& partnerGuid = startEntry->brick->connections[seed1].linkedToId;
+            if (!partnerGuid.isEmpty() && entries.contains(partnerGuid)) {
+                entries[partnerGuid].state[seed1].polarity = (short)(-stamp);
+                toExplore.append(partnerGuid);
+            }
+        }
+
+        while (!toExplore.isEmpty()) {
+            const QString guid = toExplore.takeFirst();
+            BrickEntry* entry = &entries[guid];
+            bool needReexplore = false;
+
+            for (const auto& circuit : entry->meta->electricCircuits) {
+                ConnState& s1 = entry->state[circuit.index1];
+                ConnState& s2 = entry->state[circuit.index2];
+
+                // Ensure s1 carries the incoming electricity; swap if needed.
+                ConnState* start = &s1;
+                ConnState* end   = &s2;
+                int startIdx = circuit.index1;
+                int endIdx   = circuit.index2;
+                if (std::abs(s2.polarity) == stamp) {
+                    std::swap(start, end);
+                    std::swap(startIdx, endIdx);
+                }
+
+                if (std::abs(start->polarity) != stamp) {
+                    needReexplore = true;
+                    continue;
+                }
+
+                // Short circuit: end already set to same polarity.
+                if (end->polarity == start->polarity) {
+                    start->hasShortcut = true;
+                    continue;
+                }
+
+                // Transfer polarity to end if not yet visited.
+                if (end->polarity != -(start->polarity)) {
+                    end->polarity = (short)(-(start->polarity));
+
+                    if (needReexplore) {
+                        toExplore.prepend(guid);
+                        needReexplore = false;
+                    }
+
+                    // Propagate to linked neighbor brick.
+                    if (endIdx < static_cast<int>(entry->brick->connections.size())) {
+                        const QString& neighborGuid =
+                            entry->brick->connections[endIdx].linkedToId;
+                        if (!neighborGuid.isEmpty() && entries.contains(neighborGuid)) {
+                            ConnState& nState = entries[neighborGuid].state[endIdx];
+                            if (nState.polarity == end->polarity) {
+                                end->hasShortcut = true;
+                            } else if (nState.polarity != -(end->polarity)) {
+                                nState.polarity = (short)(-(end->polarity));
+                                toExplore.append(neighborGuid);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    };
+
+    // Run BFS from every electric brick not yet stamped.
+    for (auto it = entries.begin(); it != entries.end(); ++it) {
+        BrickEntry& e = it.value();
+        if (!e.meta->electricCircuits.isEmpty()) {
+            const int i0 = e.meta->electricCircuits[0].index1;
+            if (std::abs(e.state[i0].polarity) != stamp) {
+                propagate(it.key());
             }
         }
     }
-    if (conns.isEmpty()) return;
 
-    // Union-find over electric connections. Two conns are in the same
-    // component if:
-    //   a) same brick + same plug index (internal pass-through rail), OR
-    //   b) linkedToId across a joint with matching plug index.
-    QVector<int> parent(conns.size());
-    std::iota(parent.begin(), parent.end(), 0);
-    std::function<int(int)> find = [&](int x) {
-        while (parent[x] != x) { parent[x] = parent[parent[x]]; x = parent[x]; }
-        return x;
-    };
-    auto unite = [&](int a, int b) {
-        const int ra = find(a), rb = find(b);
-        if (ra != rb) parent[ra] = rb;
-    };
+    // -------------------------------------------------------------------
+    // 3. Render: two parallel lines per circuit (OrangeRed + Cyan),
+    //    offset 0.5 studs perpendicularly. Width = 0.5 studs in pixels.
+    //    Then shortcut diamonds on top.
+    // -------------------------------------------------------------------
+    const double px = kPixelsPerStud;
+    const double halfOffset = 0.5 * px;    // perpendicular offset in px
+    const double lineWidth  = 0.5 * px;    // pen width in px
 
-    QHash<QString, QVector<int>> byBrick;
-    for (int i = 0; i < conns.size(); ++i) byBrick[conns[i].brickGuid].append(i);
-    for (auto it = byBrick.cbegin(); it != byBrick.cend(); ++it) {
-        const auto& group = it.value();
-        for (int i = 0; i < group.size(); ++i)
-            for (int j = i + 1; j < group.size(); ++j)
-                if (conns[group[i]].plug == conns[group[j]].plug)
-                    unite(group[i], group[j]);
-    }
-    for (int i = 0; i < conns.size(); ++i) {
-        const auto& ec = conns[i];
-        if (ec.linkedToBrick.isEmpty()) continue;
-        auto partnerIt = byBrick.constFind(ec.linkedToBrick);
-        if (partnerIt == byBrick.constEnd()) continue;
-        for (int pj : partnerIt.value()) {
-            if (conns[pj].linkedToBrick != ec.brickGuid) continue;
-            if (conns[pj].plug == ec.plug) unite(i, pj);
-        }
-    }
-
-    static const QColor kPalette[] = {
-        QColor(230,  40,  40),  // red
-        QColor( 30, 140, 230),  // blue
-        QColor( 20, 180,  90),  // green
-        QColor(240, 150,  30),  // orange
-        QColor(180,  80, 200),  // purple
-        QColor( 40, 180, 180),  // teal
-        QColor(220, 200,  40),  // yellow
-    };
-    constexpr int kPaletteN = sizeof(kPalette) / sizeof(kPalette[0]);
-    QHash<int, int> colourByRoot;
-    int nextColour = 0;
-    auto colourFor = [&](int node) {
-        const int r = find(node);
-        auto it = colourByRoot.constFind(r);
-        if (it != colourByRoot.constEnd()) return kPalette[it.value() % kPaletteN];
-        colourByRoot.insert(r, nextColour);
-        return kPalette[(nextColour++) % kPaletteN];
-    };
+    static const QColor kRed  = QColor(255, 69, 0);    // OrangeRed
+    static const QColor kBlue = QColor(  0, 255, 255); // Cyan
+    static const QColor kShortcut = QColor(255, 165, 0); // Orange
 
     LayerSink sink{ scene_, electricItems_, 5e5, true };
 
-    auto drawLine = [&](QPointF a, QPointF b, QColor col){
-        auto* line = new QGraphicsLineItem(QLineF(a, b));
-        QPen pen(col); pen.setWidthF(3.5); pen.setCosmetic(true);
-        line->setPen(pen);
-        line->setZValue(500);
-        sink.add(line);
-    };
-    auto drawNode = [&](QPointF p, QColor col){
-        constexpr double kR = 4.0;
-        auto* dot = new QGraphicsEllipseItem(p.x() - kR, p.y() - kR, kR * 2, kR * 2);
-        dot->setPen(QPen(QColor(20, 20, 20), 1.5));
-        dot->setBrush(QBrush(col));
-        dot->setZValue(501);
-        sink.add(dot);
+    auto makePen = [&](QColor col) {
+        QPen p(col);
+        p.setWidthF(lineWidth);
+        return p;
     };
 
-    for (auto it = byBrick.cbegin(); it != byBrick.cend(); ++it) {
-        const auto& group = it.value();
-        for (int i = 0; i < group.size(); ++i)
-            for (int j = i + 1; j < group.size(); ++j)
-                if (conns[group[i]].plug == conns[group[j]].plug) {
-                    const QColor c = colourFor(group[i]);
-                    drawLine(conns[group[i]].worldPx, conns[group[j]].worldPx, c);
-                }
-    }
-    for (int i = 0; i < conns.size(); ++i) {
-        const auto& ec = conns[i];
-        if (ec.linkedToBrick.isEmpty()) continue;
-        auto partnerIt = byBrick.constFind(ec.linkedToBrick);
-        if (partnerIt == byBrick.constEnd()) continue;
-        for (int pj : partnerIt.value()) {
-            if (pj <= i) continue;
-            if (conns[pj].linkedToBrick != ec.brickGuid) continue;
-            if (conns[pj].plug != ec.plug) continue;
-            const QColor c = colourFor(i);
-            drawLine(ec.worldPx, conns[pj].worldPx, c);
+    // Draw the two-rail lines for every in-part circuit.
+    for (auto it = entries.cbegin(); it != entries.cend(); ++it) {
+        const BrickEntry& e = it.value();
+        for (const auto& circuit : e.meta->electricCircuits) {
+            const QPointF p1 = connWorldPx(*e.brick, e.meta->connections[circuit.index1], px);
+            const QPointF p2 = connWorldPx(*e.brick, e.meta->connections[circuit.index2], px);
+
+            const QPointF delta = p2 - p1;
+            const double len = std::hypot(delta.x(), delta.y());
+            if (len < 0.5) continue;
+
+            // Unit direction and perpendicular normal.
+            const QPointF dir(delta.x() / len, delta.y() / len);
+            const QPointF norm(-dir.y() * halfOffset, dir.x() * halfOffset);
+
+            // Determine which line gets red vs blue based on polarity.
+            // positive polarity on index1 → line1 (norm side) = red.
+            const ConnState& cs1 = e.state[circuit.index1];
+            const bool posOnSide1 = (cs1.polarity >= 0);  // 0 = unvisited, treat as +
+            const QPen pen1 = makePen(posOnSide1 ? kRed : kBlue);
+            const QPen pen2 = makePen(posOnSide1 ? kBlue : kRed);
+
+            auto* line1 = new QGraphicsLineItem(
+                QLineF(p1 + norm, p2 + norm));
+            line1->setPen(pen1);
+            line1->setZValue(500);
+            sink.add(line1);
+
+            auto* line2 = new QGraphicsLineItem(
+                QLineF(p1 - norm, p2 - norm));
+            line2->setPen(pen2);
+            line2->setZValue(500);
+            sink.add(line2);
         }
     }
-    for (int i = 0; i < conns.size(); ++i) {
-        drawNode(conns[i].worldPx, colourFor(i));
+
+    // Draw shortcut diamonds over any connection with hasShortcut.
+    const double dw = 3.0 * px;   // half-width of diamond in px
+    const QPen shortcutPen(kShortcut, lineWidth * 3.0);
+
+    for (auto it = entries.cbegin(); it != entries.cend(); ++it) {
+        const BrickEntry& e = it.value();
+        for (const auto& circuit : e.meta->electricCircuits) {
+            for (int idx : { circuit.index1, circuit.index2 }) {
+                if (!e.state[idx].hasShortcut) continue;
+                const QPointF c = connWorldPx(*e.brick, e.meta->connections[idx], px);
+                QPolygonF diamond;
+                diamond << QPointF(c.x() - dw, c.y())
+                        << QPointF(c.x(), c.y() - dw)
+                        << QPointF(c.x(), c.y() + dw)
+                        << QPointF(c.x() + dw, c.y());
+                auto* poly = new QGraphicsPolygonItem(diamond);
+                poly->setPen(shortcutPen);
+                poly->setBrush(Qt::NoBrush);
+                poly->setZValue(502);
+                sink.add(poly);
+            }
+        }
     }
+
+    // Clean up owned metadata copies.
+    for (auto& e : entries) delete e.meta;
 }
 
 }  // namespace cld::rendering

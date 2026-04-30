@@ -23,12 +23,20 @@ struct PartConnectionPoint {
     QString type;
     QPointF position;
     double  angleDegrees = 0.0;
-    // Electric-plug index: 0 or 1 marks one of the two rails on a 9V
-    // track piece, -1 (the default) means this connection carries no
-    // electrical signal (e.g. plain rails, roads, monorails). When two
-    // connected bricks both have electricPlug != -1 on their joined
-    // connections, they form an edge in the electric-circuit graph.
-    int     electricPlug = -1;
+    // Electric-plug polarity: +1 or -1 mark the two 9V rails on a
+    // track piece; 0 (the default) means no electrical signal. Matches
+    // BlueBrick's sign convention exactly — a circuit exists inside a
+    // part wherever plug[i] == -plug[j] and both are non-zero.
+    int     electricPlug = 0;
+};
+
+// A within-part electrical circuit: the pair of connection indices
+// whose plugs are opposite polarity (+1 and -1), plus the straight-line
+// distance between them in studs (used to compute the line direction).
+struct ElectricCircuit {
+    int   index1 = 0;
+    int   index2 = 0;
+    float distanceStuds = 0.0f;
 };
 
 // One entry in the parts library. Matches the BlueBrick file-naming convention:
@@ -65,6 +73,10 @@ struct PartMetadata {
     QString  sortingKey;
     QList<PartDescription>     descriptions;
     QList<PartConnectionPoint> connections;  // from <ConnexionList> in part XML
+    // Within-part electrical circuits: pairs of connection indices whose
+    // electricPlug values are opposite (+1/-1). Computed once at parse
+    // time by buildElectricCircuits(); empty for non-electric parts.
+    QList<ElectricCircuit>     electricCircuits;
     // Populated only when kind == Group — the parts that make up the
     // set (from <SubPartList> in the XML).
     QList<PartSubPart>         subparts;

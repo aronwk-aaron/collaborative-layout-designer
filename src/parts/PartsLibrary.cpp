@@ -77,6 +77,23 @@ void readSubPartList(QXmlStreamReader& r, QList<PartSubPart>& out) {
     }
 }
 
+void buildElectricCircuits(PartMetadata& meta) {
+    const int n = meta.connections.size();
+    for (int i = 0; i < n - 1; ++i) {
+        if (meta.connections[i].electricPlug == 0) continue;
+        for (int j = i + 1; j < n; ++j) {
+            if (meta.connections[i].electricPlug == -meta.connections[j].electricPlug) {
+                const QPointF d = meta.connections[j].position - meta.connections[i].position;
+                ElectricCircuit ec;
+                ec.index1 = i;
+                ec.index2 = j;
+                ec.distanceStuds = static_cast<float>(std::hypot(d.x(), d.y()));
+                meta.electricCircuits.append(ec);
+            }
+        }
+    }
+}
+
 bool parsePartXml(const QString& xmlPath, PartMetadata& out) {
     QFile f(xmlPath);
     if (!f.open(QIODevice::ReadOnly)) return false;
@@ -168,6 +185,7 @@ QString PartsLibrary::scanFile(const QString& xmlPath) {
     }
 
     if (!parsePartXml(xmlPath, meta)) return {};
+    buildElectricCircuits(meta);
 
     // Library keys are the full stem (case-folded) so lookup matches
     // both "TABLE96X190" and "3811.1" naturally — the stored key
