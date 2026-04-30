@@ -192,67 +192,67 @@ void SceneBuilder::addElectricCircuits(const core::Map& map) {
     }
 
     // -------------------------------------------------------------------
-    // 3. Render: two parallel lines per in-part circuit, matching
-    //    BlueBrick's exact constants:
-    //      perpendicular offset = 2.5 * px  (ELECTRIC_WIDTH)
-    //      stroke width         = 0.5 * px  (pen width)
-    //    Both scale with zoom so they stay proportional to the track.
-    //    +1 side (norm direction) = OrangeRed; -1 side = Cyan.
-    //    Polarity from BFS; unvisited defaults to +.
-    //    Shortcut sign: perpendicular cross at the bad connection point,
-    //    width 3.0 * px, stroke 1.5 * px (SHORTCUT_PEN).
+    // 3. Render: one line per electric connection joint, drawn from this
+    //    connection point to the linked neighbor's. Colour is fixed by
+    //    electricPlug: +1 = OrangeRed, -1 = Cyan. This draws each
+    //    physical rail as a continuous coloured line across the track run.
     // -------------------------------------------------------------------
     const double px = kPixelsPerStud;
 
-    // Alpha 200 matches BlueBrick's alphaValue (it uses 200 when the layer
-    // is fully opaque and reduces it when the layer is dimmed).
     static const QColor kRed      = QColor(255,  69,   0, 200); // OrangeRed
     static const QColor kBlue     = QColor(  0, 255, 255, 200); // Cyan
     static const QColor kShortcut = QColor(255, 165,   0, 200); // Orange
 
-    // World-scaled pen widths — these change with zoom, keeping the lines
-    // proportional to the studs they represent.
-    const double strokeWidth   = 0.5 * px;
-    const double halfOffset    = 2.5 * px;   // perpendicular offset from circuit centre
-    const double shortcutWidth = 3.0 * px;   // half-width of the shortcut cross
-    const double shortcutStroke= 1.5 * px;
+    // Constant screen-pixel sizes, cosmetic pens (don't scale with zoom).
+    constexpr double strokeWidth = 3.0;  // screen px
+    constexpr double shortcutWidth  = 8.0;   // screen px
+    constexpr double shortcutStroke = 2.0;   // screen px
 
     auto makePen = [](QColor col, double w) {
         QPen p(col);
         p.setWidthF(w);
+        p.setCosmetic(true);
         return p;
     };
+
+    // World-scaled perpendicular offset matching BlueBrick's ELECTRIC_WIDTH
+    // (2.5 studs). This offsets the two lines to the actual rail positions.
+    // Stroke is cosmetic (fixed screen px) so lines don't get fat when zoomed in.
+    const double halfOffset = 2.0 * px;
 
     LayerSink sink{ scene_, electricItems_, 5e5, true };
 
     for (auto it = entries.cbegin(); it != entries.cend(); ++it) {
         const BrickEntry& e = it.value();
         for (const auto& circuit : e.meta->electricCircuits) {
-            const QPointF p1 = connWorldPx(*e.brick, e.meta->connections[circuit.index1], px);
-            const QPointF p2 = connWorldPx(*e.brick, e.meta->connections[circuit.index2], px);
+            const int i1 = circuit.index1;
+            const int i2 = circuit.index2;
+            // Normalise: posIdx = +1 plug, negIdx = -1 plug.
+            const int posIdx = (e.meta->connections[i1].electricPlug > 0) ? i1 : i2;
+            const int negIdx = (posIdx == i1) ? i2 : i1;
 
-            const double len = std::hypot(p2.x() - p1.x(), p2.y() - p1.y());
+            const QPointF pPos = connWorldPx(*e.brick, e.meta->connections[posIdx], px);
+            const QPointF pNeg = connWorldPx(*e.brick, e.meta->connections[negIdx], px);
+
+            const double len = std::hypot(pNeg.x() - pPos.x(), pNeg.y() - pPos.y());
             if (len < 0.5) continue;
 
-            // Unit direction along the circuit; perpendicular normal scaled
-            // to halfOffset — this is BlueBrick's `normal` vector.
-            const QPointF dir((p2.x() - p1.x()) / len, (p2.y() - p1.y()) / len);
+            // Perpendicular offset from the circuit centreline.
+            // Direction is from +1 toward -1 so +norm is always on the same
+            // physical side across all parts.
+            const QPointF dir((pNeg.x() - pPos.x()) / len, (pNeg.y() - pPos.y()) / len);
             const QPointF norm(-dir.y() * halfOffset, dir.x() * halfOffset);
 
-            // index1 polarity >= 0 → norm side (+normal offset) = red rail.
-            const bool posOnIdx1 = (e.state[circuit.index1].polarity >= 0);
-            const QColor col1 = posOnIdx1 ? kRed  : kBlue;
-            const QColor col2 = posOnIdx1 ? kBlue : kRed;
+            // Red line offset to the +1 side, cyan to the -1 side.
+            auto* lineRed = new QGraphicsLineItem(QLineF(pPos + norm, pNeg + norm));
+            lineRed->setPen(makePen(kRed, strokeWidth));
+            lineRed->setZValue(500);
+            sink.add(lineRed);
 
-            auto* line1 = new QGraphicsLineItem(QLineF(p1 + norm, p2 + norm));
-            line1->setPen(makePen(col1, strokeWidth));
-            line1->setZValue(500);
-            sink.add(line1);
-
-            auto* line2 = new QGraphicsLineItem(QLineF(p1 - norm, p2 - norm));
-            line2->setPen(makePen(col2, strokeWidth));
-            line2->setZValue(500);
-            sink.add(line2);
+            auto* lineCyan = new QGraphicsLineItem(QLineF(pPos - norm, pNeg - norm));
+            lineCyan->setPen(makePen(kBlue, strokeWidth));
+            lineCyan->setZValue(500);
+            sink.add(lineCyan);
         }
     }
 
