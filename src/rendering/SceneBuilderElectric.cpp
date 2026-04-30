@@ -22,7 +22,6 @@
 #include "../parts/PartsLibrary.h"
 
 #include <QBrush>
-#include <QGraphicsEllipseItem>
 #include <QGraphicsLineItem>
 #include <QGraphicsPolygonItem>
 #include <QGraphicsScene>
@@ -203,7 +202,6 @@ void SceneBuilder::addElectricCircuits(const core::Map& map) {
 
     static const QColor kRed      = QColor(255,  69,   0, 210); // OrangeRed, slight alpha
     static const QColor kBlue     = QColor(  0, 255, 255, 210); // Cyan, slight alpha
-    static const QColor kDot      = QColor(255, 230,   0);      // Yellow
     static const QColor kShortcut = QColor(255, 165,   0);      // Orange
 
     LayerSink sink{ scene_, electricItems_, 5e5, true };
@@ -233,33 +231,6 @@ void SceneBuilder::addElectricCircuits(const core::Map& map) {
             lineA->setPen(makePen(posOnIdx1 ? kRed : kBlue));
             lineA->setZValue(500);
             sink.add(lineA);
-        }
-    }
-
-    // Yellow dot at every electric connection point.
-    constexpr double kDotR = 3.5;
-    QPen dotPen(QColor(80, 60, 0), 1.0);
-    dotPen.setCosmetic(true);
-
-    for (auto it = entries.cbegin(); it != entries.cend(); ++it) {
-        const BrickEntry& e = it.value();
-        for (const auto& circuit : e.meta->electricCircuits) {
-            for (int idx : { circuit.index1, circuit.index2 }) {
-                const QPointF c = connWorldPx(*e.brick, e.meta->connections[idx], px);
-                auto* dot = new QGraphicsEllipseItem(c.x() - kDotR, c.y() - kDotR,
-                                                     kDotR * 2, kDotR * 2);
-                dot->setPen(dotPen);
-                dot->setBrush(QBrush(kDot));
-                dot->setZValue(501);
-                // Make the dot cosmetic-sized (fixed screen pixels).
-                // QGraphicsEllipseItem doesn't have a cosmetic flag, so we
-                // set it non-transformable so it stays the same screen size.
-                dot->setFlag(QGraphicsItem::ItemIgnoresTransformations, true);
-                // Reposition to scene coords (setFlag resets pos to item coords).
-                dot->setPos(c);
-                dot->setRect(-kDotR, -kDotR, kDotR * 2, kDotR * 2);
-                sink.add(dot);
-            }
         }
     }
 
