@@ -67,9 +67,18 @@ void MainWindow::saveUserLibraryPaths(const QStringList& paths) {
 
 QString MainWindow::defaultVendoredPartsRoot() const {
     const QString exeDir = QCoreApplication::applicationDirPath();
-    for (const QString& rel : { QStringLiteral("/../../../parts/BlueBrickParts/parts"),
-                                 QStringLiteral("/parts/BlueBrickParts/parts"),
-                                 QStringLiteral("/BlueBrickParts/parts") }) {
+    // Probes in preference order:
+    //   macOS .app bundle: Contents/MacOS/ → ../Resources/BlueBrickParts/parts
+    //   AppImage: usr/bin/ → ../share/collaborative-layout-designer/parts/BlueBrickParts/parts
+    //   Linux tar.gz / Windows zip: <exeDir>/parts/BlueBrickParts/parts
+    //   Flat zip variant: <exeDir>/BlueBrickParts/parts
+    //   Build-tree fallback (macOS cmake --build): ../../../../parts/BlueBrickParts/parts
+    for (const QString& rel : {
+             QStringLiteral("/../Resources/BlueBrickParts/parts"),
+             QStringLiteral("/../share/collaborative-layout-designer/parts/BlueBrickParts/parts"),
+             QStringLiteral("/parts/BlueBrickParts/parts"),
+             QStringLiteral("/BlueBrickParts/parts"),
+             QStringLiteral("/../../../parts/BlueBrickParts/parts") }) {
         if (QDir(exeDir + rel).exists()) return QDir(exeDir + rel).absolutePath();
     }
     return {};
