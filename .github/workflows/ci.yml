@@ -43,17 +43,17 @@ jobs:
         include:
           - os: ubuntu-24.04
             name: linux-x86_64
-            artifact: collaborative-layout-designer-linux-x86_64
+            artifact: brick-layout-designer-linux-x86_64
           - os: windows-latest
             name: windows-x86_64
-            artifact: collaborative-layout-designer-windows-x86_64
+            artifact: brick-layout-designer-windows-x86_64
           - os: macos-14
             name: macos-arm64
-            artifact: collaborative-layout-designer-macos-arm64
+            artifact: brick-layout-designer-macos-arm64
             cmake_extra: -DCMAKE_OSX_ARCHITECTURES=arm64
           - os: macos-14
             name: macos-x86_64
-            artifact: collaborative-layout-designer-macos-x86_64
+            artifact: brick-layout-designer-macos-x86_64
             cmake_extra: -DCMAKE_OSX_ARCHITECTURES=x86_64
 
     name: Build (${{ matrix.name }})
@@ -92,17 +92,17 @@ jobs:
       - name: Package (Linux)
         if: runner.os == 'Linux'
         run: |
-          mkdir -p dist/collaborative-layout-designer
-          cp build/src/app/collaborative-layout-designer dist/collaborative-layout-designer/
+          mkdir -p dist/brick-layout-designer
+          cp build/src/app/brick-layout-designer dist/brick-layout-designer/
           # Bundle the parts library so the tarball is self-contained.
-          cp -r parts/BlueBrickParts dist/collaborative-layout-designer/parts
+          cp -r parts/BlueBrickParts dist/brick-layout-designer/parts
           # Bundle compiled translations, if any.
           if ls build/*.qm 1>/dev/null 2>&1; then
-            mkdir -p dist/collaborative-layout-designer/translations
-            cp build/*.qm dist/collaborative-layout-designer/translations/
+            mkdir -p dist/brick-layout-designer/translations
+            cp build/*.qm dist/brick-layout-designer/translations/
           fi
-          cp README.md dist/collaborative-layout-designer/ 2>/dev/null || true
-          cp LICENSE  dist/collaborative-layout-designer/ 2>/dev/null || true
+          cp README.md dist/brick-layout-designer/ 2>/dev/null || true
+          cp LICENSE  dist/brick-layout-designer/ 2>/dev/null || true
           tar -czf ${{ matrix.artifact }}.tar.gz -C dist .
 
       - name: Package (macOS)
@@ -112,7 +112,7 @@ jobs:
           # src/app/CMakeLists.txt). Move it into dist/, drop parts +
           # translations in, then let macdeployqt embed Qt frameworks.
           mkdir -p dist
-          SRC_APP=build/src/app/collaborative-layout-designer.app
+          SRC_APP=build/src/app/brick-layout-designer.app
           APP=dist/CollaborativeLayoutDesigner.app
           cp -R "$SRC_APP" "$APP"
           mkdir -p "$APP/Contents/Resources"
@@ -131,25 +131,25 @@ jobs:
           # Visual Studio (multi-config) places the .exe in
           # build/<CONFIG>/ because the app has OUTPUT_NAME set; Ninja
           # would put it at build/src/app/. Locate it either way.
-          mkdir -p dist/collaborative-layout-designer
-          EXE=$(find build -name collaborative-layout-designer.exe -not -path '*/CMakeFiles/*' | head -n 1)
+          mkdir -p dist/brick-layout-designer
+          EXE=$(find build -name brick-layout-designer.exe -not -path '*/CMakeFiles/*' | head -n 1)
           if [ -z "$EXE" ]; then
-            echo "Could not locate collaborative-layout-designer.exe in build/"
+            echo "Could not locate brick-layout-designer.exe in build/"
             find build -name '*.exe' -not -path '*/CMakeFiles/*' | head
             exit 1
           fi
-          cp "$EXE" dist/collaborative-layout-designer/
+          cp "$EXE" dist/brick-layout-designer/
           # Bundle Qt runtime + plugins next to the exe.
-          windeployqt dist/collaborative-layout-designer/collaborative-layout-designer.exe
+          windeployqt dist/brick-layout-designer/brick-layout-designer.exe
           # Bundle parts library so the zip is self-contained.
-          cp -r parts/BlueBrickParts dist/collaborative-layout-designer/parts
+          cp -r parts/BlueBrickParts dist/brick-layout-designer/parts
           if ls build/*.qm 1>/dev/null 2>&1; then
-            mkdir -p dist/collaborative-layout-designer/translations
-            cp build/*.qm dist/collaborative-layout-designer/translations/
+            mkdir -p dist/brick-layout-designer/translations
+            cp build/*.qm dist/brick-layout-designer/translations/
           fi
-          cp README.md dist/collaborative-layout-designer/ 2>/dev/null || true
-          cp LICENSE  dist/collaborative-layout-designer/LICENSE.txt 2>/dev/null || true
-          cd dist && 7z a ../${{ matrix.artifact }}.zip collaborative-layout-designer
+          cp README.md dist/brick-layout-designer/ 2>/dev/null || true
+          cp LICENSE  dist/brick-layout-designer/LICENSE.txt 2>/dev/null || true
+          cd dist && 7z a ../${{ matrix.artifact }}.zip brick-layout-designer
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
