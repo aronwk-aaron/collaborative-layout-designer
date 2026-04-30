@@ -12,6 +12,7 @@
 #include "MapView.h"
 #include "ModuleLibraryPanel.h"
 #include "ModulesPanel.h"
+#include "VenueLibraryPanel.h"
 #include "PartsBrowser.h"
 #include "PartUsagePanel.h"
 
@@ -286,11 +287,31 @@ MainWindow::MainWindow(parts::PartsLibrary& parts, QWidget* parent)
     addDockWidget(Qt::RightDockWidgetArea, modulesPanel_);
     moduleLibraryPanel_ = new ModuleLibraryPanel(this);
     addDockWidget(Qt::RightDockWidgetArea, moduleLibraryPanel_);
+    venueLibraryPanel_ = new VenueLibraryPanel(this);
+    addDockWidget(Qt::RightDockWidgetArea, venueLibraryPanel_);
     partUsagePanel_ = new PartUsagePanel(parts_, this);
     addDockWidget(Qt::RightDockWidgetArea, partUsagePanel_);
     partUsagePanel_->bindMapView(mapView_);
     connect(moduleLibraryPanel_, &ModuleLibraryPanel::moduleImportRequested,
             this, &MainWindow::onImportModuleFromLibraryPath);
+    connect(venueLibraryPanel_, &VenueLibraryPanel::venueLoadRequested,
+            this, [this](const core::Venue& v){
+        auto* m = mapView_->currentMap();
+        if (!m) return;
+        if (m->sidecar.venue) {
+            const auto btn = QMessageBox::question(this, tr("Replace venue"),
+                tr("This project already has a venue. Replace it?"));
+            if (btn != QMessageBox::Yes) return;
+        }
+        mapView_->undoStack()->push(new edit::SetVenueCommand(*m, std::make_optional(v)));
+        mapView_->rebuildScene();
+        statusBar()->showMessage(tr("Loaded venue \"%1\"").arg(v.name), 3000);
+    });
+    connect(venueLibraryPanel_, &VenueLibraryPanel::venueSaveRequested,
+            this, [this]{
+        auto* m = mapView_->currentMap();
+        venueLibraryPanel_->saveVenue(m ? m->sidecar.venue : std::nullopt);
+    });
     connect(modulesPanel_, &ModulesPanel::moduleDeleteRequested, this, [this](const QString& id){
         if (!mapView_->currentMap()) return;
         mapView_->undoStack()->push(
@@ -1018,6 +1039,7 @@ MainWindow::MainWindow(parts::PartsLibrary& parts, QWidget* parent)
     partsBrowser_->setObjectName(QStringLiteral("dock.parts"));
     modulesPanel_->setObjectName(QStringLiteral("dock.modules"));
     moduleLibraryPanel_->setObjectName(QStringLiteral("dock.moduleLibrary"));
+    venueLibraryPanel_->setObjectName(QStringLiteral("dock.venueLibrary"));
     partUsagePanel_->setObjectName(QStringLiteral("dock.partUsage"));
     QSettings s;
     s.beginGroup(QStringLiteral("ui"));

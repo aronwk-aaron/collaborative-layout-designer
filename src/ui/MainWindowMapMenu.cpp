@@ -1,6 +1,6 @@
 // Map menu — background colour, general info, and the venue sub-menu
 // (draw outline, draw-by-dimensions, add obstacle, edit properties,
-// clear, plus save/load a .cld-venue file from the venue library).
+// clear, venue library panel, load from file).
 // Pulled out of MainWindowMenus.cpp so the remaining setupMenus()
 // function focuses on File / Edit / View / Tools wiring rather than
 // the venue dialog churn.
@@ -10,6 +10,7 @@
 #include "MapView.h"
 #include "VenueDialog.h"
 #include "VenueDimensionsDialog.h"
+#include "VenueLibraryPanel.h"
 
 #include "../core/Map.h"
 #include "../core/Venue.h"
@@ -32,15 +33,12 @@
 #include <QFileInfo>
 #include <QFormLayout>
 #include <QGraphicsScene>
-#include <QInputDialog>
 #include <QLineEdit>
 #include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QPlainTextEdit>
-#include <QRegularExpression>
 #include <QSettings>
-#include <QStandardPaths>
 #include <QStatusBar>
 #include <QUndoStack>
 
@@ -240,100 +238,15 @@ void MainWindow::setupMapMenu() {
 
     venueMenu->addSeparator();
 
-    // Venue library: per-project (Map::sidecar.venue is one optional)
-    // but stash as standalone .cld-venue files so users can reuse a
-    // venue template across projects.
-    auto venueLibraryFolder = []() -> QString {
-        QString dir = QSettings().value(QStringLiteral("venue/libraryPath")).toString();
-        if (dir.isEmpty()) {
-            dir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)
-                  + QStringLiteral("/venues");
-            QSettings().setValue(QStringLiteral("venue/libraryPath"), dir);
-        }
-        QDir().mkpath(dir);
-        return dir;
-    };
-
-    auto sanitizeFilename = [](QString n) -> QString {
-        static const QRegularExpression bad(QStringLiteral(R"([<>:"/\\|?*\x00-\x1F])"));
-        n.replace(bad, QStringLiteral("_"));
-        while (n.startsWith(QLatin1Char('.')) || n.startsWith(QLatin1Char(' '))) n.remove(0, 1);
-        while (n.endsWith(QLatin1Char('.'))  || n.endsWith(QLatin1Char(' ')))  n.chop(1);
-        if (n.isEmpty()) n = QStringLiteral("Venue");
-        return n;
-    };
-
-    auto* saveVenueAct = venueMenu->addAction(tr("&Save Venue to Library..."));
-    connect(saveVenueAct, &QAction::triggered, this,
-            [this, venueLibraryFolder, sanitizeFilename]{
-        auto* m = mapView_->currentMap();
-        if (!m || !m->sidecar.venue) {
-            QMessageBox::information(this, tr("Save venue"),
-                tr("There's no venue on this project yet."));
-            return;
-        }
-        const QString dir = venueLibraryFolder();
-        bool ok = false;
-        const QString defName = m->sidecar.venue->name.isEmpty() ? tr("Venue")
-                                                                   : m->sidecar.venue->name;
-        const QString raw = QInputDialog::getText(this, tr("Save venue to library"),
-            tr("Venue name (filename):"), QLineEdit::Normal, defName, &ok);
-        if (!ok || raw.isEmpty()) return;
-        const QString target = QDir(dir).filePath(sanitizeFilename(raw)
-                                                    + QStringLiteral(".cld-venue"));
-        if (QFile::exists(target)) {
-            const auto btn = QMessageBox::question(this, tr("Save venue"),
-                tr("%1 already exists. Overwrite?").arg(target));
-            if (btn != QMessageBox::Yes) return;
-        }
-        QString err;
-        if (!saveload::writeVenueFile(target, *m->sidecar.venue, &err)) {
-            QMessageBox::warning(this, tr("Save venue"),
-                tr("Could not write %1: %2").arg(target, err));
-            return;
-        }
-        statusBar()->showMessage(tr("Saved venue to %1").arg(target), 4000);
+    auto* showLibraryAct = venueMenu->addAction(tr("Venue &Library..."));
+    showLibraryAct->setToolTip(tr("Open the Venue Library panel to browse, load, or save venues."));
+    connect(showLibraryAct, &QAction::triggered, this, [this]{
+        venueLibraryPanel_->show();
+        venueLibraryPanel_->raise();
     });
 
-    auto* loadVenueAct = venueMenu->addAction(tr("Load Venue from &Library..."));
-    connect(loadVenueAct, &QAction::triggered, this, [this, venueLibraryFolder]{
-        auto* m = mapView_->currentMap();
-        if (!m) return;
-        const QString dir = venueLibraryFolder();
-        QDir d(dir);
-        const QStringList files = d.entryList({ QStringLiteral("*.cld-venue") },
-                                                QDir::Files, QDir::Name | QDir::IgnoreCase);
-        if (files.isEmpty()) {
-            QMessageBox::information(this, tr("Load venue"),
-                tr("No saved venues in %1.").arg(dir));
-            return;
-        }
-        QStringList displayNames;
-        for (const QString& f : files) displayNames << QFileInfo(f).completeBaseName();
-        bool ok = false;
-        const QString picked = QInputDialog::getItem(this, tr("Load venue from library"),
-            tr("Choose a saved venue:"), displayNames, 0, false, &ok);
-        if (!ok || picked.isEmpty()) return;
-        const QString path = d.filePath(picked + QStringLiteral(".cld-venue"));
-        QString err;
-        auto venue = saveload::readVenueFile(path, &err);
-        if (!venue) {
-            QMessageBox::warning(this, tr("Load venue"),
-                tr("Could not read %1: %2").arg(path, err));
-            return;
-        }
-        if (m->sidecar.venue) {
-            const auto btn = QMessageBox::question(this, tr("Replace venue"),
-                tr("This project already has a venue. Replace it?"));
-            if (btn != QMessageBox::Yes) return;
-        }
-        mapView_->undoStack()->push(new edit::SetVenueCommand(*m, venue));
-        mapView_->rebuildScene();
-        statusBar()->showMessage(tr("Loaded venue '%1'").arg(picked), 3000);
-    });
-
-    auto* openVenueFileAct = venueMenu->addAction(tr("Load Venue from &File..."));
-    connect(openVenueFileAct, &QAction::triggered, this, [this]{
+    auto* loadVenueFileAct = venueMenu->addAction(tr("Load Venue from &File..."));
+    connect(loadVenueFileAct, &QAction::triggered, this, [this]{
         auto* m = mapView_->currentMap();
         if (!m) return;
         const QString path = QFileDialog::getOpenFileName(this, tr("Load venue file"), {},

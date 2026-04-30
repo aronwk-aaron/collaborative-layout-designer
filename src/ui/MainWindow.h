@@ -92,6 +92,7 @@ private:
     PartsBrowser* partsBrowser_ = nullptr;
     class ModulesPanel* modulesPanel_ = nullptr;
     class ModuleLibraryPanel* moduleLibraryPanel_ = nullptr;
+    class VenueLibraryPanel* venueLibraryPanel_ = nullptr;
     class PartUsagePanel* partUsagePanel_ = nullptr;
 
     QString currentFilePath_;

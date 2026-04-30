@@ -9,6 +9,7 @@
 #include "LayerPanel.h"
 #include "MapView.h"
 #include "ModuleLibraryPanel.h"
+#include "VenueLibraryPanel.h"
 #include "ModulesPanel.h"
 #include "PartsBrowser.h"
 #include "PartUsagePanel.h"
@@ -513,6 +514,7 @@ void MainWindow::setupMenus() {
     addDockToggle(layerPanel_,         tr("&Layers Panel"));
     addDockToggle(modulesPanel_,       tr("&Modules Panel"));
     addDockToggle(moduleLibraryPanel_, tr("Module Li&brary Panel"));
+    addDockToggle(venueLibraryPanel_,  tr("&Venue Library Panel"));
     addDockToggle(partUsagePanel_,     tr("&Used Parts Panel"));
 
     view->addSeparator();

@@ -1,0 +1,66 @@
+#pragma once
+
+#include "../core/Venue.h"
+
+#include <QDockWidget>
+#include <QString>
+
+#include <optional>
+
+class QLabel;
+class QListWidget;
+class QListWidgetItem;
+class QPushButton;
+
+namespace cld::ui {
+
+// Persistent dock panel listing all .cld-venue files in the library folder.
+// Backed by QSettings key "venue/libraryPath" (same as the menu actions used
+// before). Signals:
+//   venueLoadRequested   — user wants to replace the project venue
+//   venueSaveRequested   — user wants to save the current project venue
+//                          (panel handles the save itself; this signal lets
+//                           MainWindow forward the current venue)
+class VenueLibraryPanel : public QDockWidget {
+    Q_OBJECT
+public:
+    explicit VenueLibraryPanel(QWidget* parent = nullptr);
+
+    QString libraryPath() const;
+    void setLibraryPath(const QString& dir);
+    void refresh();
+
+signals:
+    // Emitted when the user activates an entry; caller applies it.
+    void venueLoadRequested(const core::Venue& venue);
+    // Emitted when the user clicks "Save Current Venue"; caller must respond
+    // by calling saveVenue() with the project's current venue.
+    void venueSaveRequested();
+
+public slots:
+    // Called by MainWindow in response to venueSaveRequested; pops a name
+    // dialog and writes the file.
+    void saveVenue(const std::optional<core::Venue>& venue);
+
+private slots:
+    void onChooseFolder();
+    void onLoad();
+    void onDelete();
+    void onRename();
+    void onSelectionChanged();
+
+private:
+    void updateButtons();
+    QString selectedPath() const;
+
+    QLabel*      pathLabel_  = nullptr;
+    QListWidget* list_       = nullptr;
+    QPushButton* loadBtn_    = nullptr;
+    QPushButton* saveBtn_    = nullptr;
+    QPushButton* deleteBtn_  = nullptr;
+    QPushButton* renameBtn_  = nullptr;
+    QLabel*      detailLabel_ = nullptr;
+    QString      path_;
+};
+
+}  // namespace cld::ui
